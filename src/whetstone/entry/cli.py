@@ -102,3 +102,7 @@ def verify_harness(prompt: PromptSettings, case_id: str, expected_file: Path) ->
 
 def production_model(settings: PromptSettings) -> ModelCall:
     return anthropic_model(load_key(settings.workspace, "GENERATION_API_KEY"))
+
+
+def main() -> None:
+    sys.exit(run(sys.argv[1:], make_model=production_model))

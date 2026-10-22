@@ -2,3 +2,4 @@
 spike/runs/gepa/
 .venv/
 __pycache__/
+.engine

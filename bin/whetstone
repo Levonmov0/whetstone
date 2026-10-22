@@ -1,2 +1,2 @@
 #!/bin/sh
-exit 1
+exec "$(cd "$(dirname "$0")/.." && pwd)/.engine/bin/whetstone" "$@"
