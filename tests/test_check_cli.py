@@ -186,3 +186,14 @@ def test_check_reports_each_case_and_check(tmp_path: Path, monkeypatch: pytest.M
         {"model": "fake-model", "max_tokens": 50, "system": "Be brief.", "messages": [{"role": "user", "content": text}]}
         for text in ("Rest today.", "Your HRV is low.")
     ]
+
+
+def test_check_exits_0_when_every_case_passes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_suite(tmp_path, {"a": "Rest today.", "b": "Walk later."})
+    model = echo_model()
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=lambda _settings: model)
+
+    assert code == 0
+    assert "2 of 2 cases pass every check" in capsys.readouterr().out.splitlines()
