@@ -260,3 +260,23 @@ def test_a_broken_prompt_toml_exits_2(
     err = capsys.readouterr().err
     assert code == 2
     assert f"{tmp_path / 'prompts' / 'daily' / 'prompt.toml'}: {reason}" in err
+
+
+def test_a_workspace_with_no_prompts_yet(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=unused_model)
+
+    assert code == 2
+    assert "no prompt named daily; prompts: none yet" in capsys.readouterr().err
+
+
+def test_a_prompt_with_no_cases_exits_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_prompt(make_workspace(tmp_path), ECHO_HARNESS, {})
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=unused_model)
+
+    assert code == 2
+    assert f"no cases in {tmp_path / 'prompts' / 'daily' / 'cases'}" in capsys.readouterr().err
