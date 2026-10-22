@@ -317,3 +317,27 @@ def test_a_check_must_return_a_list_of_messages(
 
     assert code == 2
     assert "check banned returned" in capsys.readouterr().err
+
+
+def test_editable_count_skips_non_text_blocks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    request = {
+        "model": "fake-model",
+        "system": "Be brief.",
+        "messages": [{"role": "user", "content": [{"type": "image", "source": {"type": "url", "url": "https://example.com/a.png"}}, {"type": "text", "text": "Day 1."}]}],
+    }
+    make_prompt(make_workspace(tmp_path), f"import json; print(json.dumps({request!r}))", {"first-day": {}})
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=lambda _settings: FakeModel(lambda _r: "ok"))
+
+    assert code == 0, capsys.readouterr().err
+
+
+def test_a_request_that_is_not_an_object_exits_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_prompt(make_workspace(tmp_path), "import json; print(json.dumps(json.dumps({'model': 'fake-model', 'messages': []})))", {"first-day": {}})
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=unused_model)
+
+    assert code == 2
+    assert "harness request for case first-day is not a JSON object" in capsys.readouterr().err
