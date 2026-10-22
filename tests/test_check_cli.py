@@ -1,3 +1,5 @@
+import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -37,3 +39,47 @@ def test_unknown_prompt_lists_the_known_ones(
 
     assert code == 2
     assert "no prompt named daily; prompts: a, b" in capsys.readouterr().err
+
+
+def make_workspace(root: Path) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "whetstone.toml").write_text("")
+    return root
+
+
+def make_prompt(workspace: Path, harness: str, cases: dict[str, object], name: str = "daily", model: str = "fake-model") -> Path:
+    """A prompt whose harness is the given Python source, run with this interpreter."""
+    prompt = make_prompt_dir(workspace, name)
+    (prompt / "harness.py").write_text(harness)
+    settings = {
+        "harness": f"{sys.executable} prompts/{name}/harness.py",
+        "editable": "Be brief.",
+        "provider": "anthropic",
+        "model": model,
+    }
+    (prompt / "prompt.toml").write_text("".join(f"{k} = {json.dumps(v)}\n" for k, v in settings.items()))
+    (prompt / "cases").mkdir()
+    for case_id, case in cases.items():
+        (prompt / "cases" / f"{case_id}.json").write_text(json.dumps(case))
+    return prompt
+
+
+@pytest.mark.parametrize(
+    ("harness", "reason"),
+    [
+        ("import sys; print('builder exploded', file=sys.stderr); sys.exit(3)", "builder exploded"),
+        ("print('not json')", "harness printed invalid JSON"),
+    ],
+)
+def test_broken_harness_stops_before_any_model_call(
+    harness: str, reason: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    make_prompt(make_workspace(tmp_path), harness, {"first-day": {"day": 1}})
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=unused_model)
+
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "first-day" in err
+    assert reason in err
