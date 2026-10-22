@@ -1,3 +1,5 @@
+import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -10,3 +12,15 @@ def find_workspace(cwd: Path, explicit: Path | None) -> Path | None:
 
 def prompt_names(workspace: Path) -> list[str]:
     return sorted(p.name for p in (workspace / "prompts").iterdir() if p.is_dir())
+
+
+@dataclass(frozen=True)
+class PromptSettings:
+    dir: Path
+    harness: str
+
+
+def load_prompt(workspace: Path, name: str) -> PromptSettings:
+    prompt_dir = workspace / "prompts" / name
+    raw = tomllib.loads((prompt_dir / "prompt.toml").read_text())
+    return PromptSettings(dir=prompt_dir, harness=raw["harness"])
