@@ -197,3 +197,15 @@ def test_check_exits_0_when_every_case_passes(tmp_path: Path, monkeypatch: pytes
 
     assert code == 0
     assert "2 of 2 cases pass every check" in capsys.readouterr().out.splitlines()
+
+
+def test_a_crashing_check_exits_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today.", "b": "Walk later."})
+    (prompt / "checks" / "banned.py").write_text("def check(output):\n    if 'Walk' in output:\n        raise ValueError('no rule for walks')\n    return []\n")
+    model = echo_model()
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=lambda _settings: model)
+
+    assert code == 2
+    assert "check banned crashed on case b: no rule for walks" in capsys.readouterr().err
