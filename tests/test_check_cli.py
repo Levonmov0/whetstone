@@ -280,3 +280,40 @@ def test_a_prompt_with_no_cases_exits_2(tmp_path: Path, monkeypatch: pytest.Monk
 
     assert code == 2
     assert f"no cases in {tmp_path / 'prompts' / 'daily' / 'cases'}" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("source", "reason"),
+    [
+        ("import no_such_module_anywhere\n", "No module named 'no_such_module_anywhere'"),
+        ("def checks(output):\n    return []\n", 'has no "check" function'),
+    ],
+)
+def test_a_check_that_will_not_load_exits_2(
+    source: str, reason: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today."})
+    (prompt / "checks" / "banned.py").write_text(source)
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=unused_model)
+
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "check banned failed to load" in err
+    assert reason in err
+
+
+@pytest.mark.parametrize("returned", ["'too long'", "None", "[1]"])
+def test_a_check_must_return_a_list_of_messages(
+    returned: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today."})
+    (prompt / "checks" / "banned.py").write_text(f"def check(output):\n    return {returned}\n")
+    model = echo_model()
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=lambda _settings: model)
+
+    assert code == 2
+    assert "check banned returned" in capsys.readouterr().err
