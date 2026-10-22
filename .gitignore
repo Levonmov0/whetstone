@@ -1,2 +1,4 @@
 .env
 spike/runs/gepa/
+.venv/
+__pycache__/
