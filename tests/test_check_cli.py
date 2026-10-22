@@ -115,3 +115,29 @@ def test_harness_model_must_match_the_recorded_production_model(
 
     assert code == 2
     assert "harness requests other-model but prompt.toml records production model fake-model" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("request_body", "times"),
+    [
+        ({"model": "fake-model", "system": "Write a card.", "messages": [{"role": "user", "content": "Day 1."}]}, 0),
+        (
+            {
+                "model": "fake-model",
+                "system": [{"type": "text", "text": "Be brief. Write a card."}],
+                "messages": [{"role": "user", "content": [{"type": "text", "text": "Day 1. Be brief."}]}],
+            },
+            2,
+        ),
+    ],
+)
+def test_editable_part_must_appear_exactly_once(
+    request_body: dict[str, object], times: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    make_prompt(make_workspace(tmp_path), f"import json; print(json.dumps({request_body!r}))", {"first-day": {}})
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=unused_model)
+
+    assert code == 2
+    assert f"editable part found {times} times in request for case first-day" in capsys.readouterr().err
