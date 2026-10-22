@@ -83,3 +83,22 @@ def test_broken_harness_stops_before_any_model_call(
     assert code == 2
     assert "first-day" in err
     assert reason in err
+
+
+@pytest.mark.parametrize(
+    ("request_body", "missing"),
+    [
+        ({"messages": [{"role": "user", "content": "Be brief."}]}, "model"),
+        ({"model": "fake-model", "system": "Be brief."}, "messages"),
+    ],
+)
+def test_request_missing_a_required_field(
+    request_body: dict[str, object], missing: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    make_prompt(make_workspace(tmp_path), f"import json; print(json.dumps({request_body!r}))", {"first-day": {}})
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=unused_model)
+
+    assert code == 2
+    assert f'harness request for case first-day is missing "{missing}"' in capsys.readouterr().err
