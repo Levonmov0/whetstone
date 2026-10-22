@@ -102,3 +102,16 @@ def test_request_missing_a_required_field(
 
     assert code == 2
     assert f'harness request for case first-day is missing "{missing}"' in capsys.readouterr().err
+
+
+def test_harness_model_must_match_the_recorded_production_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    request = {"model": "other-model", "messages": [{"role": "user", "content": "Be brief."}]}
+    make_prompt(make_workspace(tmp_path), f"import json; print(json.dumps({request!r}))", {"first-day": {}})
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=unused_model)
+
+    assert code == 2
+    assert "harness requests other-model but prompt.toml records production model fake-model" in capsys.readouterr().err
