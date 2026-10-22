@@ -1,0 +1,44 @@
+[importlinter]
+root_package = whetstone
+include_external_packages = True
+
+[importlinter:contract:layers]
+name = Layers: entry may use features and platform; features may use platform; never upward
+type = layers
+layers =
+    whetstone.entry
+    whetstone.features
+    whetstone.platform
+
+[importlinter:contract:independent-features]
+name = Features never import each other
+type = independence
+modules =
+    whetstone.features.*
+
+[importlinter:contract:pure-core]
+name = A feature's core is pure: no platform, I/O or SDKs
+type = forbidden
+source_modules =
+    whetstone.features.*.core
+forbidden_modules =
+    whetstone.platform
+    anthropic
+    dotenv
+    httpx2
+    os
+    subprocess
+    pathlib
+allow_indirect_imports = True
+
+[importlinter:contract:sdk-wrappers]
+name = Each SDK is imported only in its platform wrapper
+type = forbidden
+source_modules =
+    whetstone.entry
+    whetstone.features
+forbidden_modules =
+    anthropic
+    dotenv
+    httpx2
+allow_indirect_imports = True
