@@ -35,20 +35,17 @@ It's TDD for prompts:
 ## Product decisions made
 
 - **A Claude Code plugin** (decided 2026-10-21), not a web app. It runs inside whatever repo it's used in, so "connect your repo" is free: it reads existing prompts, voice and copy guidelines, schemas and call sites before grilling the user and before drafting the seed prompt. Users bring their own model keys, and data never leaves their machine. No login, billing or per-team isolation to build.
-- **Separate from Switchyard.** Switchyard (`~/Developer/switchyard`) runs Claude Code workers per ticket on localhost. Whetstone is its own plugin that runs GEPA as Python jobs.
-- **Hooks into Switchyard.** The shared thing is the test files committed in the target repo. A Switchyard ticket whose spec says "needs a prompt" hands off to Whetstone. That ticket's green gate is "the prompt suite passes". The tests and the final prompt are committed on the ticket branch.
+- **Standalone, no Switchyard** (decided 2026-10-22). Whetstone is its own plugin and is not designed around Switchyard. A Switchyard hook may be added later as its own piece.
 - **Not Kin-only.** Kin is the first user.
 - **Build on GEPA as a dependency** (decided 2026-10-22, after the spike in `spike/RESULTS.md`). Don't rebuild it or any part of it. Pin the version, and reach GEPA only through `gepa.optimize(...)` and our adapter. Its options (reflection template, selection, acceptance, stop rules) cover what we need. After v1: replace GEPA's default reflection instructions. Today they tell the model to copy "all niche and domain specific factual information" into the prompt, which bloated our prompt with case-specific rules. Ours should forbid that and protect the voice rules.
 - **Developers first.** Users are Claude Code users. Non-developers are out of scope for now.
-- **`/whetstone:init` builds the swipe app per repo.** It generates a small localhost web app styled from the repo's own design system (tokens, fonts, colours), so grading feels like the product. The phone opens it over the local network. Swipes are written back to the repo as labels. Fallback when a repo has no design system: Switchyard's `switchyard/design-system/tokens.css`.
-- **Never auto-promote.** Whetstone stops at a `candidate` prompt, and a person promotes it, the same way Switchyard never pushes or deploys.
+- **One swipe app, themed per repo** (revised 2026-10-22). Whetstone ships one swipe app; `/whetstone:init` extracts the repo's design tokens into a theme, falling back to Whetstone's own. The phone opens it over the local network. Swipes are written back as labels.
+- **Never auto-promote.** Whetstone stops at a `candidate` prompt, and a person promotes it.
+- **v1 design:** settled in a grilling session on 2026-10-22. The full decision set is the v1 spec issue on GitHub (`Levonmov0/whetstone`).
 
 ## Open decisions
 
-The earlier three (who it's for, whose keys, where prompts go) are settled by the plugin decision. Still open:
-
-1. **Phone reaching localhost.** A phone can't open `localhost`. Serve on the LAN IP (same Wi-Fi only, and needs a token so others on the network can't grade or read outputs), or use a tunnel (outputs then pass through a third party).
-2. **Where Whetstone files live in a repo**, for example a `whetstone/` folder holding cases, checks, labels and candidate prompts.
+None. All earlier open decisions were settled on 2026-10-22; see the v1 spec issue.
 
 ## First step: prove the GEPA loop, with no UI
 
