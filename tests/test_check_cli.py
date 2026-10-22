@@ -341,3 +341,28 @@ def test_a_request_that_is_not_an_object_exits_2(tmp_path: Path, monkeypatch: py
 
     assert code == 2
     assert "harness request for case first-day is not a JSON object" in capsys.readouterr().err
+
+
+def test_private_cases_run_with_the_rest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today."})
+    (prompt / "cases" / "private").mkdir()
+    (prompt / "cases" / "private" / "real.json").write_text(json.dumps({"text": "Your HRV is low."}))
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=lambda _settings: echo_model())
+
+    out = capsys.readouterr().out.splitlines()
+    assert code == 1
+    assert "FAIL private/real: banned: Uses banned term HRV." in out
+
+
+def test_a_provider_other_than_anthropic_exits_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today."})
+    toml = prompt / "prompt.toml"
+    toml.write_text(toml.read_text().replace('provider = "anthropic"', 'provider = "openai"'))
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=unused_model)
+
+    assert code == 2
+    assert 'provider "openai" is not supported yet; Whetstone calls anthropic only' in capsys.readouterr().err
