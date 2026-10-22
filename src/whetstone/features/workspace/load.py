@@ -14,16 +14,30 @@ def prompt_names(workspace: Path) -> list[str]:
     return sorted(p.name for p in (workspace / "prompts").iterdir() if p.is_dir())
 
 
+class PromptError(Exception):
+    """A prompt folder whose settings can't be used."""
+
+
 @dataclass(frozen=True)
 class PromptSettings:
     workspace: Path
     dir: Path
     harness: str
+    provider: str
     model: str
     editable: str
 
 
 def load_prompt(workspace: Path, name: str) -> PromptSettings:
     prompt_dir = workspace / "prompts" / name
-    raw = tomllib.loads((prompt_dir / "prompt.toml").read_text())
-    return PromptSettings(workspace=workspace, dir=prompt_dir, harness=raw["harness"], model=raw["model"], editable=raw["editable"])
+    settings_file = prompt_dir / "prompt.toml"
+    try:
+        raw = tomllib.loads(settings_file.read_text())
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        raise PromptError(f"{settings_file}: invalid TOML: {e}") from None
+    for key in ("harness", "provider", "model", "editable"):
+        if not isinstance(raw.get(key), str):
+            raise PromptError(f'{settings_file}: missing "{key}"')
+    return PromptSettings(
+        workspace=workspace, dir=prompt_dir, harness=raw["harness"], provider=raw["provider"], model=raw["model"], editable=raw["editable"]
+    )

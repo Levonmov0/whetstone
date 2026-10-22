@@ -9,7 +9,7 @@ from whetstone.features.cases.load import load_cases
 from whetstone.features.checks.core import CaseResult, report
 from whetstone.features.checks.load import load_checks
 from whetstone.features.workspace.core import request_differences, request_problem
-from whetstone.features.workspace.load import PromptSettings, find_workspace, load_prompt, prompt_names
+from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, prompt_names
 from whetstone.platform.anthropic import anthropic_model
 from whetstone.platform.config import MissingKey, load_key
 from whetstone.platform.harness import HarnessError, build_request
@@ -51,7 +51,10 @@ def find_prompt(explicit_workspace: Path | None, name: str) -> PromptSettings:
     names = prompt_names(workspace)
     if name not in names:
         raise Stop(f"no prompt named {name}; prompts: {', '.join(names)}")
-    return load_prompt(workspace, name)
+    try:
+        return load_prompt(workspace, name)
+    except PromptError as e:
+        raise Stop(str(e)) from None
 
 
 def build(prompt: PromptSettings, case_id: str, case_json: str) -> Any:
