@@ -3,11 +3,11 @@ import json
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from whetstone.features.cases.load import load_cases
 from whetstone.features.checks.core import CaseResult, report
-from whetstone.features.checks.load import load_checks
+from whetstone.features.checks.load import CheckLoadError, load_checks
 from whetstone.features.workspace.core import request_differences, request_problem
 from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, prompt_names
 from whetstone.platform.anthropic import anthropic_model
@@ -79,10 +79,13 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel) -> int:
         requests.append((case_id, request))
 
     try:
+        checks = load_checks(prompt.dir)
+    except CheckLoadError as e:
+        raise Stop(str(e)) from None
+    try:
         model = make_model(prompt)
     except MissingKey as e:
         raise Stop(str(e)) from None
-    checks = load_checks(prompt.dir)
     results: list[CaseResult] = []
     for case_id, request in requests:
         try:
@@ -92,9 +95,12 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel) -> int:
         failures: dict[str, list[str]] = {}
         for name, check in checks.items():
             try:
-                failures[name] = check(output)
+                messages = check(output)
             except Exception as e:  # a check is the workspace's own code; any crash means the suite is broken
                 raise Stop(f"check {name} crashed on case {case_id}: {e}") from None
+            if not isinstance(messages, list) or not all(isinstance(m, str) for m in cast(list[Any], messages)):
+                raise Stop(f"check {name} returned {messages!r} on case {case_id}; a check returns a list of failure messages")
+            failures[name] = cast(list[str], messages)
         results.append(CaseResult(case_id, failures))
     lines, code = report(results, list(checks))
     print("\n".join(lines))

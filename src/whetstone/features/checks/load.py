@@ -3,7 +3,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-Check = Callable[[Any], list[str]]
+Check = Callable[[Any], Any]
+
+
+class CheckLoadError(Exception):
+    pass
 
 
 def load_checks(prompt_dir: Path) -> dict[str, Check]:
@@ -13,6 +17,11 @@ def load_checks(prompt_dir: Path) -> dict[str, Check]:
         spec = importlib.util.spec_from_file_location(f"whetstone_check_{path.stem}", path)
         assert spec and spec.loader
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        try:
+            spec.loader.exec_module(module)
+        except Exception as e:  # the workspace's own code; any failure means the check can't run
+            raise CheckLoadError(f"check {path.stem} failed to load: {type(e).__name__}: {e}") from None
+        if not callable(getattr(module, "check", None)):
+            raise CheckLoadError(f'check {path.stem} failed to load: {path} has no "check" function')
         checks[path.stem] = module.check
     return checks
