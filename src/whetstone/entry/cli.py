@@ -94,7 +94,10 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel) -> int:
 
 
 def verify_harness(prompt: PromptSettings, case_id: str, expected_file: Path) -> int:
-    case_json = dict(load_cases(prompt.dir))[case_id]
+    cases = dict(load_cases(prompt.dir))
+    if case_id not in cases:
+        raise Stop(f"no case named {case_id}; cases: {', '.join(cases)}")
+    case_json = cases[case_id]
     differences = request_differences(build(prompt, case_id, case_json), json.loads(expected_file.read_text()))
     if not differences:
         print("harness matches the production request")
