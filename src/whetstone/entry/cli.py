@@ -59,3 +59,7 @@ def run(argv: list[str], make_model: Callable[[PromptSettings], ModelCall]) -> i
     lines, code = report(results, list(checks))
     print("\n".join(lines))
     return code
+
+
+def production_model(settings: PromptSettings) -> ModelCall:
+    raise NotImplementedError

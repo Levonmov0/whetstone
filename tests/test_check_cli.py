@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from tests.fakes import FakeModel, unused_model
-from whetstone.entry.cli import run
+from whetstone.entry.cli import production_model, run
 
 
 def test_no_workspace_found(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -209,3 +209,19 @@ def test_a_crashing_check_exits_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 
     assert code == 2
     assert "check banned crashed on case b: no rule for walks" in capsys.readouterr().err
+
+
+def test_missing_generation_key_names_the_variable_and_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    make_suite(tmp_path, {"a": "Rest today."})
+    (tmp_path / ".env").write_text("JUDGE_API_KEY=sk-judge-secret\n")
+    monkeypatch.setenv("GENERATION_API_KEY", "sk-from-the-shell")  # only the workspace file counts
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=production_model)
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert f"GENERATION_API_KEY is not set in {tmp_path / '.env'}" in captured.err
+    assert "sk-" not in captured.out + captured.err
