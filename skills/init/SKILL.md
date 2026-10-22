@@ -15,7 +15,7 @@ The engine is `whetstone` on the Bash tool's PATH, built by the session-start ho
 Ask where the workspace lives: `whetstone/` in this repo (recommended when the repo will keep its harness), or a folder outside it.
 - In a repo, work on a branch named `whetstone/<something>`, never on the default branch. Create the branch first if needed.
 - Write `.gitignore` with `.env` and `prompts/*/cases/private/` before anything else.
-- Write `whetstone.toml` with the user's answers for phone access and apply target, defaulting to `lan` and `branch`.
+- Write `whetstone.toml` with the user's answers for judge model (another model family from the generator), rewrites (Claude Code or the API), phone access and apply target, defaulting to `claude-code`, `lan` and `branch`.
 
 Done when `whetstone.toml` and `.gitignore` exist, and `git check-ignore <ws>/.env` confirms the key file is ignored.
 
@@ -33,7 +33,7 @@ Done when you can name the provider, the model and every parameter, each with th
 
 ## 4. Keys
 
-Tell the user which variables the workspace needs (`GENERATION_API_KEY` now, the others when their features run). Ask them to create a key for each purpose and paste it into `<ws>/.env` themselves. Never read, print or write a key's value. Check that a key is present with `grep -c '^GENERATION_API_KEY=.' <ws>/.env`.
+Tell the user which variables the workspace needs (`GENERATION_API_KEY` now, the others when their features run). Ask them to create a key for each purpose and paste it into `<ws>/.env` themselves. Never read, print or write a key's value. Check that a key is present with `grep -cE '^(export )?GENERATION_API_KEY *= *[^ ]' <ws>/.env`.
 
 Done when that count is 1.
 
@@ -47,7 +47,7 @@ Done when the user has picked one.
 
 Write `prompts/<name>/harness.*` in the repo's own language, calling the real prompt builder with the case's data, and printing the request body exactly as production passes it to the SDK.
 - Write two or three cases in `cases/` from the repo's own fixtures or contracts, invented data only.
-- Write `prompt.toml` with `harness`, `provider`, `model` and `apply`.
+- Write `prompt.toml` with `harness`, `provider` and `model`. `editable` and `apply` come in step 7; `verify-harness` doesn't need them.
 
 Capture one real production request for the same input. Run the production code path with the SDK client stubbed to record what it was given, for example in a one-off test. Save it outside the workspace and run:
 
@@ -61,7 +61,7 @@ Done when `verify-harness` exits 0.
 
 ## 7. Editable part
 
-Agree with the user on the part Whetstone may rewrite: the prompt's own job text, never shared rules that other prompts use. Copy it exactly from a built request into `editable`.
+Agree with the user on the part Whetstone may rewrite: the prompt's own job text, never shared rules that other prompts use. Copy it exactly from a built request into `editable`, as a TOML multi-line literal string (`'''…'''`) so backslashes and quotes stay as they are.
 - Set `apply` from its shape: `exact` for one fixed string in one file, `placeholders` when it holds variables, `code-edit` when it is assembled from parts.
 - Tell the user which one it is and what it means for applying a winner.
 

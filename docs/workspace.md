@@ -12,7 +12,7 @@ The workspace is the one place Whetstone keeps a repo's settings, keys, theme an
     prompt.toml         the prompt's settings
     harness.*           builds the production request (any language)
     cases/<id>.json     one case per file; any JSON
-    cases/private/      real-data cases; always gitignored
+    cases/private/      real-data cases, ids private/<id>; always gitignored
     checks/<name>.py    code checks
 ```
 
@@ -46,11 +46,14 @@ The engine reads these from this file only, never from the shell. A key exported
 
 ```toml
 harness = "pnpm tsx whetstone/prompts/morning-follow-up/harness.ts"  # run from the workspace folder
-editable = "<the exact text Whetstone may rewrite>"
-provider = "anthropic"
+provider = "anthropic"  # the only provider the engine calls today
 model = "<production model>"
+editable = '''<the exact text Whetstone may rewrite>'''
 apply = "exact"       # exact | placeholders | code-edit
 ```
+
+- `harness`, `provider` and `model` are required. `editable` and `apply` are added once the harness is verified; `whetstone check` needs `editable`, `verify-harness` does not.
+- The production parameters (`max_tokens`, `temperature`, tools) are not repeated here: they are in the request the harness builds, which is the production request.
 
 - `editable` must appear exactly once in the request the harness builds, counting the system prompt and every message's text.
 - `model` must equal the `model` in the harness's request. A mismatch means the harness has drifted from production.
@@ -77,4 +80,4 @@ It calls the repo's real prompt builder, so a change to the builder shows up in 
 |---|---|
 | 0 | every case passes every check |
 | 1 | some check failed |
-| 2 | the setup is broken: workspace, harness, key or a crashing check |
+| 2 | the setup is broken: workspace, prompt.toml, no cases, harness (failing, invalid or over 120s), key, a failed model call, or a check that won't load, crashes or returns something other than a list of messages |
