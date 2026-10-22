@@ -41,3 +41,4 @@ forbidden_modules =
     anthropic
     dotenv
     httpx2
+allow_indirect_imports = True
