@@ -240,3 +240,23 @@ def test_a_failed_model_call_exits_2_without_the_key(tmp_path: Path, monkeypatch
     assert code == 2
     assert "model call failed on case a" in captured.err
     assert "sk-wrong-key-123" not in captured.out + captured.err
+
+
+@pytest.mark.parametrize(
+    ("toml", "reason"),
+    [
+        ('harness = "x"\nmodel = "m"\neditable = "e"\n', 'missing "provider"'),
+        ('harness = "x\n', "invalid TOML"),
+    ],
+)
+def test_a_broken_prompt_toml_exits_2(
+    toml: str, reason: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (make_prompt_dir(make_workspace(tmp_path), "daily") / "prompt.toml").write_text(toml)
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=unused_model)
+
+    err = capsys.readouterr().err
+    assert code == 2
+    assert f"{tmp_path / 'prompts' / 'daily' / 'prompt.toml'}: {reason}" in err
