@@ -10,7 +10,7 @@ class CaseResult:
 
 
 def report(results: list[CaseResult], check_names: list[str]) -> tuple[list[str], int]:
-    """The lines to print, and the exit code."""
+    """The lines to print, and the exit code: 0 when every case passes every check, else 1."""
     lines: list[str] = []
     for r in results:
         failed = {name: msgs for name, msgs in r.failures.items() if msgs}
@@ -24,4 +24,4 @@ def report(results: list[CaseResult], check_names: list[str]) -> tuple[list[str]
         lines.append(f"{name}: {passed}/{len(results)}")
     clean = sum(1 for r in results if not any(r.failures.values()))
     lines.append(f"{clean} of {len(results)} cases pass every check")
-    return lines, 1
+    return lines, 0 if clean == len(results) else 1
