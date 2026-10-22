@@ -20,7 +20,8 @@ def test_session_hook_builds_the_engine_and_bin_runs_it(tmp_path: Path) -> None:
 
     hook = subprocess.run([str(root / "hooks" / "setup-engine.sh")], env=env, capture_output=True, text=True)
     assert hook.returncode == 0, hook.stderr
-    assert (data / "venv").is_dir()
+    [venv] = data.iterdir()  # one venv, keyed by the plugin root
+    assert venv.name.startswith("venv-") and (venv / "bin" / "whetstone").exists()
 
     # Claude's Bash tool gets bin/ on PATH but not the plugin variables.
     bare = {k: v for k, v in env.items() if not k.startswith("CLAUDE_PLUGIN_")}
