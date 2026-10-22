@@ -39,6 +39,8 @@ def load_prompt(workspace: Path, name: str) -> PromptSettings:
     for key in ("harness", "provider", "model"):
         if not isinstance(raw.get(key), str):
             raise PromptError(f'{settings_file}: missing "{key}"')
+    if raw["provider"] != "anthropic":
+        raise PromptError(f'{settings_file}: provider "{raw["provider"]}" is not supported yet; Whetstone calls anthropic only')
     return PromptSettings(
         workspace=workspace, dir=prompt_dir, harness=raw["harness"], provider=raw["provider"], model=raw["model"], editable=raw.get("editable")
     )
