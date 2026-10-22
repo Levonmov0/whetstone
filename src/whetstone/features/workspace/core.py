@@ -5,6 +5,8 @@ from typing import Any, cast
 
 def request_problem(request: Any, case_id: str, production_model: str, editable: str) -> str | None:
     """Why a harness request can't be used, or None when it can."""
+    if not isinstance(request, dict):
+        return f"harness request for case {case_id} is not a JSON object"
     for field in ("model", "messages"):
         if field not in request:
             return f'harness request for case {case_id} is missing "{field}"'
@@ -23,10 +25,10 @@ def rendered_texts(request: Any) -> list[str]:
 
 
 def _texts(content: Any) -> list[str]:
-    # Content is a string or a list of text blocks.
+    # Content is a string or a list of blocks, of which only text blocks carry prompt text.
     if isinstance(content, str):
         return [content]
-    return [block["text"] for block in content]
+    return [block["text"] for block in content if block.get("type") == "text"]
 
 
 def request_differences(built: Any, expected: Any, path: str = "") -> list[str]:
