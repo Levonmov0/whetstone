@@ -1,0 +1,26 @@
+/* Whetstone's own theme: the fallback when a repo has no design tokens.
+   A repo's theme.css overrides the same variables. */
+:root {
+  --ws-bg: #f6f5f2;
+  --ws-surface: #ffffff;
+  --ws-text: #1c1b19;
+  --ws-muted: #6b6862;
+  --ws-accent: #3a5bd9;
+  --ws-good: #2f8a4c;
+  --ws-bad: #c2412d;
+  --ws-radius: 14px;
+  --ws-space: 16px;
+  --ws-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ws-bg: #151514;
+    --ws-surface: #1f1f1d;
+    --ws-text: #ecebe7;
+    --ws-muted: #9b9891;
+    --ws-accent: #7d97ff;
+    --ws-good: #5cc27b;
+    --ws-bad: #ef7a63;
+  }
+}

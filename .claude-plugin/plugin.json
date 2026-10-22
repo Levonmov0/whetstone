@@ -1,0 +1,7 @@
+{
+  "name": "whetstone",
+  "version": "0.1.0",
+  "description": "Test-driven prompt optimization: say what good and bad look like, and an optimizer finds the prompt",
+  "author": { "name": "Levon" },
+  "repository": "https://github.com/Levonmov0/whetstone"
+}
