@@ -1,5 +1,6 @@
 """The Anthropic wrapper: the only module that imports the Anthropic SDK."""
 
+import os
 from typing import Any, cast
 
 import anthropic
@@ -9,9 +10,15 @@ from whetstone.platform.model import ModelCall, ModelError, ModelResult
 
 
 def anthropic_model(api_key: str, transport: httpx.BaseTransport | None = None) -> ModelCall:
-    # Pinned: a Claude Code shell exports ANTHROPIC_BASE_URL and its own credentials.
+    # Pinned: a Claude Code shell exports ANTHROPIC_BASE_URL, its own credentials and ANTHROPIC_CUSTOM_HEADERS,
+    # which the SDK would otherwise add to every request. Omit() drops each of those headers.
+    shell_headers = [line.split(":", 1)[0].strip() for line in os.environ.get("ANTHROPIC_CUSTOM_HEADERS", "").splitlines() if ":" in line]
     client = anthropic.Anthropic(
-        api_key=api_key, auth_token=None, base_url="https://api.anthropic.com", http_client=httpx.Client(transport=transport) if transport else None
+        api_key=api_key,
+        auth_token=None,
+        base_url="https://api.anthropic.com",
+        default_headers=cast(dict[str, str], {name: anthropic.Omit() for name in shell_headers}),  # typed str, but the SDK honours Omit
+        http_client=httpx.Client(transport=transport) if transport else None,
     )
 
     def call(request: dict[str, Any]) -> ModelResult:
