@@ -34,7 +34,7 @@ def run(argv: list[str], make_model: Callable[[Any], ModelCall]) -> int:
         except HarnessError as e:
             print(f"case {case_id}: {e}", file=sys.stderr)
             return 2
-        if problem := request_problem(request, case_id):
+        if problem := request_problem(request, case_id, prompt.model):
             print(problem, file=sys.stderr)
             return 2
     return 0
