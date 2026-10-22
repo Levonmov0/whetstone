@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -10,7 +11,7 @@ from whetstone.entry.cli import run
 BUILT = {"model": "fake-model", "max_tokens": 50, "system": "Be brief.", "messages": [{"role": "user", "content": "Rest today."}]}
 
 
-def verify(tmp_path: Path, expected: dict[str, object]) -> int:
+def verify(tmp_path: Path, expected: dict[str, Any]) -> int:
     make_prompt(make_workspace(tmp_path), ECHO_HARNESS, {"a": {"text": "Rest today."}})
     (tmp_path / "expected.json").write_text(json.dumps(expected))
     return run(["verify-harness", "daily", "--case", "a", "--expected", str(tmp_path / "expected.json")], make_model=unused_model)
