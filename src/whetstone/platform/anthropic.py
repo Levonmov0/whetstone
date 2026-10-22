@@ -9,7 +9,10 @@ from whetstone.platform.model import ModelCall, ModelResult
 
 
 def anthropic_model(api_key: str, transport: httpx.BaseTransport | None = None) -> ModelCall:
-    client = anthropic.Anthropic(api_key=api_key, http_client=httpx.Client(transport=transport) if transport else None)
+    # Pinned: a Claude Code shell exports ANTHROPIC_BASE_URL and its own credentials.
+    client = anthropic.Anthropic(
+        api_key=api_key, auth_token=None, base_url="https://api.anthropic.com", http_client=httpx.Client(transport=transport) if transport else None
+    )
 
     def call(request: dict[str, Any]) -> ModelResult:
         # The body is the harness's verbatim; the SDK can't pick an overload for an untyped dict.
