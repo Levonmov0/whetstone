@@ -13,7 +13,7 @@ from whetstone.features.workspace.load import PromptSettings, find_workspace, lo
 from whetstone.platform.anthropic import anthropic_model
 from whetstone.platform.config import MissingKey, load_key
 from whetstone.platform.harness import HarnessError, build_request
-from whetstone.platform.model import ModelCall
+from whetstone.platform.model import ModelCall, ModelError
 
 MakeModel = Callable[[PromptSettings], ModelCall]
 
@@ -77,7 +77,10 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel) -> int:
     checks = load_checks(prompt.dir)
     results: list[CaseResult] = []
     for case_id, request in requests:
-        output = model(request).output
+        try:
+            output = model(request).output
+        except ModelError as e:
+            raise Stop(f"model call failed on case {case_id}: {e}") from None
         failures: dict[str, list[str]] = {}
         for name, check in checks.items():
             try:

@@ -14,3 +14,7 @@ class ModelResult:
 
 # Takes the provider's request body as the harness built it, verbatim.
 ModelCall = Callable[[dict[str, Any]], ModelResult]
+
+
+class ModelError(Exception):
+    """A model call that failed: provider error, rate limit or network. The message never carries a key."""
