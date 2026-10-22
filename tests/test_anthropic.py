@@ -55,3 +55,19 @@ def test_request_goes_verbatim_to_anthropic_with_the_workspace_key(monkeypatch: 
     assert [c for c in credentials if c] == ["Bearer workspace-key"] or [c for c in credentials if c] == ["workspace-key"]
     assert "shell-key" not in str(sent.headers) and "shell-token" not in str(sent.headers)
     assert json.loads(sent.content) == REQUEST
+
+
+def test_shell_custom_headers_never_reach_the_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_CUSTOM_HEADERS", "x-claude-code-session: abc\nX-Proxy-Auth: secret")
+    seen: list[httpx.Request] = []
+    answer = reply([{"type": "text", "text": "ok"}])
+
+    def record(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return answer.handle_request(request)
+
+    anthropic_model("workspace-key", transport=httpx.MockTransport(record))(REQUEST)
+
+    [sent] = seen
+    assert "x-claude-code-session" not in sent.headers
+    assert "x-proxy-auth" not in sent.headers
