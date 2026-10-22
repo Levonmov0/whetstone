@@ -1,6 +1,6 @@
 """Pure rules about a prompt's harness request: no I/O, environment or SDKs."""
 
-from typing import Any
+from typing import Any, cast
 
 
 def request_problem(request: Any, case_id: str, production_model: str, editable: str) -> str | None:
@@ -27,3 +27,14 @@ def _texts(content: Any) -> list[str]:
     if isinstance(content, str):
         return [content]
     return [block["text"] for block in content]
+
+
+def request_differences(built: Any, expected: Any, path: str = "") -> list[str]:
+    """The path of every field where the harness's request and the production request differ."""
+    if isinstance(built, dict) and isinstance(expected, dict):
+        b, e = cast(dict[str, Any], built), cast(dict[str, Any], expected)
+        return [d for k in sorted(b.keys() | e.keys()) for d in request_differences(b.get(k), e.get(k), f"{path}.{k}" if path else k)]
+    if isinstance(built, list) and isinstance(expected, list) and len(cast(list[Any], built)) == len(cast(list[Any], expected)):
+        pairs = zip(cast(list[Any], built), cast(list[Any], expected))
+        return [d for i, (b, e) in enumerate(pairs) for d in request_differences(b, e, f"{path}[{i}]")]
+    return [] if built == expected else [path]
