@@ -2,10 +2,12 @@ import json
 import sys
 from pathlib import Path
 
+import httpx2 as httpx
 import pytest
 
 from tests.fakes import FakeModel, unused_model
 from whetstone.entry.cli import production_model, run
+from whetstone.platform.anthropic import anthropic_model
 
 
 def test_no_workspace_found(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -225,3 +227,16 @@ def test_missing_generation_key_names_the_variable_and_file(
     assert code == 2
     assert f"GENERATION_API_KEY is not set in {tmp_path / '.env'}" in captured.err
     assert "sk-" not in captured.out + captured.err
+
+
+def test_a_failed_model_call_exits_2_without_the_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_suite(tmp_path, {"a": "Rest today."})
+    unauthorized = httpx.MockTransport(lambda _r: httpx.Response(401, json={"type": "error", "error": {"type": "authentication_error", "message": "invalid x-api-key"}}))
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=lambda _settings: anthropic_model("sk-wrong-key-123", transport=unauthorized))
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "model call failed on case a" in captured.err
+    assert "sk-wrong-key-123" not in captured.out + captured.err
