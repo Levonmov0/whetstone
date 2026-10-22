@@ -48,7 +48,14 @@ def run(argv: list[str], make_model: Callable[[PromptSettings], ModelCall]) -> i
     results: list[CaseResult] = []
     for case_id, request in requests:
         output = model(request).output
-        results.append(CaseResult(case_id, {name: check(output) for name, check in checks.items()}))
+        failures: dict[str, list[str]] = {}
+        for name, check in checks.items():
+            try:
+                failures[name] = check(output)
+            except Exception as e:  # a check is the workspace's own code; any crash means the suite is broken
+                print(f"check {name} crashed on case {case_id}: {e}", file=sys.stderr)
+                return 2
+        results.append(CaseResult(case_id, failures))
     lines, code = report(results, list(checks))
     print("\n".join(lines))
     return code
