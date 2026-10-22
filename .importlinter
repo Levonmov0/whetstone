@@ -25,7 +25,7 @@ forbidden_modules =
     whetstone.platform
     anthropic
     dotenv
-    httpx
+    httpx2
     os
     subprocess
     pathlib
@@ -40,4 +40,4 @@ source_modules =
 forbidden_modules =
     anthropic
     dotenv
-    httpx
+    httpx2
