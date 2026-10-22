@@ -5,13 +5,15 @@ from pathlib import Path
 from typing import Any
 
 from whetstone.features.cases.load import load_cases
+from whetstone.features.checks.core import CaseResult, report
+from whetstone.features.checks.load import load_checks
 from whetstone.features.workspace.core import request_problem
-from whetstone.features.workspace.load import find_workspace, load_prompt, prompt_names
+from whetstone.features.workspace.load import PromptSettings, find_workspace, load_prompt, prompt_names
 from whetstone.platform.harness import HarnessError, build_request
 from whetstone.platform.model import ModelCall
 
 
-def run(argv: list[str], make_model: Callable[[Any], ModelCall]) -> int:
+def run(argv: list[str], make_model: Callable[[PromptSettings], ModelCall]) -> int:
     parser = argparse.ArgumentParser(prog="whetstone")
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("check", help="run every case through the prompt and its checks")
@@ -28,6 +30,8 @@ def run(argv: list[str], make_model: Callable[[Any], ModelCall]) -> int:
         print(f"no prompt named {args.prompt}; prompts: {', '.join(names)}", file=sys.stderr)
         return 2
     prompt = load_prompt(workspace, args.prompt)
+    # Every request is built and vetted before the first model call, so a broken harness costs nothing.
+    requests: list[tuple[str, Any]] = []
     for case_id, case_json in load_cases(prompt.dir):
         try:
             request = build_request(prompt.harness, workspace, case_json)
@@ -37,4 +41,14 @@ def run(argv: list[str], make_model: Callable[[Any], ModelCall]) -> int:
         if problem := request_problem(request, case_id, prompt.model, prompt.editable):
             print(problem, file=sys.stderr)
             return 2
-    return 0
+        requests.append((case_id, request))
+
+    model = make_model(prompt)
+    checks = load_checks(prompt.dir)
+    results: list[CaseResult] = []
+    for case_id, request in requests:
+        output = model(request).output
+        results.append(CaseResult(case_id, {name: check(output) for name, check in checks.items()}))
+    lines, code = report(results, list(checks))
+    print("\n".join(lines))
+    return code
