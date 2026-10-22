@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.fakes import unused_model
+from tests.fakes import FakeModel, unused_model
 from whetstone.entry.cli import run
 
 
@@ -141,3 +141,48 @@ def test_editable_part_must_appear_exactly_once(
 
     assert code == 2
     assert f"editable part found {times} times in request for case first-day" in capsys.readouterr().err
+
+
+ECHO_HARNESS = """
+import json, sys
+case = json.load(sys.stdin)
+print(json.dumps({"model": "fake-model", "max_tokens": 50, "system": "Be brief.",
+                  "messages": [{"role": "user", "content": case["text"]}]}))
+"""
+
+CHECKS = {
+    "length": "def check(output):\n    return [f'Is {len(output)} characters (max 40).'] if len(output) > 40 else []\n",
+    "banned": "def check(output):\n    return ['Uses banned term HRV.'] if 'HRV' in output else []\n",
+}
+
+
+def make_suite(tmp_path: Path, cases: dict[str, str]) -> Path:
+    prompt = make_prompt(make_workspace(tmp_path), ECHO_HARNESS, {k: {"text": v} for k, v in cases.items()})
+    (prompt / "checks").mkdir()
+    for name, source in CHECKS.items():
+        (prompt / "checks" / f"{name}.py").write_text(source)
+    return prompt
+
+
+def echo_model() -> FakeModel:
+    return FakeModel(lambda request: request["messages"][0]["content"])
+
+
+def test_check_reports_each_case_and_check(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_suite(tmp_path, {"a": "Rest today.", "b": "Your HRV is low."})
+    model = echo_model()
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=lambda _settings: model)
+
+    out = capsys.readouterr().out.splitlines()
+    assert code == 1
+    assert "PASS a" in out
+    assert "FAIL b: banned: Uses banned term HRV." in out
+    assert "length: 2/2" in out
+    assert "banned: 1/2" in out
+    assert "1 of 2 cases pass every check" in out
+    assert model.requests == [
+        {"model": "fake-model", "max_tokens": 50, "system": "Be brief.", "messages": [{"role": "user", "content": text}]}
+        for text in ("Rest today.", "Your HRV is low.")
+    ]
