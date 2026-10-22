@@ -3,7 +3,11 @@ name = "whetstone"
 version = "0.1.0"
 description = "Test-driven prompt optimization, as a Claude Code plugin"
 requires-python = ">=3.12"
-dependencies = ["anthropic", "python-dotenv"]
+dependencies = [
+    "anthropic",
+    "httpx2>=2.16.0",
+    "python-dotenv",
+]
 
 [project.scripts]
 whetstone = "whetstone.entry.cli:main"
