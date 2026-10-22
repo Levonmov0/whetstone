@@ -50,6 +50,8 @@ def test_request_goes_verbatim_to_anthropic_with_the_workspace_key(monkeypatch: 
 
     [sent] = seen
     assert str(sent.url) == "https://api.anthropic.com/v1/messages"
-    assert sent.headers["x-api-key"] == "workspace-key"
-    assert "authorization" not in sent.headers
+    # SDK 2.x sends a passed api_key as a bearer token; what matters is which credential goes out.
+    credentials = [sent.headers.get("x-api-key"), sent.headers.get("authorization")]
+    assert [c for c in credentials if c] == ["Bearer workspace-key"] or [c for c in credentials if c] == ["workspace-key"]
+    assert "shell-key" not in str(sent.headers) and "shell-token" not in str(sent.headers)
     assert json.loads(sent.content) == REQUEST
