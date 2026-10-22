@@ -9,6 +9,8 @@ from whetstone.features.checks.core import CaseResult, report
 from whetstone.features.checks.load import load_checks
 from whetstone.features.workspace.core import request_problem
 from whetstone.features.workspace.load import PromptSettings, find_workspace, load_prompt, prompt_names
+from whetstone.platform.anthropic import anthropic_model
+from whetstone.platform.config import MissingKey, load_key
 from whetstone.platform.harness import HarnessError, build_request
 from whetstone.platform.model import ModelCall
 
@@ -43,7 +45,11 @@ def run(argv: list[str], make_model: Callable[[PromptSettings], ModelCall]) -> i
             return 2
         requests.append((case_id, request))
 
-    model = make_model(prompt)
+    try:
+        model = make_model(prompt)
+    except MissingKey as e:
+        print(e, file=sys.stderr)
+        return 2
     checks = load_checks(prompt.dir)
     results: list[CaseResult] = []
     for case_id, request in requests:
@@ -62,4 +68,4 @@ def run(argv: list[str], make_model: Callable[[PromptSettings], ModelCall]) -> i
 
 
 def production_model(settings: PromptSettings) -> ModelCall:
-    raise NotImplementedError
+    return anthropic_model(load_key(settings.workspace, "GENERATION_API_KEY"))

@@ -16,6 +16,7 @@ def prompt_names(workspace: Path) -> list[str]:
 
 @dataclass(frozen=True)
 class PromptSettings:
+    workspace: Path
     dir: Path
     harness: str
     model: str
@@ -25,4 +26,4 @@ class PromptSettings:
 def load_prompt(workspace: Path, name: str) -> PromptSettings:
     prompt_dir = workspace / "prompts" / name
     raw = tomllib.loads((prompt_dir / "prompt.toml").read_text())
-    return PromptSettings(dir=prompt_dir, harness=raw["harness"], model=raw["model"], editable=raw["editable"])
+    return PromptSettings(workspace=workspace, dir=prompt_dir, harness=raw["harness"], model=raw["model"], editable=raw["editable"])
