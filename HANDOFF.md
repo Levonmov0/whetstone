@@ -41,7 +41,7 @@ It's TDD for prompts:
 - **Developers first.** Users are Claude Code users. Non-developers are out of scope for now.
 - **One swipe app, themed per repo** (revised 2026-10-22). Whetstone ships one swipe app; `/whetstone:init` extracts the repo's design tokens into a theme, falling back to Whetstone's own. The phone opens it over the local network. Swipes are written back as labels.
 - **Never auto-promote.** Whetstone stops at a `candidate` prompt, and a person promotes it.
-- **v1 design:** settled in a grilling session on 2026-10-22. The full decision set is the v1 spec issue on GitHub (`Levonmov0/whetstone`).
+- **v1 design:** settled in a grilling session on 2026-10-22. The full decision set is the v1 spec: https://github.com/Levonmov0/whetstone/issues/1
 
 ## Open decisions
 
