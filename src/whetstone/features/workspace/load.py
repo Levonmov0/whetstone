@@ -25,7 +25,7 @@ class PromptSettings:
     harness: str
     provider: str
     model: str
-    editable: str
+    editable: str | None  # None until init marks it; check needs it, verify-harness does not
 
 
 def load_prompt(workspace: Path, name: str) -> PromptSettings:
@@ -35,9 +35,9 @@ def load_prompt(workspace: Path, name: str) -> PromptSettings:
         raw = tomllib.loads(settings_file.read_text())
     except (OSError, tomllib.TOMLDecodeError) as e:
         raise PromptError(f"{settings_file}: invalid TOML: {e}") from None
-    for key in ("harness", "provider", "model", "editable"):
+    for key in ("harness", "provider", "model"):
         if not isinstance(raw.get(key), str):
             raise PromptError(f'{settings_file}: missing "{key}"')
     return PromptSettings(
-        workspace=workspace, dir=prompt_dir, harness=raw["harness"], provider=raw["provider"], model=raw["model"], editable=raw["editable"]
+        workspace=workspace, dir=prompt_dir, harness=raw["harness"], provider=raw["provider"], model=raw["model"], editable=raw.get("editable")
     )

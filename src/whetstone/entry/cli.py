@@ -65,6 +65,8 @@ def build(prompt: PromptSettings, case_id: str, case_json: str) -> Any:
 
 
 def check_prompt(prompt: PromptSettings, make_model: MakeModel) -> int:
+    if prompt.editable is None:
+        raise Stop(f'{prompt.dir / "prompt.toml"} has no "editable" part yet')
     # Every request is built and vetted before the first model call, so a broken harness costs nothing.
     requests: list[tuple[str, Any]] = []
     for case_id, case_json in load_cases(prompt.dir):
