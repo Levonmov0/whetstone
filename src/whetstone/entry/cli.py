@@ -50,7 +50,7 @@ def find_prompt(explicit_workspace: Path | None, name: str) -> PromptSettings:
         raise Stop("no Whetstone workspace found; run /whetstone:init or pass --workspace")
     names = prompt_names(workspace)
     if name not in names:
-        raise Stop(f"no prompt named {name}; prompts: {', '.join(names)}")
+        raise Stop(f"no prompt named {name}; prompts: {', '.join(names) or 'none yet'}")
     try:
         return load_prompt(workspace, name)
     except PromptError as e:
@@ -68,8 +68,11 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel) -> int:
     if prompt.editable is None:
         raise Stop(f'{prompt.dir / "prompt.toml"} has no "editable" part yet')
     # Every request is built and vetted before the first model call, so a broken harness costs nothing.
+    cases = load_cases(prompt.dir)
+    if not cases:
+        raise Stop(f"no cases in {prompt.dir / 'cases'}")
     requests: list[tuple[str, Any]] = []
-    for case_id, case_json in load_cases(prompt.dir):
+    for case_id, case_json in cases:
         request = build(prompt, case_id, case_json)
         if problem := request_problem(request, case_id, prompt.model, prompt.editable):
             raise Stop(problem)

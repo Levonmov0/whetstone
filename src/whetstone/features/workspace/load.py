@@ -11,7 +11,8 @@ def find_workspace(cwd: Path, explicit: Path | None) -> Path | None:
 
 
 def prompt_names(workspace: Path) -> list[str]:
-    return sorted(p.name for p in (workspace / "prompts").iterdir() if p.is_dir())
+    prompts = workspace / "prompts"
+    return sorted(p.name for p in prompts.iterdir() if p.is_dir()) if prompts.is_dir() else []
 
 
 class PromptError(Exception):
