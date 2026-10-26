@@ -1,7 +1,9 @@
 """Background processes that outlive the command, and the Claude session, that started them."""
 
 import os
+import signal
 import subprocess
+import time
 from pathlib import Path
 
 
@@ -30,3 +32,14 @@ def is_running(pid: int) -> bool:
     except ProcessLookupError:
         return False
     return True
+
+
+def stop(pid: int, timeout: float = 5) -> None:
+    """End the process and wait for it to go, so its port is free when this returns."""
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    deadline = time.monotonic() + timeout
+    while is_running(pid) and time.monotonic() < deadline:
+        time.sleep(0.05)

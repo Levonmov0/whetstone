@@ -21,7 +21,7 @@ from whetstone.features.workspace.core import request_differences, request_probl
 from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, prompt_names, repo_providers
 from whetstone.platform.anthropic import anthropic_model
 from whetstone.platform.config import MissingKey, load_key
-from whetstone.platform.daemon import is_running, start_detached, write_private
+from whetstone.platform.daemon import is_running, start_detached, stop, write_private
 from whetstone.platform.harness import HarnessError, build_request
 from whetstone.platform.model import ModelCall, ModelError
 
@@ -43,10 +43,13 @@ def run(argv: list[str], make_model: MakeModel) -> int:
     settle = commands.add_parser("settle", help="record your call on a card graders disagree on")
     serve = commands.add_parser("serve", help="start the swipe server in the background and show its QR code")
     source = commands.add_parser("add-source", help="make a private folder for one real-data source and record its consent")
-    for command in (check, verify, source, disagree, settle, serve):
+    for command in (check, verify, source, disagree, settle):
         command.add_argument("prompt")
+    serve.add_argument("prompt", nargs="?")
+    serve.add_argument("--stop", action="store_true", help="stop the running swipe server")
+    for command in (check, verify, source, disagree, settle, serve):
         command.add_argument("--workspace", type=Path, help="the workspace folder, when it is not ./ or ./whetstone/")
-    serve.add_argument("--host", required=True, help="the address to listen on")
+    serve.add_argument("--host", help="the address to listen on")
     settle.add_argument("card", help="the card id, as disagreements prints it")
     settle.add_argument("verdict", choices=["good", "bad"])
     settle.add_argument("--grader", required=True, help="your name")
@@ -57,6 +60,8 @@ def run(argv: list[str], make_model: MakeModel) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if args.command == "serve" and args.stop:
+            return stop_server(args.workspace)
         prompt = find_prompt(args.workspace, args.prompt)
         if args.command == "verify-harness":
             return verify_harness(prompt, args.case, args.expected)
@@ -79,9 +84,7 @@ def run(argv: list[str], make_model: MakeModel) -> int:
 
 
 def find_prompt(explicit_workspace: Path | None, name: str) -> PromptSettings:
-    workspace = find_workspace(Path.cwd(), explicit_workspace)
-    if workspace is None:
-        raise Stop("no Whetstone workspace found; run /whetstone:init or pass --workspace")
+    workspace = workspace_or_stop(explicit_workspace)
     names = prompt_names(workspace)
     if name not in names:
         raise Stop(f"no prompt named {name}; prompts: {', '.join(names) or 'none yet'}")
@@ -89,6 +92,13 @@ def find_prompt(explicit_workspace: Path | None, name: str) -> PromptSettings:
         return load_prompt(workspace, name)
     except PromptError as e:
         raise Stop(str(e)) from None
+
+
+def workspace_or_stop(explicit_workspace: Path | None) -> Path:
+    workspace = find_workspace(Path.cwd(), explicit_workspace)
+    if workspace is None:
+        raise Stop("no Whetstone workspace found; run /whetstone:init or pass --workspace")
+    return workspace
 
 
 def build(prompt: PromptSettings, case_id: str, case_json: str) -> Any:
@@ -192,6 +202,17 @@ def start_server(prompt: PromptSettings, host: str) -> int:
     url = f"http://{host}:{port}/#t={token}"  # after the #, so the token is never sent in a URL or logged
     write_private(state_file, json.dumps({"pid": pid, "host": host, "port": port, "prompt": prompt.dir.name, "token": token, "url": url}))
     show_link(url)
+    return 0
+
+
+def stop_server(explicit_workspace: Path | None) -> int:
+    state_file = workspace_or_stop(explicit_workspace) / ".whetstone" / "serve.json"
+    if not state_file.is_file():
+        print("no server running")
+        return 0
+    stop(json.loads(state_file.read_text())["pid"])
+    state_file.unlink()
+    print("stopped the swipe server")
     return 0
 
 
