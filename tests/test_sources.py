@@ -53,3 +53,17 @@ def test_add_source_refuses_bad_arguments(
     assert code == 2
     assert reason in capsys.readouterr().err
     assert not (prompt / "cases" / "private").exists()
+
+
+def test_add_source_never_overwrites_a_consent_record(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today."})
+    monkeypatch.chdir(tmp_path)
+    run(["add-source", "daily", "diary", "--consented-by", "Levon", "--consented-on", "2026-10-26"], make_model=unused_model)
+    consent = prompt / "cases" / "private" / "diary" / "consent.toml"
+    before = consent.read_text()
+
+    code = run(["add-source", "daily", "diary", "--consented-by", "Hampus", "--consented-on", "2026-10-27"], make_model=unused_model)
+
+    assert code == 2
+    assert f"source diary already exists; its consent is in {consent}" in capsys.readouterr().err
+    assert consent.read_text() == before
