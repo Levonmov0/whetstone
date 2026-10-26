@@ -1,10 +1,14 @@
 import argparse
 import json
+import secrets
+import socket
 import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
+
+import qrcode
 
 from whetstone.features.cases.core import provider_refusal
 from whetstone.features.cases.load import CaseError, load_cases
@@ -12,11 +16,12 @@ from whetstone.features.cases.sources import SourceError, add_source
 from whetstone.features.checks.core import CaseResult, report
 from whetstone.features.checks.load import CheckLoadError, load_checks
 from whetstone.features.grading.core import disagreements
-from whetstone.features.grading.store import add_label, load_labels, save_deck
+from whetstone.features.grading.store import add_label, load_labels, private_dir, save_deck
 from whetstone.features.workspace.core import request_differences, request_problem
 from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, prompt_names, repo_providers
 from whetstone.platform.anthropic import anthropic_model
 from whetstone.platform.config import MissingKey, load_key
+from whetstone.platform.daemon import start_detached, write_private
 from whetstone.platform.harness import HarnessError, build_request
 from whetstone.platform.model import ModelCall, ModelError
 
@@ -36,10 +41,12 @@ def run(argv: list[str], make_model: MakeModel) -> int:
     verify.add_argument("--expected", type=Path, required=True, help="a JSON file holding the request production sent")
     disagree = commands.add_parser("disagreements", help="list the cards graders disagree on")
     settle = commands.add_parser("settle", help="record your call on a card graders disagree on")
+    serve = commands.add_parser("serve", help="start the swipe server in the background and show its QR code")
     source = commands.add_parser("add-source", help="make a private folder for one real-data source and record its consent")
-    for command in (check, verify, source, disagree, settle):
+    for command in (check, verify, source, disagree, settle, serve):
         command.add_argument("prompt")
         command.add_argument("--workspace", type=Path, help="the workspace folder, when it is not ./ or ./whetstone/")
+    serve.add_argument("--host", required=True, help="the address to listen on")
     settle.add_argument("card", help="the card id, as disagreements prints it")
     settle.add_argument("verdict", choices=["good", "bad"])
     settle.add_argument("--grader", required=True, help="your name")
@@ -55,6 +62,8 @@ def run(argv: list[str], make_model: MakeModel) -> int:
             return verify_harness(prompt, args.case, args.expected)
         if args.command == "disagreements":
             return list_disagreements(prompt)
+        if args.command == "serve":
+            return start_server(prompt, args.host)
         if args.command == "settle":
             return settle_card(prompt, args.card, args.verdict, args.grader, args.note)
         if args.command == "add-source":
@@ -161,6 +170,28 @@ def verify_harness(prompt: PromptSettings, case_id: str, expected_file: Path) ->
         return 0
     print("\n".join(f"{path} differs" for path in differences))
     return 1
+
+
+def start_server(prompt: PromptSettings, host: str) -> int:
+    token = secrets.token_urlsafe(32)
+    # This process binds the socket and hands it over, so the port is known before the server starts and never races.
+    listener = socket.create_server((host, 0))
+    port = listener.getsockname()[1]
+    folder = private_dir(prompt.workspace)
+    argv = [sys.executable, "-m", "whetstone.entry.serve_main", str(prompt.workspace), prompt.dir.name, str(listener.fileno())]
+    pid = start_detached(argv, token + "\n", folder / "server.log", pass_fds=(listener.fileno(),))
+    listener.close()
+    url = f"http://{host}:{port}/#t={token}"  # after the #, so the token is never sent in a URL or logged
+    write_private(folder / "serve.json", json.dumps({"pid": pid, "host": host, "port": port, "prompt": prompt.dir.name, "token": token, "url": url}))
+    show_link(url)
+    return 0
+
+
+def show_link(url: str) -> None:
+    qr = qrcode.QRCode(border=1)
+    qr.add_data(url)
+    qr.print_ascii(out=sys.stdout, invert=True)
+    print(url)
 
 
 def list_disagreements(prompt: PromptSettings) -> int:
