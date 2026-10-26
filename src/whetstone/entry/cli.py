@@ -2,12 +2,11 @@ import argparse
 import json
 import sys
 from collections.abc import Callable
-from datetime import date
 from pathlib import Path
 from typing import Any, cast
 
 from whetstone.features.cases.load import load_cases
-from whetstone.features.cases.sources import add_source
+from whetstone.features.cases.sources import SourceError, add_source
 from whetstone.features.checks.core import CaseResult, report
 from whetstone.features.checks.load import CheckLoadError, load_checks
 from whetstone.features.workspace.core import request_differences, request_problem
@@ -45,7 +44,10 @@ def run(argv: list[str], make_model: MakeModel) -> int:
         if args.command == "verify-harness":
             return verify_harness(prompt, args.case, args.expected)
         if args.command == "add-source":
-            add_source(prompt.dir, args.source, args.consented_by, date.fromisoformat(args.consented_on))
+            try:
+                add_source(prompt.dir, args.source, args.consented_by, args.consented_on)
+            except SourceError as e:
+                raise Stop(str(e)) from None
             return 0
         return check_prompt(prompt, make_model)
     except Stop as e:
