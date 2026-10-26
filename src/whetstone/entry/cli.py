@@ -21,7 +21,7 @@ from whetstone.features.workspace.core import request_differences, request_probl
 from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, phone_access, prompt_names, repo_providers
 from whetstone.platform.anthropic import anthropic_model
 from whetstone.platform.config import MissingKey, load_key
-from whetstone.platform.daemon import is_running, start_detached, stop, write_private
+from whetstone.platform.daemon import command_line, is_running, start_detached, stop, write_private
 from whetstone.platform.harness import HarnessError, build_request
 from whetstone.platform.model import ModelCall, ModelError
 from whetstone.platform.network import TailscaleMissing, lan_address, tailscale_address
@@ -183,16 +183,28 @@ def verify_harness(prompt: PromptSettings, case_id: str, expected_file: Path) ->
     return 1
 
 
+def running_server(workspace: Path) -> dict[str, Any] | None:
+    """The state of this workspace's swipe server when it is still running, else None (and stale state is removed).
+    A pid alone isn't proof: the OS reuses them, so the process must also be our server for this workspace."""
+    state_file = workspace / ".whetstone" / "serve.json"
+    if not state_file.is_file():
+        return None
+    state = json.loads(state_file.read_text())
+    command = command_line(state["pid"]) if is_running(state["pid"]) else ""
+    if "whetstone.entry.serve_main" in command and str(workspace) in command:
+        return state
+    state_file.unlink()
+    return None
+
+
 def start_server(prompt: PromptSettings, host: str) -> int:
     folder = private_dir(prompt.workspace)
     state_file = folder / "serve.json"
-    if state_file.is_file():
-        state = json.loads(state_file.read_text())
-        if is_running(state["pid"]):
-            if state["prompt"] != prompt.dir.name:
-                raise Stop(f"already serving {state['prompt']}; run whetstone serve --stop first")
-            show_link(state["url"])
-            return 0
+    if state := running_server(prompt.workspace):
+        if state["prompt"] != prompt.dir.name:
+            raise Stop(f"already serving {state['prompt']}; run whetstone serve --stop first")
+        show_link(state["url"])
+        return 0
     token = secrets.token_urlsafe(32)
     # This process binds the socket and hands it over, so the port is known before the server starts and never races.
     listener = socket.create_server((host, 0))
@@ -223,12 +235,13 @@ def phone_host(workspace: Path) -> str:
 
 
 def stop_server(explicit_workspace: Path | None) -> int:
-    state_file = workspace_or_stop(explicit_workspace) / ".whetstone" / "serve.json"
-    if not state_file.is_file():
+    workspace = workspace_or_stop(explicit_workspace)
+    state = running_server(workspace)
+    if state is None:
         print("no server running")
         return 0
-    stop(json.loads(state_file.read_text())["pid"])
-    state_file.unlink()
+    stop(state["pid"])
+    (workspace / ".whetstone" / "serve.json").unlink(missing_ok=True)
     print("stopped the swipe server")
     return 0
 

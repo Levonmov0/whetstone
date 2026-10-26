@@ -56,3 +56,9 @@ def _alive(pid: int) -> bool:
     except ChildProcessError:
         pass  # not our child: someone else reaps it
     return is_running(pid)
+
+
+def command_line(pid: int) -> str:
+    """The process's command line, or "" when there is no such process."""
+    result = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True)
+    return result.stdout.strip()
