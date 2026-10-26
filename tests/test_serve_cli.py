@@ -159,3 +159,15 @@ def test_no_lan_address_says_to_pass_host(workspace: Path, monkeypatch: pytest.M
 
     assert code == 2
     assert "no Wi-Fi or LAN address found; pass --host" in capsys.readouterr().err
+
+
+def test_the_server_log_never_holds_the_token(workspace: Path) -> None:
+    serve(workspace, "daily", "--host", "127.0.0.1")
+    state = json.loads((workspace / ".whetstone" / "serve.json").read_text())
+    httpx.get(f"http://127.0.0.1:{state['port']}/api/cards", headers={"Authorization": f"Bearer {state['token']}", "X-Grader": "Levon"})
+    httpx.get(f"http://127.0.0.1:{state['port']}/api/cards", headers={"Authorization": "Bearer wrong"})
+
+    log = (workspace / ".whetstone" / "server.log").read_text()
+
+    assert "GET /api/cards" in log
+    assert state["token"] not in log
