@@ -84,7 +84,8 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
         if card is None:
             return refuse(f"no card {body.get('card_id')} in the current deck")
         swipe = {k: body[k] for k in ("grader", "verdict", "reasons", "note")}
-        swipe["reasons"] = swipe_reasons(body["verdict"], body["reasons"], card["caught_by"])
+        by_code = [name for name in card["caught_by"] if name not in card.get("judges", [])]
+        swipe["reasons"] = swipe_reasons(body["verdict"], body["reasons"], by_code)
         add_label(prompt.dir, {**card, "deck_id": deck["id"], **swipe, "at": datetime.now(UTC).isoformat()})
         return JSONResponse({}, status_code=201)
 

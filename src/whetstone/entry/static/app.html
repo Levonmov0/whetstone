@@ -263,8 +263,10 @@ function direction(dx, dy, threshold) {
 function decide(verdict) {
   if (busy) return;
   const card = cards[0];
-  // A problem a check already catches needs no words from the grader.
-  if (verdict === "bad" && !card.caught_by.length) return askWhy(card);
+  // A problem a code check already catches needs no words from the grader. A judge's catch still asks: the
+  // grader's own reason is what the judge is measured against.
+  const byCode = card.caught_by.filter((name) => !(card.judges || []).includes(name));
+  if (verdict === "bad" && !byCode.length) return askWhy(card);
   send(card, { verdict, reasons: [], note: "" });
 }
 

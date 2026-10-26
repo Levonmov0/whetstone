@@ -206,9 +206,13 @@ def prepare_suite(prompt: PromptSettings, make_model: MakeModel, make_judge: Mak
     return Suite(requests, checks, judges, ask, model)
 
 
-def caught(failures: dict[str, list[str]]) -> list[str]:
-    """The checks that caught an output, as its card shows them."""
-    return [name.removesuffix(" (judge)") for name, messages in failures.items() if messages]
+def card(case_id: str, case_input: Any, output: Any, failures: dict[str, list[str]]) -> dict[str, Any]:
+    """An output as a card: the checks that caught it, and, when any are judges, which ones. A judge's catch is never
+    taken as the grader's reason, or agreement would count the judge as agreeing with itself."""
+    made: dict[str, Any] = {"case_id": case_id, "input": case_input, "output": output}
+    made["caught_by"] = [name.removesuffix(" (judge)") for name, messages in failures.items() if messages]
+    judges = [name.removesuffix(" (judge)") for name, messages in failures.items() if messages and name.endswith(" (judge)")]
+    return made | ({"judges": judges} if judges else {})
 
 
 def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: MakeJudge) -> int:
@@ -223,7 +227,7 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
             raise Stop(f"model call failed on case {case_id}: {e}") from None
         failures = suite.score(case_id, case_input, output)
         results.append(CaseResult(case_id, failures))
-        cards.append({"case_id": case_id, "input": case_input, "output": output, "caught_by": caught(failures)})
+        cards.append(card(case_id, case_input, output, failures))
     save_deck(prompt.workspace, prompt.dir.name, cards)
     lines, code = report(results, suite.check_names())
     print("\n".join(lines))
@@ -253,7 +257,7 @@ def run_baseline(prompt: PromptSettings, others: list[str], make_model: MakeMode
             used = (used[0] + result.input_tokens, used[1] + result.output_tokens)
             failures = suite.score(case_id, case_input, result.output)
             runs[model].append(failures)
-            cards.append({"case_id": case_id, "input": case_input, "output": result.output, "caught_by": caught(failures), "tag": secrets.token_hex(4)})
+            cards.append(card(case_id, case_input, result.output, failures) | {"tag": secrets.token_hex(4)})
             sources[f"{case_id}:{cards[-1]['tag']}"] = model
         tokens[model] = used
     random.shuffle(cards)
@@ -480,7 +484,7 @@ def settle_card(prompt: PromptSettings, card: str, verdict: str, grader: str, no
         raise Stop(f"no labels for card {card}")
     # The call keeps the reasons of the swipe it sides with, so the card still counts for that rule's judge.
     sided = [label for label in swiped if label["verdict"] == verdict]
-    reasons = sided[-1]["reasons"] if sided else []
+    reasons: list[str] = sided[-1]["reasons"] if sided else []
     swipe: dict[str, Any] = {"grader": grader, "verdict": verdict, "reasons": reasons, "note": note, "settled": True, "at": datetime.now(UTC).isoformat()}
     add_label(prompt.dir, {**swiped[-1], **swipe})
     return 0
