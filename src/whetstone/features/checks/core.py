@@ -121,5 +121,31 @@ def agreement(labels: list[dict[str, Any]], verdicts: dict[str, bool], rule: set
     return {grader: Agreement(Side(row[0], row[1]), Side(row[2], row[3])) for grader, row in rows.items()}
 
 
+TRUSTED, WARNED = 90, 80  # percent agreement on each side
+
+
 def judge_gate(agreements: dict[str, Agreement], minimum: int = 5) -> tuple[str, list[str]]:
-    raise NotImplementedError
+    """Whether a judge can be optimized against: "trusted", "warn" or "untrusted", with advice for each shortfall.
+    Each side counts on its own, so a judge that passes everything can't look accurate. Every grader with at least
+    `minimum` swipes on a side must clear the bar there, and some grader must have that many."""
+    untrusted: list[str] = []
+    warned: list[str] = []
+    for side, cards in (("good", "good cards"), ("bad", "bad cards for this rule")):
+        counted = {grader: getattr(row, side) for grader, row in agreements.items() if getattr(row, side).total >= minimum}
+        if not counted:
+            most = max((getattr(row, side).total for row in agreements.values()), default=0)
+            swipes = "good swipes" if side == "good" else "bad swipes for this rule"
+            untrusted.append(f"only {most} {swipes}; swipe at least {minimum - most} more")
+        for grader, s in counted.items():
+            percent = round(100 * s.agreed / s.total)
+            if 100 * s.agreed < WARNED * s.total:
+                untrusted.append(
+                    f"fails outputs {grader} called good ({percent}%); sharpen the rubric"
+                    if side == "good"
+                    else f"misses problems {grader} flagged ({percent}%); sharpen the rubric or swipe more examples"
+                )
+            elif 100 * s.agreed < TRUSTED * s.total:
+                warned.append(f"agrees with {grader} on {percent}% of {cards}; below {TRUSTED}% is a warning")
+    if untrusted:
+        return "untrusted", untrusted
+    return ("warn", warned) if warned else ("trusted", [])
