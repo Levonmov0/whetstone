@@ -3,11 +3,12 @@
 import hmac
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 from collections.abc import Awaitable, Callable
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Route
 
 from whetstone.features.grading.core import swipe_problem, swipe_reasons
@@ -17,6 +18,7 @@ from whetstone.features.workspace.load import PromptSettings
 Handler = Callable[[Request], Awaitable[Response]]
 
 MAX_BODY = 64 * 1024
+STATIC = Path(__file__).parent / "static"
 
 
 def refuse(error: str) -> Response:
@@ -70,4 +72,12 @@ def make_app(prompt: PromptSettings, token: str) -> Starlette:
         add_label(prompt.dir, {**card, "deck_id": deck["id"], **swipe, "at": datetime.now(UTC).isoformat()})
         return JSONResponse({}, status_code=201)
 
-    return Starlette(routes=[Route("/api/cards", guarded(cards)), Route("/api/swipes", guarded(swipes), methods=["POST"])])
+    async def app_page(request: Request) -> Response:
+        return HTMLResponse((STATIC / "app.html").read_text())
+
+    async def theme(request: Request) -> Response:
+        workspace_theme = prompt.workspace / "theme.css"
+        css = workspace_theme if workspace_theme.is_file() else STATIC / "default.css"
+        return Response(css.read_text(), media_type="text/css")
+
+    return Starlette(routes=[Route("/", app_page), Route("/theme.css", theme), Route("/api/cards", guarded(cards)), Route("/api/swipes", guarded(swipes), methods=["POST"])])

@@ -21,7 +21,7 @@ Done when `whetstone.toml` and `.gitignore` exist, and `git check-ignore <ws>/.e
 
 ## 2. Theme
 
-Find the repo's design tokens: CSS variables, Tailwind config, a theme or tokens file, a design system package. Map them onto the variables in `${CLAUDE_PLUGIN_ROOT}/theme/default.css`, and write `theme.css` with only the values you found. With no tokens, copy the default theme and say so.
+Find the repo's design tokens: CSS variables, Tailwind config, a theme or tokens file, a design system package. Map them onto the variables in `${CLAUDE_PLUGIN_ROOT}/src/whetstone/entry/static/default.css`, and write `theme.css` with only the values you found. With no tokens, copy the default theme and say so.
 
 Done when `theme.css` exists and every value in it names its source file in a comment, or the file says it is the default.
 
