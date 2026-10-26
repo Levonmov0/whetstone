@@ -301,7 +301,11 @@ def show_link(url: str) -> None:
 
 
 def list_reasons(prompt: PromptSettings) -> int:
-    covered = covered_reasons(code_check_names(prompt.dir), load_judges(prompt.dir))
+    try:
+        judges = load_judges(prompt.dir)
+    except CheckLoadError as e:
+        raise Stop(str(e)) from None
+    covered = covered_reasons(code_check_names(prompt.dir), judges)
     uncovered = uncovered_reasons(load_labels(prompt.dir), covered)
     print("\n".join(f"{count}  {reason}" for reason, count in uncovered) if uncovered else "every reason has a check")
     return 0
