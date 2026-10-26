@@ -7,6 +7,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from tests.test_check_cli import echo_model, make_suite
+from tests.test_sources import add_diary_case
 from whetstone.entry.cli import run
 from whetstone.entry.server import make_app
 from whetstone.features.workspace.load import load_prompt
@@ -157,3 +158,20 @@ def test_a_malformed_body_is_refused(content: str, error: str, tmp_path: Path, m
     assert response.status_code == 400
     assert response.json() == {"error": error}
     assert stored_labels(tmp_path) == []
+
+
+def test_a_swipe_on_a_private_card_stays_in_its_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today."})
+    add_diary_case(prompt)
+    (tmp_path / "whetstone.toml").write_text('repo_providers = ["anthropic"]\n')
+    monkeypatch.chdir(tmp_path)
+    run(["check", "daily"], make_model=lambda _settings: echo_model())
+    client = TestClient(make_app(load_prompt(tmp_path, "daily"), TOKEN))
+    private_card = client.get("/api/cards", headers={**AUTH, "X-Grader": "Levon"}).json()["cards"][1]
+
+    client.post("/api/swipes", headers=AUTH, json={"card_id": private_card["card_id"], **GOOD_SWIPE})
+
+    private_labels = (prompt / "cases" / "private" / "diary" / "labels.jsonl").read_text().splitlines()
+    assert [json.loads(line)["case_id"] for line in private_labels] == ["private/diary/day1"]
+    assert stored_labels(tmp_path) == []
+    assert card_ids(client.get("/api/cards", headers={**AUTH, "X-Grader": "Levon"})) == ["a"]
