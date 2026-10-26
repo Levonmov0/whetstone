@@ -233,7 +233,12 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
 def run_baseline(prompt: PromptSettings, others: list[str], make_model: MakeModel, make_judge: MakeJudge) -> int:
     """The prompt on its production model and each other model, every output in one shuffled deck that never says
     which model wrote a card."""
+    others = [model for model in others if model != prompt.model]
+    if not others:
+        raise Stop(f"--models needs at least one model besides {prompt.model}")
     suite = prepare_suite(prompt, make_model, make_judge)
+    calls = len(suite.requests) * (1 + len(others))
+    print(_calls(calls, calls * len(suite.judges)), flush=True)
     cards: list[dict[str, Any]] = []
     sources: dict[str, str] = {}  # "<case-id>:<tag>" -> the model that wrote it
     runs: dict[str, list[dict[str, list[str]]]] = {}
@@ -241,7 +246,10 @@ def run_baseline(prompt: PromptSettings, others: list[str], make_model: MakeMode
     for model in [prompt.model, *others]:
         runs[model], used = [], (0, 0)
         for case_id, case_input, request in suite.requests:
-            result = suite.model({**request, "model": model})
+            try:
+                result = suite.model({**request, "model": model})
+            except ModelError as e:
+                raise Stop(f"{model} failed on case {case_id}: {e}") from None
             used = (used[0] + result.input_tokens, used[1] + result.output_tokens)
             failures = suite.score(case_id, case_input, result.output)
             runs[model].append(failures)
