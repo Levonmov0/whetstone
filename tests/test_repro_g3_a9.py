@@ -22,8 +22,17 @@ def test_a_code_check_covers_the_reasons_it_declares(tmp_path: Path, monkeypatch
     assert (code, capsys.readouterr().out.splitlines()) == (0, ["every reason has a check"])
 
 
-@pytest.mark.parametrize("declared", ['REASONS = "too long"\n', "REASONS = [len]\n", "REASONS = [\n"])
-def test_a_code_check_with_unreadable_reasons_stops(declared: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize(
+    ("declared", "message"),
+    [
+        ('REASONS = "too long"\n', "check length: REASONS must be a list of text"),
+        ("REASONS = [len]\n", "check length: REASONS must be a list of text"),
+        ("REASONS = [\n", "check length failed to load: SyntaxError"),
+    ],
+)
+def test_a_code_check_with_unreadable_reasons_stops(
+    declared: str, message: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     prompt = make_suite(tmp_path, {"a": "Rest today."})
     (prompt / "checks" / "length.py").write_text(declared)
     monkeypatch.chdir(tmp_path)
@@ -31,4 +40,4 @@ def test_a_code_check_with_unreadable_reasons_stops(declared: str, tmp_path: Pat
     code = run(["reasons", "daily"], make_model=unused_model)
 
     assert code == 2
-    assert "check length: REASONS must be a list of text" in capsys.readouterr().err
+    assert message in capsys.readouterr().err
