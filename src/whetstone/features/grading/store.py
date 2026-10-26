@@ -21,3 +21,7 @@ def save_deck(workspace: Path, prompt: str, cards: list[dict[str, Any]]) -> None
     decks.mkdir(exist_ok=True)
     deck = {"id": deck_id, "cards": [{"card_id": f"{deck_id}:{c['case_id']}", **c} for c in cards]}
     (decks / f"{prompt}.json").write_text(json.dumps(deck, indent=2))
+
+
+def load_deck(workspace: Path, prompt: str) -> dict[str, Any]:
+    return json.loads((workspace / ".whetstone" / "decks" / f"{prompt}.json").read_text())

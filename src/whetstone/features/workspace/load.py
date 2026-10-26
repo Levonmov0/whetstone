@@ -28,6 +28,7 @@ class PromptSettings:
     provider: str
     model: str
     editable: str | None  # None until init marks it; check needs it, verify-harness does not
+    reasons: list[str]  # the swipe app's reason chips
 
 
 def load_prompt(workspace: Path, name: str) -> PromptSettings:
@@ -43,7 +44,13 @@ def load_prompt(workspace: Path, name: str) -> PromptSettings:
     if raw["provider"] != "anthropic":
         raise PromptError(f'{settings_file}: provider "{raw["provider"]}" is not supported yet; Whetstone calls anthropic only')
     return PromptSettings(
-        workspace=workspace, dir=prompt_dir, harness=raw["harness"], provider=raw["provider"], model=raw["model"], editable=raw.get("editable")
+        workspace=workspace,
+        dir=prompt_dir,
+        harness=raw["harness"],
+        provider=raw["provider"],
+        model=raw["model"],
+        editable=raw.get("editable"),
+        reasons=raw.get("reasons", []),
     )
 
 

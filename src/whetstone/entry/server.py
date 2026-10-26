@@ -8,6 +8,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
+from whetstone.features.grading.store import load_deck
 from whetstone.features.workspace.load import PromptSettings
 
 Handler = Callable[[Request], Awaitable[Response]]
@@ -26,7 +27,8 @@ def make_app(prompt: PromptSettings, token: str) -> Starlette:
         return guard
 
     async def cards(request: Request) -> Response:
-        return JSONResponse({})
+        deck = load_deck(prompt.workspace, prompt.dir.name)
+        return JSONResponse({"cards": deck["cards"], "reasons": prompt.reasons})
 
     async def swipes(request: Request) -> Response:
         return JSONResponse({})
