@@ -7,13 +7,21 @@ dependencies = [
     "anthropic",
     "httpx2>=2.16.0",
     "python-dotenv",
+    "qrcode>=8.2",
+    "starlette>=1.10.0",
+    "uvicorn>=0.54.0",
 ]
 
 [project.scripts]
 whetstone = "whetstone.entry.cli:main"
 
 [dependency-groups]
-dev = ["pytest", "pyright", "import-linter"]
+dev = [
+    "pytest",
+    "pyright",
+    "import-linter",
+    "httpx>=0.28.1",
+]
 
 [build-system]
 requires = ["hatchling"]
