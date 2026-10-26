@@ -209,7 +209,7 @@ def test_the_theme_is_the_workspace_one_or_whetstone_default(tmp_path: Path, mon
     assert default.status_code == 200
     assert default.headers["content-type"].startswith("text/css")
     assert "Whetstone's own theme" in default.text
-    assert workspace.text == ":root { --ws-bg: #171717; }\n"
+    assert workspace.text == default.text + ":root { --ws-bg: #171717; }\n"  # the repo's values on top of Whetstone's
 
 
 def test_the_server_stops_itself_at_its_lifetime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
