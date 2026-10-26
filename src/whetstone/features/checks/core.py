@@ -119,3 +119,7 @@ def agreement(labels: list[dict[str, Any]], verdicts: dict[str, bool], rule: set
             row[2] += not verdicts[card]
             row[3] += 1
     return {grader: Agreement(Side(row[0], row[1]), Side(row[2], row[3])) for grader, row in rows.items()}
+
+
+def judge_gate(agreements: dict[str, Agreement], minimum: int = 5) -> tuple[str, list[str]]:
+    raise NotImplementedError

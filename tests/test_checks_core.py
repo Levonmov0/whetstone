@@ -1,6 +1,6 @@
 import pytest
 
-from whetstone.features.checks.core import Agreement, Side, agreement, uncovered_reasons
+from whetstone.features.checks.core import Agreement, Side, agreement, judge_gate, uncovered_reasons
 
 
 def swipe(verdict: str, reasons: list[str], note: str = "", card: str = "X") -> dict[str, object]:
@@ -49,3 +49,27 @@ JUDGE = {**{f"g{i}": i != 0 for i in range(10)}, **{f"b{i}": False for i in rang
 )
 def test_agreement(labels: list[dict[str, object]], verdicts: dict[str, bool], rows: dict[str, Agreement]) -> None:
     assert agreement(labels, verdicts, RULE) == rows
+
+
+def rows(good: tuple[int, int], bad: tuple[int, int], **others: tuple[tuple[int, int], tuple[int, int]]) -> dict[str, Agreement]:
+    return {"Levon": Agreement(Side(*good), Side(*bad)), **{name: Agreement(Side(*g), Side(*b)) for name, (g, b) in others.items()}}
+
+
+@pytest.mark.parametrize(
+    ("agreements", "gate"),
+    [
+        (rows((9, 10), (5, 5)), ("trusted", [])),
+        (rows((17, 20), (5, 5)), ("warn", ["agrees with Levon on 85% of good cards; below 90% is a warning"])),
+        (rows((8, 10), (5, 5)), ("warn", ["agrees with Levon on 80% of good cards; below 90% is a warning"])),
+        (rows((10, 10), (17, 20)), ("warn", ["agrees with Levon on 85% of bad cards for this rule; below 90% is a warning"])),
+        (rows((7, 10), (5, 5)), ("untrusted", ["fails outputs Levon called good (70%); sharpen the rubric"])),
+        (rows((10, 10), (3, 5)), ("untrusted", ["misses problems Levon flagged (60%); sharpen the rubric or swipe more examples"])),
+        (rows((10, 10), (3, 3)), ("untrusted", ["only 3 bad swipes for this rule; swipe at least 2 more"])),
+        (rows((3, 3), (5, 5)), ("untrusted", ["only 3 good swipes; swipe at least 2 more"])),
+        (rows((10, 10), (5, 5), Hampus=((0, 2), (0, 0))), ("trusted", [])),
+        (rows((10, 10), (5, 5), Hampus=((6, 10), (5, 5))), ("untrusted", ["fails outputs Hampus called good (60%); sharpen the rubric"])),
+        ({}, ("untrusted", ["only 0 good swipes; swipe at least 5 more", "only 0 bad swipes for this rule; swipe at least 5 more"])),
+    ],
+)
+def test_judge_gate(agreements: dict[str, Agreement], gate: tuple[str, list[str]]) -> None:
+    assert judge_gate(agreements) == gate
