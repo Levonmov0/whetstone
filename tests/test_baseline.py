@@ -64,6 +64,6 @@ def test_baseline_report_has_the_verdict_and_a_row_per_model(tmp_path: Path, mon
     [report] = (prompt / "runs").glob("baseline-*/report.md")
     lines = report.read_text().splitlines()
     assert "No: no listed model fixes most failures. The best, model-b, passes 0 of the 2 cases fake-model fails. The prompt is the problem." in lines
-    assert "| model | every check | length | banned | assumes (judge) | input tokens | output tokens |" in lines
-    assert "| fake-model | 1/3 | 3/3 | 2/3 | 2/3 | 30 | 15 |" in lines
-    assert "| model-b | 1/3 | 3/3 | 2/3 | 2/3 | 30 | 15 |" in lines
+    assert "| model | every check | banned | length | assumes (judge) | input tokens | output tokens |" in lines
+    assert "| fake-model | 1/3 | 2/3 | 3/3 | 2/3 | 30 | 15 |" in lines
+    assert "| model-b | 1/3 | 2/3 | 3/3 | 2/3 | 30 | 15 |" in lines
