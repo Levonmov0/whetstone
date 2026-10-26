@@ -149,9 +149,9 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
 
     try:
         checks = load_checks(prompt.dir)
+        judges = load_judges(prompt.dir)
     except CheckLoadError as e:
         raise Stop(str(e)) from None
-    judges = load_judges(prompt.dir)
     try:
         model = make_model(prompt)
     except MissingKey as e:
