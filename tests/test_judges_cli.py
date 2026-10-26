@@ -43,3 +43,17 @@ def test_check_runs_judges_beside_code_checks(tmp_path: Path, monkeypatch: pytes
     assert "length: 2/2" in out
     deck = json.loads((tmp_path / ".whetstone" / "decks" / "daily.json").read_text())
     assert [card["caught_by"] for card in deck["cards"]] == [[], ["assumes"]]
+
+
+def test_proposed_checks_never_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today."})
+    (prompt / "checks" / "proposed").mkdir()
+    (prompt / "checks" / "proposed" / "x.py").write_text("def check(output):\n    return ['always fails']\n")
+    (prompt / "checks" / "proposed" / "y.judge.toml").write_text(RUBRIC)
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=lambda _settings: echo_model())
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "x:" not in out and "y (judge)" not in out
