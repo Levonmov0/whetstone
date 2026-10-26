@@ -157,6 +157,9 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
         judged_by = judge_model(prompt.workspace) if judges else ""
     except PromptError as e:
         raise Stop(str(e)) from None
+    # Judges see each case's input, so a real-data case goes to them only on a provider the repo already uses.
+    if judges and (refusal := provider_refusal("openai", providers, has_private)):
+        raise Stop(refusal)
     try:
         model = make_model(prompt)
         judge = make_judge(prompt.workspace) if judges else None
