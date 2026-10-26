@@ -1,5 +1,6 @@
 """Pure rules for grading: no I/O, environment or SDKs."""
 
+from datetime import datetime, timedelta
 from typing import Any, cast
 
 
@@ -43,3 +44,7 @@ def disagreements(labels: list[dict[str, Any]]) -> list[str]:
             settled.add(label["card_id"])
         latest.setdefault(label["card_id"], {})[label["grader"]] = label["verdict"]
     return [card for card, verdicts in latest.items() if card not in settled and {"good", "bad"} <= set(verdicts.values())]
+
+
+def idle_expired(last_activity: datetime, now: datetime, limit: timedelta) -> bool:
+    raise NotImplementedError

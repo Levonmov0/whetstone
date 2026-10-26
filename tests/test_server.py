@@ -1,5 +1,6 @@
 import json
-from datetime import datetime
+import threading
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -209,3 +210,13 @@ def test_the_theme_is_the_workspace_one_or_whetstone_default(tmp_path: Path, mon
     assert default.headers["content-type"].startswith("text/css")
     assert "Whetstone's own theme" in default.text
     assert workspace.text == ":root { --ws-bg: #171717; }\n"
+
+
+def test_the_server_stops_itself_when_idle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    make_suite(tmp_path, {"a": "Rest today."})
+    stopped = threading.Event()
+    app = make_app(load_prompt(tmp_path, "daily"), TOKEN, idle_limit=timedelta(seconds=0.3), on_idle=stopped.set, poll=0.05)
+
+    with TestClient(app):
+        assert not stopped.wait(0.1)
+        assert stopped.wait(2)
