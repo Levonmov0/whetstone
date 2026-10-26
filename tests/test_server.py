@@ -116,3 +116,44 @@ def test_a_bad_swipe_on_a_caught_card_takes_its_checks_as_reasons(tmp_path: Path
     client.post("/api/swipes", headers=AUTH, json={"card_id": card_b["card_id"], "grader": "Levon", "verdict": "bad", "reasons": [], "note": ""})
 
     assert [label["reasons"] for label in stored_labels(tmp_path)] == [["banned"]]
+
+
+GOOD_SWIPE = {"grader": "Levon", "verdict": "bad", "reasons": ["too long"], "note": ""}
+
+
+@pytest.mark.parametrize(
+    ("change", "error"),
+    [
+        ({"card_id": "nope:a"}, "no card nope:a in the current deck"),
+        ({"verdict": "meh"}, "verdict must be good, bad or skip"),
+        ({"grader": " "}, "grader is required"),
+        ({"grader": None}, "grader is required"),
+        ({"reasons": "too long"}, "reasons must be a list of text"),
+        ({"reasons": [1]}, "reasons must be a list of text"),
+        ({"note": 5}, "note must be text"),
+        ({"note": "x" * 10001}, "note is over 10000 characters"),
+    ],
+)
+def test_a_bad_swipe_is_refused(change: dict[str, Any], error: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = graded_suite(tmp_path, monkeypatch)
+    card_a = client.get("/api/cards", headers={**AUTH, "X-Grader": "Levon"}).json()["cards"][0]
+
+    response = client.post("/api/swipes", headers=AUTH, json={"card_id": card_a["card_id"], **GOOD_SWIPE, **change})
+
+    assert response.status_code == 400
+    assert response.json() == {"error": error}
+    assert stored_labels(tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    ("content", "error"),
+    [("not json", "body must be a JSON object"), ("[1, 2]", "body must be a JSON object"), ('{"note": "' + "x" * 70_000 + '"}', "body is over 64 KB")],
+)
+def test_a_malformed_body_is_refused(content: str, error: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = graded_suite(tmp_path, monkeypatch)
+
+    response = client.post("/api/swipes", headers={**AUTH, "Content-Type": "application/json"}, content=content)
+
+    assert response.status_code == 400
+    assert response.json() == {"error": error}
+    assert stored_labels(tmp_path) == []
