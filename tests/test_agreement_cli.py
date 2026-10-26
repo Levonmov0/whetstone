@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.fakes import unused_model
+from tests.fakes import FakeModel, unused_model
 from tests.test_check_cli import make_suite
 from tests.test_judges_cli import JUDGE_SETTINGS, add_private_case, judging, make_judged_suite
 from whetstone.entry.cli import run
@@ -82,3 +82,20 @@ pass = "no"
 [fail]
 yes = "assumes whether they did Kin's advice"
 '''
+
+
+def test_agreement_prints_its_call_count_first(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."}, 'reasons = ["assumes the outcome"]\n' + RUBRIC_TAIL)
+    write_labels(prompt / "labels.jsonl", swipes(good_failed=1))
+    printed_before: list[str] = []
+
+    def answer(request: dict[str, object]) -> object:
+        if not printed_before:
+            printed_before.append(capsys.readouterr().out)
+        return judging("yes").answer(request)
+
+    monkeypatch.chdir(tmp_path)
+
+    run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: FakeModel(answer))
+
+    assert printed_before == ["15 judge calls\n"]

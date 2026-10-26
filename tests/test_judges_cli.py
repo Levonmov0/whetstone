@@ -230,3 +230,28 @@ def test_unusable_judge_answer_stops_and_keeps_the_deck(
     assert code == 2
     assert message in capsys.readouterr().err
     assert deck.read_text() == before
+
+
+def test_call_counts_are_printed_before_the_first_call(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_judged_suite(tmp_path, {"a": "Rest today.", "b": "Walk later."})
+    printed_before: list[str] = []
+
+    def generate(request: dict[str, object]) -> object:
+        if not printed_before:
+            printed_before.append(capsys.readouterr().out)
+        return echo_model().answer(request)
+
+    monkeypatch.chdir(tmp_path)
+
+    run(["check", "daily"], make_model=lambda _settings: FakeModel(generate), make_judge=lambda _workspace: judging("no"))
+
+    assert printed_before == ["2 generation calls and 2 judge calls\n"]
+
+
+def test_call_count_without_judges(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_suite(tmp_path, {"a": "Rest today."})
+    monkeypatch.chdir(tmp_path)
+
+    run(["check", "daily"], make_model=lambda _settings: echo_model())
+
+    assert capsys.readouterr().out.splitlines()[0] == "1 generation call"
