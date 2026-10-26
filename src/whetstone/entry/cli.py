@@ -128,12 +128,16 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel) -> int:
         raise Stop(str(e)) from None
     if refusal := provider_refusal(prompt.provider, providers, has_private):
         raise Stop(refusal)
-    requests: list[tuple[str, str, Any]] = []
+    requests: list[tuple[str, Any, Any]] = []
     for case_id, case_json in cases:
+        try:
+            case_input = json.loads(case_json)
+        except ValueError as e:
+            raise Stop(f"case {case_id} is not valid JSON: {e}") from None
         request = build(prompt, case_id, case_json)
         if problem := request_problem(request, case_id, prompt.model, prompt.editable):
             raise Stop(problem)
-        requests.append((case_id, case_json, request))
+        requests.append((case_id, case_input, request))
 
     try:
         checks = load_checks(prompt.dir)
@@ -145,7 +149,7 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel) -> int:
         raise Stop(str(e)) from None
     results: list[CaseResult] = []
     cards: list[dict[str, Any]] = []
-    for case_id, case_json, request in requests:
+    for case_id, case_input, request in requests:
         try:
             output = model(request).output
         except ModelError as e:
@@ -161,7 +165,7 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel) -> int:
             failures[name] = cast(list[str], messages)
         results.append(CaseResult(case_id, failures))
         caught_by = [name for name, messages in failures.items() if messages]
-        cards.append({"case_id": case_id, "input": json.loads(case_json), "output": output, "caught_by": caught_by})
+        cards.append({"case_id": case_id, "input": case_input, "output": output, "caught_by": caught_by})
     save_deck(prompt.workspace, prompt.dir.name, cards)
     lines, code = report(results, list(checks))
     print("\n".join(lines))

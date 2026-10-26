@@ -41,6 +41,9 @@ def load_prompt(workspace: Path, name: str) -> PromptSettings:
     for key in ("harness", "provider", "model"):
         if not isinstance(raw.get(key), str):
             raise PromptError(f'{settings_file}: missing "{key}"')
+    reasons = raw.get("reasons", [])
+    if not (isinstance(reasons, list) and all(isinstance(r, str) for r in cast(list[Any], reasons))):
+        raise PromptError(f"{settings_file}: reasons must be a list of text")
     if raw["provider"] != "anthropic":
         raise PromptError(f'{settings_file}: provider "{raw["provider"]}" is not supported yet; Whetstone calls anthropic only')
     return PromptSettings(
@@ -50,7 +53,7 @@ def load_prompt(workspace: Path, name: str) -> PromptSettings:
         provider=raw["provider"],
         model=raw["model"],
         editable=raw.get("editable"),
-        reasons=raw.get("reasons", []),
+        reasons=cast(list[str], reasons),
     )
 
 
