@@ -7,7 +7,7 @@ The workspace is the one place Whetstone keeps a repo's settings, keys, theme an
   whetstone.toml        repo-level settings
   .env                  keys, one per purpose; always gitignored
   .gitignore            lists .env and prompts/*/cases/private/
-  theme.css             the swipe app's theme
+  theme.css             the swipe app's theme: only the repo's tokens, served on top of Whetstone's own
   .whetstone/           the engine's own files: decks, server state and log; ignores itself in git
   prompts/<name>/
     prompt.toml         the prompt's settings
@@ -93,19 +93,21 @@ consented_by = "Levon"
 consented_on = 2026-10-26
 ```
 
-- A case under `cases/private/` outside a source folder with a `consent.toml` stops `whetstone check` before any harness or model call.
+- A real-data case must sit directly in a source folder whose `consent.toml` names who consented and when. One loose in `cases/private/`, nested deeper, or under a missing or incomplete consent record stops `whetstone check` before any harness or model call.
 - Real-data cases are sent only to providers in `repo_providers`. With no `repo_providers`, or a production provider not on it, `check` exits 2 before any call.
 - Their labels stay in the source folder.
 
 ## Grading
 
-`whetstone check` saves its outputs as the prompt's deck, `.whetstone/decks/<prompt>.json`, replacing the last one: each card's id (`<deck-id>:<case-id>`), case id, input, output, and the checks that caught it.
+Every case file must be JSON; one that isn't stops `check` before any model call. `whetstone check` saves its outputs as the prompt's deck, `.whetstone/decks/<prompt>.json`, replacing the last one: each card's id (`<deck-id>:<case-id>`), case id, input, output, and the checks that caught it.
 
 `whetstone serve <prompt>` starts the swipe server in the background and prints its link and QR code. The server:
 - listens on the LAN address, the Tailscale address when `phone.access = "tailscale"`, or `--host`; never on every interface, never through a public tunnel;
 - makes a new random token each start; the link carries it after `#`, so it is never sent in a URL or logged, and the app sends it as `Authorization: Bearer`;
 - keeps its pid, port, prompt and token in `.whetstone/serve.json` (owner-only) and logs to `.whetstone/server.log`;
-- stops after 12 hours with no API use, or with `whetstone serve --stop`. A second `serve` for the same prompt shows the same link; for another prompt it exits 2.
+- stops 12 hours after it starts, whatever graders are doing, or with `whetstone serve --stop`; either way it removes `serve.json`. Swipes are saved as they're made, so the cut-off loses at most a note still being typed.
+- refuses `0.0.0.0` and `::`, and exits 2 on an address it can't listen on or a Tailscale that isn't connected.
+- runs one `serve` at a time per workspace. A second `serve` for the same prompt shows the same link; for another prompt it exits 2. `serve --stop` only signals a process that is this workspace's server, never one that has since reused its pid.
 
 Each line of `labels.jsonl` is one swipe, self-contained so it outlives the deck:
 

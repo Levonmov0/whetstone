@@ -22,7 +22,7 @@ The app shows the outputs from the latest `whetstone check <prompt>` run. If the
 whetstone serve <prompt>
 ```
 
-It returns at once and leaves the server running in the background, even after this session ends. It stops itself after 12 hours without a swipe, or with `whetstone serve --stop`. Running it again while it's up shows the same link.
+It returns at once and leaves the server running in the background, even after this session ends. It stops itself 12 hours after it started, whatever graders are doing, or with `whetstone serve --stop`. Running it again while it's up shows the same link. Tell graders it closes at that time; their swipes are saved as they go.
 
 Show the user the QR code and the link from its output, in a code block so the QR keeps its shape. Tell them:
 - Phones must be on the same Wi-Fi as this laptop, or on Tailscale when `whetstone.toml` says `phone.access = "tailscale"`.
