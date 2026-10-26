@@ -54,13 +54,27 @@ def load_prompt(workspace: Path, name: str) -> PromptSettings:
     )
 
 
+def _workspace_settings(workspace: Path) -> dict[str, Any]:
+    settings_file = workspace / "whetstone.toml"
+    try:
+        return tomllib.loads(settings_file.read_text())
+    except tomllib.TOMLDecodeError as e:
+        raise PromptError(f"{settings_file}: invalid TOML: {e}") from None
+
+
+def phone_access(workspace: Path) -> str:
+    """How phones reach the swipe server: "lan" (the default) or "tailscale"."""
+    phone = _workspace_settings(workspace).get("phone", {})
+    access = cast(dict[str, Any], phone).get("access", "lan") if isinstance(phone, dict) else None
+    if access not in ("lan", "tailscale"):
+        raise PromptError(f'{workspace / "whetstone.toml"}: phone.access must be "lan" or "tailscale"')
+    return cast(str, access)
+
+
 def repo_providers(workspace: Path) -> list[str] | None:
     """The model providers this repo already uses, as init recorded them; None when not recorded."""
     settings_file = workspace / "whetstone.toml"
-    try:
-        providers = tomllib.loads(settings_file.read_text()).get("repo_providers")
-    except tomllib.TOMLDecodeError as e:
-        raise PromptError(f"{settings_file}: invalid TOML: {e}") from None
+    providers = _workspace_settings(workspace).get("repo_providers")
     if providers is not None and not (isinstance(providers, list) and all(isinstance(p, str) for p in cast(list[Any], providers))):
         raise PromptError(f"{settings_file}: repo_providers must be a list of provider names")
     return cast(list[str] | None, providers)

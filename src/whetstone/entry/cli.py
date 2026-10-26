@@ -18,12 +18,13 @@ from whetstone.features.checks.load import CheckLoadError, load_checks
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, private_dir, save_deck
 from whetstone.features.workspace.core import request_differences, request_problem
-from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, prompt_names, repo_providers
+from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, phone_access, prompt_names, repo_providers
 from whetstone.platform.anthropic import anthropic_model
 from whetstone.platform.config import MissingKey, load_key
 from whetstone.platform.daemon import is_running, start_detached, stop, write_private
 from whetstone.platform.harness import HarnessError, build_request
 from whetstone.platform.model import ModelCall, ModelError
+from whetstone.platform.network import TailscaleMissing, lan_address, tailscale_address
 
 MakeModel = Callable[[PromptSettings], ModelCall]
 
@@ -68,7 +69,7 @@ def run(argv: list[str], make_model: MakeModel) -> int:
         if args.command == "disagreements":
             return list_disagreements(prompt)
         if args.command == "serve":
-            return start_server(prompt, args.host)
+            return start_server(prompt, args.host or phone_host(prompt.workspace))
         if args.command == "settle":
             return settle_card(prompt, args.card, args.verdict, args.grader, args.note)
         if args.command == "add-source":
@@ -203,6 +204,22 @@ def start_server(prompt: PromptSettings, host: str) -> int:
     write_private(state_file, json.dumps({"pid": pid, "host": host, "port": port, "prompt": prompt.dir.name, "token": token, "url": url}))
     show_link(url)
     return 0
+
+
+def phone_host(workspace: Path) -> str:
+    try:
+        access = phone_access(workspace)
+    except PromptError as e:
+        raise Stop(str(e)) from None
+    if access == "tailscale":
+        try:
+            return tailscale_address()
+        except TailscaleMissing:
+            raise Stop("phone.access is tailscale but the tailscale command was not found") from None
+    address = lan_address()
+    if address is None:
+        raise Stop("no Wi-Fi or LAN address found; pass --host")
+    return address
 
 
 def stop_server(explicit_workspace: Path | None) -> int:
