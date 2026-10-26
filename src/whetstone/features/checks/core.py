@@ -66,7 +66,10 @@ JUDGE_INSTRUCTIONS = "You check one output of a prompt against one rule. Answer 
 def judge_request(rubric: Rubric, model: str, case_input: Any, output: Any) -> dict[str, Any]:
     """The judge's request body, for the OpenAI Responses API."""
     text = f"Question: {rubric.question}\n\n{rubric.guide}\n\nInput:\n{json.dumps(case_input, ensure_ascii=False)}\n\nOutput:\n{json.dumps(output, ensure_ascii=False)}"
-    return {"model": model, "instructions": JUDGE_INSTRUCTIONS, "input": text}
+    # A strict schema whose answer is one of the rubric's choices: the model can't reply with anything else.
+    answers = {"type": "string", "enum": [rubric.passing, *rubric.fail]}
+    schema = {"type": "object", "properties": {"answer": answers}, "required": ["answer"], "additionalProperties": False}
+    return {"model": model, "instructions": JUDGE_INSTRUCTIONS, "input": text, "text": {"format": {"type": "json_schema", "name": "verdict", "strict": True, "schema": schema}}}
 
 
 def judge_failures(rubric: Rubric, reply: str) -> list[str]:
