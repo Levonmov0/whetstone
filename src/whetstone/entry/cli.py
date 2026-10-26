@@ -478,7 +478,10 @@ def settle_card(prompt: PromptSettings, card: str, verdict: str, grader: str, no
     swiped = [label for label in load_labels(prompt.dir) if label["card_id"] == card]
     if not swiped:
         raise Stop(f"no labels for card {card}")
-    swipe: dict[str, Any] = {"grader": grader, "verdict": verdict, "reasons": [], "note": note, "settled": True, "at": datetime.now(UTC).isoformat()}
+    # The call keeps the reasons of the swipe it sides with, so the card still counts for that rule's judge.
+    sided = [label for label in swiped if label["verdict"] == verdict]
+    reasons = sided[-1]["reasons"] if sided else []
+    swipe: dict[str, Any] = {"grader": grader, "verdict": verdict, "reasons": reasons, "note": note, "settled": True, "at": datetime.now(UTC).isoformat()}
     add_label(prompt.dir, {**swiped[-1], **swipe})
     return 0
 
