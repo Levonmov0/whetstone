@@ -24,8 +24,17 @@
   }
   .card.dragging { transition: none; }
   .stamp { position: absolute; top: 12px; right: 12px; font-weight: 700; font-size: 14px; letter-spacing: 0.08em; opacity: 0; text-transform: uppercase; }
-  .output { font-size: 18px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .field { margin: 0 0 14px; }
+  .output { font-size: 18px; line-height: 1.45; }
+  .input { font-size: 15px; line-height: 1.45; margin-top: 8px; }
+  .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .none { color: var(--ws-muted); font-style: italic; }
+  .list { margin: 0; padding-left: 1.2em; }
+  .items { display: grid; gap: 10px; }
+  .field.inline { display: flex; gap: 10px; align-items: baseline; }
+  .field.inline .field-name { margin: 0; flex: none; min-width: 5.5em; }
+  .item { border-left: 3px solid color-mix(in srgb, var(--ws-muted) 40%, transparent); padding: 2px 0 2px 12px; }
+  .item .field:last-child, .output .field:last-child { margin-bottom: 0; }
+  .field { margin: 0 0 12px; }
   .field-name { display: block; color: var(--ws-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
   pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; color: var(--ws-muted); margin: 0; }
   .caught { color: var(--ws-bad); font-size: 13px; margin: 0 0 12px; }
@@ -159,13 +168,32 @@ function retryButton(label = "Try again") {
   return el("div", { class: "actions", style: "grid-template-columns: 1fr" }, el("button", { type: "button", onclick: load }, label));
 }
 
-function renderOutput(output) {
-  if (output !== null && typeof output === "object" && !Array.isArray(output)) {
-    return el("div", {}, ...Object.entries(output).map(([key, value]) =>
-      el("p", { class: "field" }, el("span", { class: "field-name" }, key),
-        typeof value === "string" ? el("span", { class: "output" }, value) : el("pre", {}, JSON.stringify(value, null, 2)))));
+// Any JSON, as something a person reads: labelled fields, text with its line breaks, lists as separate blocks.
+function renderValue(value, depth = 0) {
+  if (value === null || value === undefined || value === "" ||
+      (typeof value === "object" && !Object.keys(value).length)) return el("span", { class: "none" }, "none");
+  if (typeof value !== "object") return el("span", { class: "text" }, String(value));
+  if (depth > 4) return el("pre", {}, JSON.stringify(value, null, 2));  // deeper than anyone reads as fields
+  if (Array.isArray(value)) {
+    if (value.every((item) => item === null || typeof item !== "object")) {
+      return el("ul", { class: "list" }, ...value.map((item) => el("li", {}, renderValue(item, depth + 1))));
+    }
+    return el("div", { class: "items" }, ...value.map((item) => el("div", { class: "item" }, renderValue(item, depth + 1))));
   }
-  return el("div", { class: "output" }, typeof output === "string" ? output : JSON.stringify(output, null, 2));
+  return el("div", {}, ...Object.entries(value).map(([key, item]) => {
+    // A short one-line value sits beside its label, so a list of small facts stays compact.
+    const short = (item === null || typeof item !== "object") && String(item ?? "").length <= 24 && !String(item ?? "").includes("\n");
+    return el("div", { class: short ? "field inline" : "field" }, el("span", { class: "field-name" }, label(key)), renderValue(item, depth + 1));
+  }));
+}
+
+function label(key) {
+  // recentAsks, recent_asks -> recent asks
+  return key.replace(/_/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+}
+
+function renderOutput(output) {
+  return el("div", { class: "output" }, renderValue(output));
 }
 
 function render() {
@@ -180,7 +208,7 @@ function render() {
     stamp,
     card.caught_by.length ? el("p", { class: "caught" }, `Already caught by: ${card.caught_by.join(", ")}`) : "",
     renderOutput(card.output),
-    el("details", {}, el("summary", {}, "Show input"), el("pre", {}, JSON.stringify(card.input, null, 2))));
+    el("details", {}, el("summary", {}, "Show input"), el("div", { class: "input" }, renderValue(card.input))));
   const actions = el("div", { class: "actions" },
     el("button", { type: "button", class: "bad", onclick: () => decide("bad") }, "✕ Bad"),
     el("button", { type: "button", onclick: () => decide("skip") }, "Skip"),
@@ -216,7 +244,7 @@ function enableSwipe(node, stamp) {
     if (verdict) decide(verdict);
   };
   node.addEventListener("pointerdown", (event) => {
-    if (start || event.target.closest("summary, details[open] pre")) return;
+    if (start || event.target.closest("summary")) return;
     start = { x: event.clientX, y: event.clientY, id: event.pointerId };
     node.classList.add("dragging");
     window.addEventListener("pointermove", move);
