@@ -7,18 +7,27 @@ The workspace is the one place Whetstone keeps a repo's settings, keys, theme an
   whetstone.toml        repo-level settings
   .env                  keys, one per purpose; always gitignored
   .gitignore            lists .env and prompts/*/cases/private/
-  theme.css             the swipe app's theme
+  theme.css             the swipe app's theme: only the repo's tokens, served on top of Whetstone's own
+  .whetstone/           the engine's own files: decks, server state and log; ignores itself in git
   prompts/<name>/
     prompt.toml         the prompt's settings
     harness.*           builds the production request (any language)
     cases/<id>.json     one case per file; any JSON
-    cases/private/      real-data cases, ids private/<id>; always gitignored
+    cases/proposed/     cases Claude proposed and the user hasn't approved; never run
+    cases/private/<source>/
+      consent.toml      who consented to this source, and when
+      <id>.json         real-data cases, ids private/<source>/<id>
+      labels.jsonl      swipes on this source's cases
+      .gitignore        "*": the folder ignores itself in git
     checks/<name>.py    code checks
+    labels.jsonl        swipes on the invented cases
 ```
 
 ## whetstone.toml
 
 ```toml
+repo_providers = ["anthropic"]   # every model provider the repo already calls; real-data cases go only to these
+
 [models]
 judge = { provider = "openai", model = "<model>" }   # another family from the generator
 rewrite = { via = "claude-code" }                    # or { via = "api", model = "<model>" }
@@ -50,6 +59,7 @@ provider = "anthropic"  # the only provider the engine calls today
 model = "<production model>"
 editable = '''<the exact text Whetstone may rewrite>'''
 apply = "exact"       # exact | placeholders | code-edit
+reasons = ["too long", "sounds like a robot"]  # the swipe app's reason chips; optional
 ```
 
 - `harness`, `provider` and `model` are required. `editable` and `apply` are added once the harness is verified; `whetstone check` needs `editable`, `verify-harness` does not.
@@ -74,10 +84,46 @@ It calls the repo's real prompt builder, so a change to the builder shows up in 
 
 `checks/<name>.py` defines `check(output) -> list[str]`, returning one message per broken rule. An empty list means the check passed. `output` is the tool input dict for a forced tool call, or the reply text otherwise.
 
+## Real-data cases
+
+A real-data source is one person's or group's data, used with their consent. `whetstone add-source <prompt> <source> --consented-by <who> --consented-on <YYYY-MM-DD>` makes its folder and writes `consent.toml`:
+
+```toml
+consented_by = "Levon"
+consented_on = 2026-10-26
+```
+
+- A real-data case must sit directly in a source folder whose `consent.toml` names who consented and when. One loose in `cases/private/`, nested deeper, or under a missing or incomplete consent record stops `whetstone check` before any harness or model call.
+- Real-data cases are sent only to providers in `repo_providers`. With no `repo_providers`, or a production provider not on it, `check` exits 2 before any call.
+- Their labels stay in the source folder.
+
+## Grading
+
+Every case file must be JSON; one that isn't stops `check` before any model call. `whetstone check` saves its outputs as the prompt's deck, `.whetstone/decks/<prompt>.json`, replacing the last one: each card's id (`<deck-id>:<case-id>`), case id, input, output, and the checks that caught it.
+
+`whetstone serve <prompt>` starts the swipe server in the background and prints its link and QR code. The server:
+- listens on the LAN address, the Tailscale address when `phone.access = "tailscale"`, or `--host`; never on every interface, never through a public tunnel;
+- makes a new random token each start; the link carries it after `#`, so it is never sent in a URL or logged, and the app sends it as `Authorization: Bearer`;
+- keeps its pid, port, prompt and token in `.whetstone/serve.json` (owner-only) and logs to `.whetstone/server.log`;
+- stops 12 hours after it starts, whatever graders are doing, or with `whetstone serve --stop`; either way it removes `serve.json`. Swipes are saved as they're made, so the cut-off loses at most a note still being typed.
+- refuses `0.0.0.0` and `::`, and exits 2 on an address it can't listen on or a Tailscale that isn't connected.
+- runs one `serve` at a time per workspace. A second `serve` for the same prompt shows the same link; for another prompt it exits 2. `serve --stop` only signals a process that is this workspace's server, never one that has since reused its pid.
+
+Each line of `labels.jsonl` is one swipe, self-contained so it outlives the deck:
+
+```json
+{"card_id": "…:first-day", "deck_id": "…", "case_id": "first-day", "input": {…}, "output": …, "caught_by": [],
+ "grader": "Levon", "verdict": "bad", "reasons": ["too long"], "note": "…", "at": "2026-10-26T08:00:00+00:00"}
+```
+
+`verdict` is `good`, `bad` or `skip`. A bad swipe with no reasons on a card a check caught takes the check names as reasons. `whetstone settle` adds a line with `"settled": true`.
+
+`whetstone disagreements <prompt>` lists cards where one grader's latest swipe is good and another's is bad, until `whetstone settle <prompt> <card> good|bad --grader <name> [--note <rule>]` records the call.
+
 ## whetstone check exit codes
 
 | Code | Meaning |
 |---|---|
 | 0 | every case passes every check |
 | 1 | some check failed |
-| 2 | the setup is broken: workspace, prompt.toml, no cases, harness (failing, invalid or over 120s), key, a failed model call, or a check that won't load, crashes or returns something other than a list of messages |
+| 2 | the setup is broken: workspace, whetstone.toml, prompt.toml, no cases, a real-data case without consent or for a provider the repo doesn't use, harness (failing, invalid or over 120s), key, a failed model call, or a check that won't load, crashes or returns something other than a list of messages |

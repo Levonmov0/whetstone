@@ -21,7 +21,7 @@ Done when `whetstone.toml` and `.gitignore` exist, and `git check-ignore <ws>/.e
 
 ## 2. Theme
 
-Find the repo's design tokens: CSS variables, Tailwind config, a theme or tokens file, a design system package. Map them onto the variables in `${CLAUDE_PLUGIN_ROOT}/theme/default.css`, and write `theme.css` with only the values you found. With no tokens, copy the default theme and say so.
+Find the repo's design tokens: CSS variables, Tailwind config, a theme or tokens file, a design system package. Map them onto the variables in `${CLAUDE_PLUGIN_ROOT}/src/whetstone/entry/static/default.css`, and write `theme.css` with only the values you found. With no tokens, copy the default theme and say so.
 
 Done when `theme.css` exists and every value in it names its source file in a comment, or the file says it is the default.
 
@@ -29,7 +29,9 @@ Done when `theme.css` exists and every value in it names its source file in a co
 
 Find the provider, model and parameters this prompt's production call uses, from the call site and its config. Ask only for what the code can't settle.
 
-Done when you can name the provider, the model and every parameter, each with the file and line it came from.
+Also list every model provider the repo's code already calls, for any feature, and write it to `whetstone.toml` as `repo_providers = ["anthropic", ...]`. Real-data cases are only ever sent to these.
+
+Done when you can name the provider, the model and every parameter, each with the file and line it came from, and `repo_providers` lists each provider with the file that calls it.
 
 ## 4. Keys
 

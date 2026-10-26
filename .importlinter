@@ -42,3 +42,15 @@ forbidden_modules =
     dotenv
     httpx2
 allow_indirect_imports = True
+
+[importlinter:contract:web-in-entry]
+name = The web server and QR code stay in the entry layer
+type = forbidden
+source_modules =
+    whetstone.features
+    whetstone.platform
+forbidden_modules =
+    starlette
+    uvicorn
+    qrcode
+allow_indirect_imports = True

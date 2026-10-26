@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>Whetstone</title>
+<link rel="stylesheet" href="theme.css">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--ws-bg); color: var(--ws-text); font-family: var(--ws-font);
+    display: flex; flex-direction: column; overscroll-behavior: none;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header { display: flex; justify-content: space-between; align-items: baseline; padding: var(--ws-space); color: var(--ws-muted); font-size: 14px; }
+  header button { background: none; border: 0; color: var(--ws-muted); font: inherit; text-decoration: underline; padding: 4px; }
+  main { flex: 1; display: flex; flex-direction: column; padding: 0 var(--ws-space); min-height: 0; }
+  .card {
+    flex: 1; min-height: 0; overflow-y: auto; background: var(--ws-surface); border-radius: var(--ws-radius);
+    padding: calc(var(--ws-space) * 1.25); touch-action: pan-y; user-select: none; -webkit-user-select: none;
+    transition: transform 0.2s ease, opacity 0.2s ease; position: relative;
+  }
+  .card.dragging { transition: none; }
+  .stamp { position: absolute; top: 12px; right: 12px; font-weight: 700; font-size: 14px; letter-spacing: 0.08em; opacity: 0; text-transform: uppercase; }
+  .output { font-size: 18px; line-height: 1.45; }
+  .input { font-size: 15px; line-height: 1.45; margin-top: 8px; }
+  .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .none { color: var(--ws-muted); font-style: italic; }
+  .list { margin: 0; padding-left: 1.2em; }
+  .items { display: grid; gap: 10px; }
+  .field.inline { display: flex; gap: 10px; align-items: baseline; }
+  .field.inline .field-name { margin: 0; flex: none; min-width: 5.5em; }
+  .item { border-left: 3px solid color-mix(in srgb, var(--ws-muted) 40%, transparent); padding: 2px 0 2px 12px; }
+  .item .field:last-child, .output .field:last-child { margin-bottom: 0; }
+  .field { margin: 0 0 12px; }
+  .field-name { display: block; color: var(--ws-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; color: var(--ws-muted); margin: 0; }
+  .caught { color: var(--ws-bad); font-size: 13px; margin: 0 0 12px; }
+  details { margin-top: 18px; border-top: 1px solid color-mix(in srgb, var(--ws-muted) 30%, transparent); padding-top: 10px; }
+  summary { color: var(--ws-accent); cursor: pointer; padding: 6px 0; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; padding: var(--ws-space) 0; }
+  .actions button, .sheet button {
+    min-height: 52px; border-radius: var(--ws-radius); border: 0; font: inherit; font-size: 17px; font-weight: 600;
+    background: var(--ws-surface); color: var(--ws-text);
+  }
+  .actions .bad { color: var(--ws-bad); }
+  .actions .good { color: var(--ws-good); }
+  button:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: 2px; }
+  .message { margin: auto; text-align: center; max-width: 28em; line-height: 1.5; padding: var(--ws-space); }
+  .message h1 { font-size: 22px; }
+  .sheet-backdrop { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); display: flex; align-items: flex-end; }
+  .sheet {
+    width: 100%; max-height: 92%; overflow-y: auto; background: var(--ws-bg); border-radius: var(--ws-radius) var(--ws-radius) 0 0;
+    padding: var(--ws-space); padding-bottom: calc(var(--ws-space) + env(safe-area-inset-bottom));
+  }
+  .sheet h2 { font-size: 18px; margin: 0 0 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .chip {
+    min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--ws-muted) 50%, transparent);
+    background: transparent; color: var(--ws-text); font: inherit; font-size: 15px;
+  }
+  .chip[aria-pressed="true"] { background: var(--ws-bad); border-color: var(--ws-bad); color: var(--ws-surface); }
+  textarea, input[type="text"] {
+    width: 100%; border-radius: var(--ws-radius); border: 1px solid color-mix(in srgb, var(--ws-muted) 50%, transparent);
+    background: var(--ws-surface); color: var(--ws-text); font: inherit; font-size: 17px; padding: 12px;
+  }
+  textarea { min-height: 11em; resize: vertical; line-height: 1.45; }
+  .sheet-actions { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; margin-top: 12px; }
+  .sheet .save { background: var(--ws-bad); color: var(--ws-surface); }
+  .error { color: var(--ws-bad); min-height: 1.4em; font-size: 14px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+</head>
+<body>
+<header><span id="progress"></span><button id="rename" type="button" hidden>Not you?</button></header>
+<main id="main"></main>
+<p class="sr-only" aria-live="polite" id="status"></p>
+<script>
+"use strict";
+// The token arrives after the # so it is never sent in a URL. Keep it for this tab, then drop it from the address bar and history.
+const params = new URLSearchParams(location.hash.slice(1));
+let token = params.get("t");
+try {
+  if (token) sessionStorage.setItem("ws-token", token);
+  else token = sessionStorage.getItem("ws-token");
+} catch {}
+if (location.hash) history.replaceState(null, "", location.pathname);
+
+const main = document.getElementById("main");
+const progress = document.getElementById("progress");
+const status = document.getElementById("status");
+const renameButton = document.getElementById("rename");
+let grader = null;
+try { grader = localStorage.getItem("ws-grader"); } catch {}
+let cards = [];
+let reasons = [];
+let total = 0;
+let busy = false;
+
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else node.setAttribute(key, value);
+  }
+  for (const child of children) node.append(child);
+  return node;
+}
+
+function showMessage(title, text, ...extra) {
+  progress.textContent = "";
+  main.replaceChildren(el("div", { class: "message" }, el("h1", {}, title), el("p", {}, text), ...extra));
+}
+
+function askName() {
+  renameButton.hidden = true;
+  const input = el("input", { type: "text", id: "name", autocomplete: "name", autocapitalize: "words", enterkeyhint: "go" });
+  const form = el("form", { class: "message" },
+    el("h1", {}, "Who's grading?"),
+    el("p", {}, "Your name goes on every swipe, so disagreements can be settled."),
+    el("label", { for: "name", class: "sr-only" }, "Your name"), input,
+    el("div", { class: "actions", style: "grid-template-columns: 1fr" }, el("button", { type: "submit", class: "good" }, "Start")));
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const name = input.value.trim();
+    if (!name) return;
+    grader = name;
+    try { localStorage.setItem("ws-grader", name); } catch {}
+    load();
+  });
+  progress.textContent = "";
+  main.replaceChildren(form);
+  input.focus();
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    // A header can't carry most names (Łukasz, 陈), so the name travels URL-encoded.
+    headers: { "Authorization": `Bearer ${token}`, "X-Grader": encodeURIComponent(grader), "Content-Type": "application/json", ...(options.headers || {}) },
+  });
+  const body = await response.json().catch(() => ({}));
+  return { ok: response.ok, status: response.status, body };
+}
+
+function tokenProblem() {
+  showMessage("Scan the QR code again", "This link's token is missing, wrong or expired. The server makes a new one each time it starts.");
+}
+
+async function load() {
+  if (!token) return tokenProblem();
+  if (!grader) return askName();
+  renameButton.hidden = false;
+  showMessage("Loading…", "");
+  let result;
+  try { result = await api("/api/cards"); } catch { return showMessage("Can't reach the server", "Check that this phone is on the same network as the laptop, and that the server is still running.", retryButton()); }
+  if (result.status === 401) return tokenProblem();
+  if (!result.ok) return showMessage("No cards yet", result.body.error || "Something went wrong.", retryButton());
+  cards = result.body.cards;
+  reasons = result.body.reasons;
+  total = cards.length;
+  render();
+}
+
+function retryButton(label = "Try again") {
+  return el("div", { class: "actions", style: "grid-template-columns: 1fr" }, el("button", { type: "button", onclick: load }, label));
+}
+
+// Any JSON, as something a person reads: labelled fields, text with its line breaks, lists as separate blocks.
+function renderValue(value, depth = 0) {
+  if (value === null || value === undefined || value === "" ||
+      (typeof value === "object" && !Object.keys(value).length)) return el("span", { class: "none" }, "none");
+  if (typeof value !== "object") return el("span", { class: "text" }, String(value));
+  if (depth > 4) return el("pre", {}, JSON.stringify(value, null, 2));  // deeper than anyone reads as fields
+  if (Array.isArray(value)) {
+    if (value.every((item) => item === null || typeof item !== "object")) {
+      return el("ul", { class: "list" }, ...value.map((item) => el("li", {}, renderValue(item, depth + 1))));
+    }
+    return el("div", { class: "items" }, ...value.map((item) => el("div", { class: "item" }, renderValue(item, depth + 1))));
+  }
+  return el("div", {}, ...Object.entries(value).map(([key, item]) => {
+    // A short one-line value sits beside its label, so a list of small facts stays compact.
+    const short = (item === null || typeof item !== "object") && String(item ?? "").length <= 24 && !String(item ?? "").includes("\n");
+    return el("div", { class: short ? "field inline" : "field" }, el("span", { class: "field-name" }, label(key)), renderValue(item, depth + 1));
+  }));
+}
+
+function label(key) {
+  // recentAsks, recent_asks -> recent asks
+  return key.replace(/_/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+}
+
+function renderOutput(output) {
+  return el("div", { class: "output" }, renderValue(output));
+}
+
+function render() {
+  if (!cards.length) {
+    progress.textContent = "";
+    return showMessage("All graded", "Thanks. New cards show up here after the next check run.", retryButton("Check for new cards"));
+  }
+  const card = cards[0];
+  progress.textContent = `${total - cards.length + 1} of ${total}`;
+  const stamp = el("span", { class: "stamp", "aria-hidden": "true" });
+  const node = el("article", { class: "card", "aria-label": "Output to grade" },
+    stamp,
+    card.caught_by.length ? el("p", { class: "caught" }, `Already caught by: ${card.caught_by.join(", ")}`) : "",
+    renderOutput(card.output),
+    el("details", {}, el("summary", {}, "Show input"), el("div", { class: "input" }, renderValue(card.input))));
+  const actions = el("div", { class: "actions" },
+    el("button", { type: "button", class: "bad", onclick: () => decide("bad") }, "✕ Bad"),
+    el("button", { type: "button", onclick: () => decide("skip") }, "Skip"),
+    el("button", { type: "button", class: "good", onclick: () => decide("good") }, "✓ Good"));
+  main.replaceChildren(node, el("p", { class: "error", role: "alert", id: "card-error" }), actions);
+  enableSwipe(node, stamp);
+}
+
+function enableSwipe(node, stamp) {
+  // Move and release are watched on the window, so a finger that leaves the card still finishes the swipe.
+  let start = null;
+  const threshold = () => Math.min(120, window.innerWidth * 0.28);
+  const move = (event) => {
+    if (!start || event.pointerId !== start.id) return;
+    const dx = event.clientX - start.x, dy = event.clientY - start.y;
+    const up = dy < 0 && Math.abs(dy) > Math.abs(dx);
+    node.style.transform = up ? `translateY(${dy}px)` : `translateX(${dx}px) rotate(${dx / 25}deg)`;
+    const verdict = direction(dx, dy, threshold());
+    stamp.textContent = verdict === "good" ? "Good" : verdict === "bad" ? "Bad" : verdict === "skip" ? "Skip" : "";
+    stamp.style.color = verdict === "good" ? "var(--ws-good)" : verdict === "bad" ? "var(--ws-bad)" : "var(--ws-muted)";
+    stamp.style.opacity = verdict ? 1 : 0;
+  };
+  const end = (event) => {
+    if (!start || event.pointerId !== start.id) return;
+    const verdict = event.type === "pointerup" ? direction(event.clientX - start.x, event.clientY - start.y, threshold()) : null;
+    start = null;
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", end);
+    window.removeEventListener("pointercancel", end);
+    node.classList.remove("dragging");
+    node.style.transform = "";
+    stamp.style.opacity = 0;
+    if (verdict) decide(verdict);
+  };
+  node.addEventListener("pointerdown", (event) => {
+    if (start || event.target.closest("summary")) return;
+    start = { x: event.clientX, y: event.clientY, id: event.pointerId };
+    node.classList.add("dragging");
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+  });
+}
+
+function direction(dx, dy, threshold) {
+  if (-dy > threshold && -dy > Math.abs(dx)) return "skip";
+  if (dx > threshold) return "good";
+  if (dx < -threshold) return "bad";
+  return null;
+}
+
+function decide(verdict) {
+  if (busy) return;
+  const card = cards[0];
+  // A problem a check already catches needs no words from the grader.
+  if (verdict === "bad" && !card.caught_by.length) return askWhy(card);
+  send(card, { verdict, reasons: [], note: "" });
+}
+
+function askWhy(card) {
+  const picked = new Set();
+  const chips = reasons.map((reason) => {
+    const chip = el("button", { type: "button", class: "chip", "aria-pressed": "false" }, reason);
+    chip.addEventListener("click", () => {
+      if (picked.has(reason)) picked.delete(reason); else picked.add(reason);
+      chip.setAttribute("aria-pressed", String(picked.has(reason)));
+    });
+    return chip;
+  });
+  const note = el("textarea", { id: "note", rows: "7", autocapitalize: "sentences", spellcheck: "true", maxlength: "10000",
+    placeholder: "What's wrong with it? Type, or tap the mic on your keyboard and talk it through." });
+  const error = el("p", { class: "error", role: "alert" });
+  const close = () => { backdrop.remove(); document.removeEventListener("keydown", onKey); };
+  const onKey = (event) => { if (event.key === "Escape") close(); };
+  const save = el("button", { type: "button", class: "save" }, "Save as bad");
+  save.addEventListener("click", async () => {
+    if (busy) return;  // a double tap must not save twice
+    if (!picked.size && !note.value.trim()) { error.textContent = "Pick a reason or say what's wrong."; return; }
+    const sent = await send(card, { verdict: "bad", reasons: [...picked], note: note.value.trim() }, error);
+    if (sent) close();
+  });
+  const sheet = el("div", { class: "sheet", role: "dialog", "aria-modal": "true", "aria-labelledby": "why" },
+    el("h2", { id: "why" }, "Why is it bad?"),
+    chips.length ? el("div", { class: "chips" }, ...chips) : "",
+    el("label", { for: "note", class: "sr-only" }, "Note"), note, error,
+    el("div", { class: "sheet-actions" }, el("button", { type: "button", onclick: close }, "Cancel"), save));
+  const backdrop = el("div", { class: "sheet-backdrop" }, sheet);
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) close(); });
+  document.addEventListener("keydown", onKey);
+  document.body.append(backdrop);
+  (chips[0] || note).focus();
+}
+
+async function send(card, swipe, errorNode) {
+  busy = true;
+  try {
+    const result = await api("/api/swipes", { method: "POST", body: JSON.stringify({ card_id: card.card_id, grader, ...swipe }) });
+    if (result.status === 401) { tokenProblem(); return false; }
+    // A newer check replaced the deck: these cards are gone, so fetch the new ones.
+    if (result.status === 409 || (result.status === 400 && /in the current deck/.test(result.body.error || ""))) {
+      document.querySelector(".sheet-backdrop")?.remove();
+      status.textContent = "New cards arrived; loading them.";
+      load();
+      return false;
+    }
+    if (!result.ok) {
+      const text = result.body.error || "Couldn't save that swipe.";
+      (errorNode || document.getElementById("card-error")).textContent = text;
+      return false;
+    }
+    status.textContent = `Saved as ${swipe.verdict}.`;
+    cards.shift();
+    render();
+    return true;
+  } catch {
+    (errorNode || document.getElementById("card-error")).textContent = "Couldn't reach the server. Try again.";
+    return false;
+  } finally {
+    busy = false;
+  }
+}
+
+renameButton.addEventListener("click", () => {
+  grader = null;
+  try { localStorage.removeItem("ws-grader"); } catch {}
+  askName();
+});
+
+load();
+</script>
+</body>
+</html>
