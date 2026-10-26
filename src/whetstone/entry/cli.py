@@ -14,6 +14,7 @@ from typing import Any, cast
 
 import qrcode
 
+from whetstone.features.baseline.store import save_run
 from whetstone.features.cases.core import provider_refusal
 from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.cases.sources import SourceError, add_source
@@ -230,13 +231,16 @@ def run_baseline(prompt: PromptSettings, others: list[str], make_model: MakeMode
     which model wrote a card."""
     suite = prepare_suite(prompt, make_model, make_judge)
     cards: list[dict[str, Any]] = []
+    sources: dict[str, str] = {}  # "<case-id>:<tag>" -> the model that wrote it
     for model in [prompt.model, *others]:
         for case_id, case_input, request in suite.requests:
             output = suite.model({**request, "model": model}).output
             failures = suite.score(case_id, case_input, output)
             cards.append({"case_id": case_id, "input": case_input, "output": output, "caught_by": caught(failures), "tag": secrets.token_hex(4)})
+            sources[f"{case_id}:{cards[-1]['tag']}"] = model
     random.shuffle(cards)
-    save_deck(prompt.workspace, prompt.dir.name, cards)
+    deck_id = save_deck(prompt.workspace, prompt.dir.name, cards)
+    save_run(prompt.dir, deck_id, {f"{deck_id}:{card}": model for card, model in sources.items()}, "")
     return 0
 
 
