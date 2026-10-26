@@ -42,11 +42,7 @@ class Stop(Exception):
     """A broken setup: the message is printed and the command exits 2."""
 
 
-def no_judge(_workspace: Path) -> ModelCall:
-    raise NotImplementedError
-
-
-def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge = no_judge) -> int:
+def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = None) -> int:
     parser = argparse.ArgumentParser(prog="whetstone")
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("check", help="run every case through the prompt and its checks")
@@ -77,6 +73,7 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge = no_judge
     source.add_argument("--consented-by", required=True, help="who consented")
     source.add_argument("--consented-on", required=True, help="the date they consented, such as 2026-10-26")
     args = parser.parse_args(argv)
+    make_judge = make_judge or production_judge
 
     try:
         if args.command == "serve" and args.stop:
@@ -176,10 +173,7 @@ def prepare_suite(prompt: PromptSettings, make_model: MakeModel, make_judge: Mak
     if not cases:
         raise Stop(f"no cases in {prompt.dir / 'cases'}")
     has_private = any(case_id.startswith("private/") for case_id, _ in cases)
-    try:
-        providers = repo_providers(prompt.workspace)
-    except PromptError as e:
-        raise Stop(str(e)) from None
+    providers = providers_or_stop(prompt)
     if refusal := provider_refusal(prompt.provider, providers, has_private):
         raise Stop(refusal)
     requests: list[tuple[str, Any, Any]] = []
@@ -246,7 +240,7 @@ def run_baseline(prompt: PromptSettings, others: list[str], make_model: MakeMode
     models = [prompt.model, *others]
     cards: list[dict[str, Any]] = []
     sources: dict[str, str] = {}  # each card's tag -> the model that wrote it; tags name no case, so this can be committed
-    runs: dict[str, list[dict[str, list[str]]]] = {model: [] for model in models}
+    runs: dict[str, dict[str, dict[str, list[str]]]] = {model: {} for model in models}  # model -> case id -> failures
     tokens = {model: (0, 0) for model in models}
     # Case by case across the models, so a model that rejects the request fails on the first case, not after a
     # whole production run has been paid for.
@@ -258,7 +252,7 @@ def run_baseline(prompt: PromptSettings, others: list[str], make_model: MakeMode
                 raise Stop(f"{model} failed on case {case_id}: {e}") from None
             tokens[model] = (tokens[model][0] + result.input_tokens, tokens[model][1] + result.output_tokens)
             failures = suite.score(case_id, case_input, result.output)
-            runs[model].append(failures)
+            runs[model][case_id] = failures
             tag = secrets.token_hex(4)
             cards.append(card(case_id, case_input, result.output, failures) | {"tag": tag})
             sources[tag] = model
@@ -396,6 +390,13 @@ def show_link(url: str) -> None:
     print(url)
 
 
+def providers_or_stop(prompt: PromptSettings) -> list[str] | None:
+    try:
+        return repo_providers(prompt.workspace)
+    except PromptError as e:
+        raise Stop(str(e)) from None
+
+
 def judges_or_stop(prompt: PromptSettings) -> dict[str, Rubric]:
     try:
         return load_judges(prompt.dir)
@@ -407,11 +408,11 @@ def prepare_judge(prompt: PromptSettings, providers: list[str] | None, has_priva
     """Asks one judge about one case's output, giving its failure messages. Everything that can stop it is checked here,
     before any model call."""
     try:
-        judged_by = judge_model(prompt.workspace)
+        provider, judged_by = judge_model(prompt.workspace)
     except PromptError as e:
         raise Stop(str(e)) from None
     # Judges see each case's input, so a real-data case goes to them only on a provider the repo already uses.
-    if refusal := provider_refusal("openai", providers, has_private):
+    if refusal := provider_refusal(provider, providers, has_private):
         raise Stop(refusal)
     try:
         judge = make_judge(prompt.workspace)
@@ -436,10 +437,7 @@ def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
         print("no judges in checks/")
         return 0
     labels = load_labels(prompt.dir)
-    try:
-        providers = repo_providers(prompt.workspace)
-    except PromptError as e:
-        raise Stop(str(e)) from None
+    providers = providers_or_stop(prompt)
     ask = prepare_judge(prompt, providers, any(label["case_id"].startswith("private/") for label in labels), make_judge)
     # Each swiped card is judged once, from the input and output its label kept, however many graders swiped it.
     cards = {label["card_id"]: label for label in labels}

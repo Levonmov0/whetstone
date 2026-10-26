@@ -20,14 +20,14 @@ def baseline_verdict(results: dict[str, dict[str, bool]]) -> str:
     return f"No: no listed model fixes most failures. The best, {best}, {passes} The prompt is the problem.{also}"
 
 
-def baseline_report(prompt: str, check_names: list[str], runs: dict[str, list[dict[str, list[str]]]], tokens: dict[str, tuple[int, int]]) -> str:
-    """The report's text. `runs` maps each model, production first, to each case's failures per check; `tokens` to its
-    input and output tokens."""
-    passed = {model: {str(i): not any(failures.values()) for i, failures in enumerate(cases)} for model, cases in runs.items()}
+def baseline_report(prompt: str, check_names: list[str], runs: dict[str, dict[str, dict[str, list[str]]]], tokens: dict[str, tuple[int, int]]) -> str:
+    """The report's text. `runs` maps each model, production first, to each case id's failures per check; `tokens` to
+    its input and output tokens."""
+    passed = {model: {case: not any(failures.values()) for case, failures in cases.items()} for model, cases in runs.items()}
     header = ["model", "every check", *check_names, "input tokens", "output tokens"]
     lines = [f"# Baseline: {prompt}", "", baseline_verdict(passed), "", "| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
     for model, cases in runs.items():
-        counts = [f"{sum(passed[model].values())}/{len(cases)}", *(f"{sum(not c[name] for c in cases)}/{len(cases)}" for name in check_names)]
+        counts = [f"{sum(passed[model].values())}/{len(cases)}", *(f"{sum(not c[name] for c in cases.values())}/{len(cases)}" for name in check_names)]
         lines.append("| " + " | ".join([model, *counts, *map(str, tokens[model])]) + " |")
     return "\n".join(lines) + "\n"
 
