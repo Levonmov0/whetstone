@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import pytest
 from starlette.testclient import TestClient
@@ -35,3 +36,36 @@ def test_requests_without_the_token_are_rejected(
 
     assert response.status_code == 401
     assert response.json() == {"error": "missing or wrong token"}
+
+
+AUTH = {"Authorization": f"Bearer {TOKEN}"}
+
+
+def card_ids(response: Any) -> list[str]:
+    return [c["case_id"] for c in response.json()["cards"]]
+
+
+def test_cards_come_with_input_output_and_checks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = graded_suite(tmp_path, monkeypatch)
+
+    response = client.get("/api/cards", headers={**AUTH, "X-Grader": "Levon"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [(c["case_id"], c["input"], c["output"], c["caught_by"]) for c in body["cards"]] == [
+        ("a", {"text": "Rest today."}, "Rest today.", []),
+        ("b", {"text": "Your HRV is low."}, "Your HRV is low.", ["banned"]),
+    ]
+    assert all(c["card_id"].endswith(f":{c['case_id']}") for c in body["cards"])
+    assert body["reasons"] == []
+
+
+def test_reason_chips_come_from_prompt_toml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today."})
+    with (prompt / "prompt.toml").open("a") as f:
+        f.write('reasons = ["too long", "wrong voice"]\n')
+    monkeypatch.chdir(tmp_path)
+    run(["check", "daily"], make_model=lambda _settings: echo_model())
+    client = TestClient(make_app(load_prompt(tmp_path, "daily"), TOKEN))
+
+    assert client.get("/api/cards", headers={**AUTH, "X-Grader": "Levon"}).json()["reasons"] == ["too long", "wrong voice"]
