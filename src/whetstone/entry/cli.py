@@ -6,6 +6,7 @@ import secrets
 import socket
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -16,7 +17,7 @@ from whetstone.features.cases.core import provider_refusal
 from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.cases.sources import SourceError, add_source
 from whetstone.features.checks.core import CaseResult, JudgeAnswerError, Rubric, Side, agreement, covered_reasons, judge_failures, judge_gate, judge_request, report, uncovered_reasons
-from whetstone.features.checks.load import CheckLoadError, code_check_names, load_checks, load_judges
+from whetstone.features.checks.load import Check, CheckLoadError, code_check_names, load_checks, load_judges
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, private_dir, save_deck
 from whetstone.features.workspace.core import request_differences, request_problem
@@ -31,6 +32,7 @@ from whetstone.platform.openai import openai_model
 
 MakeModel = Callable[[PromptSettings], ModelCall]
 MakeJudge = Callable[[Path], ModelCall]  # takes the workspace, whose .env holds the judge key
+Ask = Callable[[str, Rubric, str, Any, Any], list[str]]  # judge name, rubric, case id, input, output -> failures
 
 
 class Stop(Exception):
@@ -123,7 +125,37 @@ def build(prompt: PromptSettings, case_id: str, case_json: str) -> Any:
         raise Stop(f"case {case_id}: {e}") from None
 
 
-def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: MakeJudge) -> int:
+@dataclass(frozen=True)
+class Suite:
+    """A prompt's vetted requests and its checks, ready to run: everything that can stop a run is checked by then."""
+
+    requests: list[tuple[str, Any, Any]]  # case id, case input, the harness's request
+    checks: dict[str, Check]
+    judges: dict[str, Rubric]
+    ask: Ask | None
+    model: ModelCall
+
+    def check_names(self) -> list[str]:
+        return [*self.checks, *(f"{name} (judge)" for name in self.judges)]
+
+    def score(self, case_id: str, case_input: Any, output: Any) -> dict[str, list[str]]:
+        """Each check's failure messages on one output, empty when it passed; judges are named "<name> (judge)"."""
+        failures: dict[str, list[str]] = {}
+        for name, check in self.checks.items():
+            try:
+                messages = check(output)
+            except Exception as e:  # a check is the workspace's own code; any crash means the suite is broken
+                raise Stop(f"check {name} crashed on case {case_id}: {e}") from None
+            if not isinstance(messages, list) or not all(isinstance(m, str) for m in cast(list[Any], messages)):
+                raise Stop(f"check {name} returned {messages!r} on case {case_id}; a check returns a list of failure messages")
+            failures[name] = cast(list[str], messages)
+        for name, rubric in self.judges.items():
+            assert self.ask
+            failures[f"{name} (judge)"] = self.ask(name, rubric, case_id, case_input, output)
+        return failures
+
+
+def prepare_suite(prompt: PromptSettings, make_model: MakeModel, make_judge: MakeJudge) -> Suite:
     if prompt.editable is None:
         raise Stop(f'{prompt.dir / "prompt.toml"} has no "editable" part yet')
     # Every request is built and vetted before the first model call, so a broken harness costs nothing.
@@ -161,31 +193,29 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
         model = make_model(prompt)
     except MissingKey as e:
         raise Stop(str(e)) from None
-    print(_calls(len(requests), len(requests) * len(judges)), flush=True)
+    return Suite(requests, checks, judges, ask, model)
+
+
+def caught(failures: dict[str, list[str]]) -> list[str]:
+    """The checks that caught an output, as its card shows them."""
+    return [name.removesuffix(" (judge)") for name, messages in failures.items() if messages]
+
+
+def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: MakeJudge) -> int:
+    suite = prepare_suite(prompt, make_model, make_judge)
+    print(_calls(len(suite.requests), len(suite.requests) * len(suite.judges)), flush=True)
     results: list[CaseResult] = []
     cards: list[dict[str, Any]] = []
-    for case_id, case_input, request in requests:
+    for case_id, case_input, request in suite.requests:
         try:
-            output = model(request).output
+            output = suite.model(request).output
         except ModelError as e:
             raise Stop(f"model call failed on case {case_id}: {e}") from None
-        failures: dict[str, list[str]] = {}
-        for name, check in checks.items():
-            try:
-                messages = check(output)
-            except Exception as e:  # a check is the workspace's own code; any crash means the suite is broken
-                raise Stop(f"check {name} crashed on case {case_id}: {e}") from None
-            if not isinstance(messages, list) or not all(isinstance(m, str) for m in cast(list[Any], messages)):
-                raise Stop(f"check {name} returned {messages!r} on case {case_id}; a check returns a list of failure messages")
-            failures[name] = cast(list[str], messages)
-        for name, rubric in judges.items():
-            assert ask
-            failures[f"{name} (judge)"] = ask(name, rubric, case_id, case_input, output)
+        failures = suite.score(case_id, case_input, output)
         results.append(CaseResult(case_id, failures))
-        caught_by = [name.removesuffix(" (judge)") for name, messages in failures.items() if messages]
-        cards.append({"case_id": case_id, "input": case_input, "output": output, "caught_by": caught_by})
+        cards.append({"case_id": case_id, "input": case_input, "output": output, "caught_by": caught(failures)})
     save_deck(prompt.workspace, prompt.dir.name, cards)
-    lines, code = report(results, [*checks, *(f"{name} (judge)" for name in judges)])
+    lines, code = report(results, suite.check_names())
     print("\n".join(lines))
     return code
 
@@ -301,9 +331,6 @@ def show_link(url: str) -> None:
     qr.add_data(url)
     qr.print_ascii(out=sys.stdout, invert=True)
     print(url)
-
-
-Ask = Callable[[str, Rubric, str, Any, Any], list[str]]
 
 
 def judges_or_stop(prompt: PromptSettings) -> dict[str, Rubric]:
