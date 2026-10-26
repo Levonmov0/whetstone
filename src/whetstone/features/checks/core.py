@@ -152,4 +152,9 @@ def judge_gate(agreements: dict[str, Agreement], minimum: int = 5) -> tuple[str,
 
 
 def optimize_gate(gates: dict[str, tuple[str, list[str]]]) -> tuple[bool, list[str]]:
-    raise NotImplementedError
+    """Whether optimizing may start against these judges' gates, and what to tell the user: every untrusted judge's
+    advice when it may not, else every warned judge's."""
+    refused = [f"{name}: {advice}" for name, (status, advices) in gates.items() if status == "untrusted" for advice in advices]
+    if refused:
+        return False, refused
+    return True, [f"{name}: {advice}" for name, (status, advices) in gates.items() if status == "warn" for advice in advices]
