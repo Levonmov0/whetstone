@@ -68,3 +68,7 @@ def _rubric(path: Path) -> Rubric:
 def code_check_names(prompt_dir: Path) -> list[str]:
     """The code checks' names, without running their code."""
     return [path.stem for path in sorted((prompt_dir / "checks").glob("*.py"))]
+
+
+def code_check_reasons(prompt_dir: Path) -> dict[str, list[str]]:
+    raise NotImplementedError
