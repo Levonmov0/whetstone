@@ -185,3 +185,27 @@ def test_no_deck_yet_says_to_run_check(tmp_path: Path, monkeypatch: pytest.Monke
 
     assert response.status_code == 409
     assert response.json() == {"error": "no cards yet; run whetstone check daily"}
+
+
+def test_the_app_page_needs_no_token_and_holds_no_cards(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = graded_suite(tmp_path, monkeypatch)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "<title>Whetstone</title>" in response.text
+    assert "Rest today." not in response.text
+
+
+def test_the_theme_is_the_workspace_one_or_whetstone_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = graded_suite(tmp_path, monkeypatch)
+
+    default = client.get("/theme.css")
+    (tmp_path / "theme.css").write_text(":root { --ws-bg: #171717; }\n")
+    workspace = client.get("/theme.css")
+
+    assert default.status_code == 200
+    assert default.headers["content-type"].startswith("text/css")
+    assert "Whetstone's own theme" in default.text
+    assert workspace.text == ":root { --ws-bg: #171717; }\n"
