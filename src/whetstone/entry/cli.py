@@ -2,10 +2,12 @@ import argparse
 import json
 import sys
 from collections.abc import Callable
+from datetime import date
 from pathlib import Path
 from typing import Any, cast
 
 from whetstone.features.cases.load import load_cases
+from whetstone.features.cases.sources import add_source
 from whetstone.features.checks.core import CaseResult, report
 from whetstone.features.checks.load import CheckLoadError, load_checks
 from whetstone.features.workspace.core import request_differences, request_problem
@@ -29,15 +31,22 @@ def run(argv: list[str], make_model: MakeModel) -> int:
     verify = commands.add_parser("verify-harness", help="compare the harness's request with a real production request")
     verify.add_argument("--case", required=True, help="the case id to build the request from")
     verify.add_argument("--expected", type=Path, required=True, help="a JSON file holding the request production sent")
-    for command in (check, verify):
+    source = commands.add_parser("add-source", help="make a private folder for one real-data source and record its consent")
+    for command in (check, verify, source):
         command.add_argument("prompt")
         command.add_argument("--workspace", type=Path, help="the workspace folder, when it is not ./ or ./whetstone/")
+    source.add_argument("source", help="the source's folder name, such as diary")
+    source.add_argument("--consented-by", required=True, help="who consented")
+    source.add_argument("--consented-on", required=True, help="the date they consented, such as 2026-10-26")
     args = parser.parse_args(argv)
 
     try:
         prompt = find_prompt(args.workspace, args.prompt)
         if args.command == "verify-harness":
             return verify_harness(prompt, args.case, args.expected)
+        if args.command == "add-source":
+            add_source(prompt.dir, args.source, args.consented_by, date.fromisoformat(args.consented_on))
+            return 0
         return check_prompt(prompt, make_model)
     except Stop as e:
         print(e, file=sys.stderr)
