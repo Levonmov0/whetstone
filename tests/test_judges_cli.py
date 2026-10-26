@@ -139,3 +139,25 @@ def test_judge_named_like_a_code_check_stops(tmp_path: Path, monkeypatch: pytest
 
     assert code == 2
     assert "check banned is both banned.py and banned.judge.toml" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        "",
+        "models = 3\n",
+        "[models]\n",
+        '[models]\njudge = { provider = "anthropic", model = "judge-model" }\n',
+        '[models]\njudge = { provider = "openai" }\n',
+        '[models]\njudge = "gpt"\n',
+    ],
+)
+def test_judges_need_an_openai_judge_model(settings: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_judged_suite(tmp_path, {"a": "Rest today."})
+    (tmp_path / "whetstone.toml").write_text(settings)
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=unused_model, make_judge=unused_model)
+
+    assert code == 2
+    assert 'whetstone.toml: [models] judge needs provider = "openai" and a model' in capsys.readouterr().err
