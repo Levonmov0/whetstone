@@ -1,6 +1,7 @@
 """Pure rules for a check run: how results are reported and what exit code they give."""
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -25,3 +26,7 @@ def report(results: list[CaseResult], check_names: list[str]) -> tuple[list[str]
     clean = sum(1 for r in results if not any(r.failures.values()))
     lines.append(f"{clean} of {len(results)} cases pass every check")
     return lines, 0 if clean == len(results) else 1
+
+
+def uncovered_reasons(labels: list[dict[str, Any]], covered: set[str]) -> list[tuple[str, int]]:
+    raise NotImplementedError
