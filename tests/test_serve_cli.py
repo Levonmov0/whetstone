@@ -12,7 +12,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from tests.test_check_cli import echo_model, make_suite
+from tests.test_check_cli import echo_model, make_prompt_dir, make_suite
 from whetstone.entry.cli import run
 
 WHETSTONE = str(Path(sys.executable).parent / "whetstone")
@@ -53,3 +53,36 @@ def test_serve_returns_and_the_server_outlives_it(workspace: Path) -> None:
     assert (state["port"], state["prompt"], state["token"]) == (int(port), "daily", token)
     assert os.getsid(state["pid"]) != os.getsid(0)
     assert stat.S_IMODE(state_file.stat().st_mode) == 0o600
+
+
+def test_serving_again_shows_the_same_link(workspace: Path) -> None:
+    first = serve(workspace, "daily", "--host", "127.0.0.1")
+    pid = json.loads((workspace / ".whetstone" / "serve.json").read_text())["pid"]
+
+    second = serve(workspace, "daily", "--host", "127.0.0.1")
+
+    assert second.returncode == 0
+    assert second.stdout == first.stdout
+    assert json.loads((workspace / ".whetstone" / "serve.json").read_text())["pid"] == pid
+
+
+def test_serving_another_prompt_while_one_runs_exits_2(workspace: Path) -> None:
+    (make_prompt_dir(workspace, "other") / "prompt.toml").write_text((workspace / "prompts" / "daily" / "prompt.toml").read_text())
+    serve(workspace, "daily", "--host", "127.0.0.1")
+
+    result = serve(workspace, "other", "--host", "127.0.0.1")
+
+    assert result.returncode == 2
+    assert "already serving daily; run whetstone serve --stop first" in result.stderr
+
+
+def test_a_stale_state_file_is_replaced(workspace: Path) -> None:
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    (workspace / ".whetstone" / "serve.json").write_text(json.dumps({"pid": dead.pid, "host": "127.0.0.1", "port": 1, "prompt": "daily", "token": "old", "url": "old"}))
+
+    result = serve(workspace, "daily", "--host", "127.0.0.1")
+
+    assert result.returncode == 0
+    assert "#t=old" not in result.stdout
+    assert json.loads((workspace / ".whetstone" / "serve.json").read_text())["pid"] != dead.pid
