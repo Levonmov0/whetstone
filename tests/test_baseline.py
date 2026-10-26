@@ -10,6 +10,7 @@ from tests.fakes import FakeModel
 from tests.test_check_cli import make_suite
 from tests.test_judges_cli import judging, make_judged_suite
 from whetstone.entry.cli import run
+from whetstone.platform.model import ModelError
 
 
 def by_model() -> FakeModel:
@@ -109,3 +110,47 @@ def test_baseline_report_without_a_run(tmp_path: Path, monkeypatch: pytest.Monke
 
     assert code == 2
     assert "no baseline run for daily yet; run whetstone baseline daily --models …" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("models", [[], ["--models", "fake-model"], ["--models", ","]])
+def test_baseline_needs_another_model(models: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_suite(tmp_path, {"a": "Rest today."})
+    model = by_model()
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["baseline", "daily", *models], make_model=lambda _settings: model)
+
+    assert code == 2
+    assert "--models needs at least one model besides fake-model" in capsys.readouterr().err
+    assert model.requests == []
+
+
+def test_baseline_runs_production_once_and_says_its_calls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_suite(tmp_path, {"a": "Rest today."})
+    model = by_model()
+    monkeypatch.chdir(tmp_path)
+
+    run(["baseline", "daily", "--models", "fake-model,model-b"], make_model=lambda _settings: model)
+
+    assert [r["model"] for r in model.requests] == ["fake-model", "model-b"]
+    assert capsys.readouterr().out.splitlines()[0] == "2 generation calls"
+
+
+def test_a_failing_model_stops_the_baseline_and_keeps_the_deck(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today."})
+    monkeypatch.chdir(tmp_path)
+    run(["check", "daily"], make_model=lambda _settings: by_model())
+    deck = tmp_path / ".whetstone" / "decks" / "daily.json"
+    before = deck.read_text()
+
+    def answer(request: dict[str, Any]) -> str:
+        if request["model"] == "model-b":
+            raise ModelError("BadRequestError 400")
+        return "Rest today."
+
+    code = run(["baseline", "daily", "--models", "model-b"], make_model=lambda _settings: FakeModel(answer))
+
+    assert code == 2
+    assert "model-b failed on case a: BadRequestError 400" in capsys.readouterr().err
+    assert deck.read_text() == before
+    assert not (prompt / "runs").exists()
