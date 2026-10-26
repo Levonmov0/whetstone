@@ -15,7 +15,7 @@ def write_labels(file: Path, reasons: list[list[str]]) -> None:
 
 
 def test_reasons_lists_what_no_check_stands_for(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    prompt = make_judged_suite(tmp_path, {"a": "Rest today."}, RUBRIC + 'reasons = ["sounds unsure"]\n')
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."}, 'reasons = ["sounds unsure"]\n' + RUBRIC)
     write_labels(prompt / "labels.jsonl", [["assumes the outcome"], ["banned"], ["assumes"], ["assumes whether they did Kin's advice"], ["sounds unsure"]])
     write_labels(prompt / "cases" / "private" / "diary" / "labels.jsonl", [["assumes the outcome"]])
     monkeypatch.chdir(tmp_path)
