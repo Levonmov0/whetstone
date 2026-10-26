@@ -10,7 +10,7 @@ class SourceError(Exception):
 
 
 def add_source(prompt_dir: Path, name: str, consented_by: str, consented_on: str) -> Path:
-    if name in (".", "..") or "/" in name:
+    if name in ("", ".", "..") or "/" in name:
         raise SourceError("source must be a plain folder name")
     if not consented_by.strip():
         raise SourceError("consented-by is required")
