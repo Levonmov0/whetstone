@@ -86,3 +86,22 @@ def test_a_stale_state_file_is_replaced(workspace: Path) -> None:
     assert result.returncode == 0
     assert "#t=old" not in result.stdout
     assert json.loads((workspace / ".whetstone" / "serve.json").read_text())["pid"] != dead.pid
+
+
+def test_stop_ends_the_server(workspace: Path) -> None:
+    serve(workspace, "daily", "--host", "127.0.0.1")
+    port = json.loads((workspace / ".whetstone" / "serve.json").read_text())["port"]
+
+    result = serve(workspace, "--stop")
+
+    assert result.returncode == 0, result.stderr
+    assert not (workspace / ".whetstone" / "serve.json").exists()
+    with pytest.raises(httpx.ConnectError):
+        httpx.get(f"http://127.0.0.1:{port}/")
+
+
+def test_stop_with_nothing_running(workspace: Path) -> None:
+    result = serve(workspace, "--stop")
+
+    assert result.returncode == 0
+    assert "no server running" in result.stdout
