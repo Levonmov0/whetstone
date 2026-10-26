@@ -47,4 +47,4 @@ def disagreements(labels: list[dict[str, Any]]) -> list[str]:
 
 
 def idle_expired(last_activity: datetime, now: datetime, limit: timedelta) -> bool:
-    raise NotImplementedError
+    return now - last_activity >= limit
