@@ -8,6 +8,7 @@ import pytest
 
 from tests.fakes import FakeModel
 from tests.test_check_cli import make_suite
+from tests.test_judges_cli import judging, make_judged_suite
 from whetstone.entry.cli import run
 
 
@@ -52,3 +53,17 @@ def test_baseline_keeps_which_model_wrote_each_card_in_its_run_folder(tmp_path: 
     assert sources == {card["card_id"]: "model-b" if card["output"].isupper() else "fake-model" for card in deck["cards"]}
     assert "rest today" not in (folder / "cards.json").read_text().lower()  # model names only, never outputs
     assert (folder / "report.md").is_file()
+
+
+def test_baseline_report_has_the_verdict_and_a_row_per_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today.", "b": "Your HRV is low.", "c": "Why skip it?"})
+    monkeypatch.chdir(tmp_path)
+
+    run(["baseline", "daily", "--models", "model-b"], make_model=lambda _settings: by_model(), make_judge=lambda _workspace: judging("yes"))
+
+    [report] = (prompt / "runs").glob("baseline-*/report.md")
+    lines = report.read_text().splitlines()
+    assert "No: no listed model fixes most failures. The best, model-b, passes 0 of the 2 cases fake-model fails. The prompt is the problem." in lines
+    assert "| model | every check | length | banned | assumes (judge) | input tokens | output tokens |" in lines
+    assert "| fake-model | 1/3 | 3/3 | 2/3 | 2/3 | 30 | 15 |" in lines
+    assert "| model-b | 1/3 | 3/3 | 2/3 | 2/3 | 30 | 15 |" in lines
