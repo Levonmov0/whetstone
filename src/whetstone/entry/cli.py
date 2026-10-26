@@ -10,6 +10,7 @@ from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.cases.sources import SourceError, add_source
 from whetstone.features.checks.core import CaseResult, report
 from whetstone.features.checks.load import CheckLoadError, load_checks
+from whetstone.features.grading.store import save_deck
 from whetstone.features.workspace.core import request_differences, request_problem
 from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, prompt_names, repo_providers
 from whetstone.platform.anthropic import anthropic_model
@@ -93,12 +94,12 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel) -> int:
         raise Stop(str(e)) from None
     if refusal := provider_refusal(prompt.provider, providers, has_private):
         raise Stop(refusal)
-    requests: list[tuple[str, Any]] = []
+    requests: list[tuple[str, str, Any]] = []
     for case_id, case_json in cases:
         request = build(prompt, case_id, case_json)
         if problem := request_problem(request, case_id, prompt.model, prompt.editable):
             raise Stop(problem)
-        requests.append((case_id, request))
+        requests.append((case_id, case_json, request))
 
     try:
         checks = load_checks(prompt.dir)
@@ -109,7 +110,8 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel) -> int:
     except MissingKey as e:
         raise Stop(str(e)) from None
     results: list[CaseResult] = []
-    for case_id, request in requests:
+    cards: list[dict[str, Any]] = []
+    for case_id, case_json, request in requests:
         try:
             output = model(request).output
         except ModelError as e:
@@ -124,6 +126,9 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel) -> int:
                 raise Stop(f"check {name} returned {messages!r} on case {case_id}; a check returns a list of failure messages")
             failures[name] = cast(list[str], messages)
         results.append(CaseResult(case_id, failures))
+        caught_by = [name for name, messages in failures.items() if messages]
+        cards.append({"case_id": case_id, "input": json.loads(case_json), "output": output, "caught_by": caught_by})
+    save_deck(prompt.workspace, prompt.dir.name, cards)
     lines, code = report(results, list(checks))
     print("\n".join(lines))
     return code
