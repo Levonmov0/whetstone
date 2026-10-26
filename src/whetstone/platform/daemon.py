@@ -60,5 +60,6 @@ def _alive(pid: int) -> bool:
 
 def command_line(pid: int) -> str:
     """The process's command line, or "" when there is no such process."""
-    result = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True)
+    # By full path: the check must not depend on what PATH holds.
+    result = subprocess.run(["/bin/ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True)
     return result.stdout.strip()

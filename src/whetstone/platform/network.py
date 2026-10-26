@@ -20,12 +20,19 @@ class TailscaleMissing(Exception):
     pass
 
 
+class TailscaleError(Exception):
+    """Tailscale is installed but gave no address: stopped, logged out or stuck."""
+
+
 def tailscale_address() -> str:
     tailscale = shutil.which("tailscale")
     if tailscale is None:
         raise TailscaleMissing()
-    return subprocess.run([tailscale, "ip", "-4"], capture_output=True, text=True, timeout=10, check=True).stdout.split()[0]
+    try:
+        result = subprocess.run([tailscale, "ip", "-4"], capture_output=True, text=True, timeout=10)
+    except subprocess.TimeoutExpired:
+        raise TailscaleError("tailscale ip took longer than 10s") from None
+    if result.returncode != 0 or not result.stdout.split():
+        raise TailscaleError(result.stderr.strip() or "it printed no address")
+    return result.stdout.split()[0]
 
-
-class TailscaleError(Exception):
-    pass

@@ -1,4 +1,6 @@
 import argparse
+import fcntl
+import ipaddress
 import json
 import secrets
 import socket
@@ -24,7 +26,7 @@ from whetstone.platform.config import MissingKey, load_key
 from whetstone.platform.daemon import command_line, is_running, start_detached, stop, write_private
 from whetstone.platform.harness import HarnessError, build_request
 from whetstone.platform.model import ModelCall, ModelError
-from whetstone.platform.network import TailscaleMissing, lan_address, tailscale_address
+from whetstone.platform.network import TailscaleError, TailscaleMissing, lan_address, tailscale_address
 
 MakeModel = Callable[[PromptSettings], ModelCall]
 
@@ -69,7 +71,7 @@ def run(argv: list[str], make_model: MakeModel) -> int:
         if args.command == "disagreements":
             return list_disagreements(prompt)
         if args.command == "serve":
-            return start_server(prompt, args.host or phone_host(prompt.workspace))
+            return start_server(prompt, args.host)
         if args.command == "settle":
             return settle_card(prompt, args.card, args.verdict, args.grader, args.note)
         if args.command == "add-source":
@@ -189,25 +191,42 @@ def running_server(workspace: Path) -> dict[str, Any] | None:
     state_file = workspace / ".whetstone" / "serve.json"
     if not state_file.is_file():
         return None
-    state = json.loads(state_file.read_text())
-    command = command_line(state["pid"]) if is_running(state["pid"]) else ""
-    if "whetstone.entry.serve_main" in command and str(workspace) in command:
+    try:
+        state = json.loads(state_file.read_text())
+        pid = state["pid"]
+    except (ValueError, KeyError, TypeError):
+        state, pid = None, None  # unreadable: whatever wrote it is not a server we can find
+    command = command_line(pid) if isinstance(pid, int) and is_running(pid) else ""
+    if state and "whetstone.entry.serve_main" in command and str(workspace) in command:
         return state
     state_file.unlink()
     return None
 
 
-def start_server(prompt: PromptSettings, host: str) -> int:
+def start_server(prompt: PromptSettings, explicit_host: str | None) -> int:
     folder = private_dir(prompt.workspace)
+    # One `serve` at a time per workspace, so two can't both find no server and both start one.
+    with (folder / "serve.lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return _start_server(prompt, explicit_host, folder)
+
+
+def _start_server(prompt: PromptSettings, explicit_host: str | None, folder: Path) -> int:
     state_file = folder / "serve.json"
     if state := running_server(prompt.workspace):
         if state["prompt"] != prompt.dir.name:
             raise Stop(f"already serving {state['prompt']}; run whetstone serve --stop first")
         show_link(state["url"])
         return 0
+    host = explicit_host or phone_host(prompt.workspace)
+    if _every_interface(host):
+        raise Stop(f"--host must be one address, not every interface ({host})")
     token = secrets.token_urlsafe(32)
     # This process binds the socket and hands it over, so the port is known before the server starts and never races.
-    listener = socket.create_server((host, 0))
+    try:
+        listener = socket.create_server((host, 0))
+    except OSError as e:
+        raise Stop(f"can't listen on {host}: {e.strerror or e}") from None
     port = listener.getsockname()[1]
     argv = [sys.executable, "-m", "whetstone.entry.serve_main", str(prompt.workspace), prompt.dir.name, str(listener.fileno())]
     pid = start_detached(argv, token + "\n", folder / "server.log", pass_fds=(listener.fileno(),))
@@ -216,6 +235,13 @@ def start_server(prompt: PromptSettings, host: str) -> int:
     write_private(state_file, json.dumps({"pid": pid, "host": host, "port": port, "prompt": prompt.dir.name, "token": token, "url": url}))
     show_link(url)
     return 0
+
+
+def _every_interface(host: str) -> bool:
+    try:
+        return ipaddress.ip_address(host).is_unspecified
+    except ValueError:
+        return host == ""
 
 
 def phone_host(workspace: Path) -> str:
@@ -228,6 +254,8 @@ def phone_host(workspace: Path) -> str:
             return tailscale_address()
         except TailscaleMissing:
             raise Stop("phone.access is tailscale but the tailscale command was not found") from None
+        except TailscaleError as e:
+            raise Stop(f"tailscale is not connected: {e}") from None
     address = lan_address()
     if address is None:
         raise Stop("no Wi-Fi or LAN address found; pass --host")
