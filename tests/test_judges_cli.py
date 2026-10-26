@@ -175,3 +175,27 @@ def test_missing_judge_key_stops_before_any_model_call(tmp_path: Path, monkeypat
     assert code == 2
     assert f"JUDGE_API_KEY is not set in {tmp_path / '.env'}" in capsys.readouterr().err
     assert model.requests == []
+
+
+def add_private_case(prompt: Path) -> None:
+    source = prompt / "cases" / "private" / "diary"
+    source.mkdir(parents=True)
+    (source / "consent.toml").write_text('consented_by = "Levon"\nconsented_on = 2026-10-26\n')
+    (source / "day1.json").write_text(json.dumps({"text": "Slept badly."}))
+
+
+@pytest.mark.parametrize(("providers", "code"), [('["anthropic"]', 2), ('["anthropic", "openai"]', 0)])
+def test_real_data_reaches_judges_only_on_a_provider_the_repo_uses(
+    providers: str, code: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    add_private_case(prompt)
+    (tmp_path / "whetstone.toml").write_text(f"repo_providers = {providers}\n" + JUDGE_SETTINGS)
+    model, judge = echo_model(), judging("no")
+    monkeypatch.chdir(tmp_path)
+
+    assert run(["check", "daily"], make_model=lambda _settings: model, make_judge=lambda _workspace: judge) == code
+
+    if code == 2:
+        assert "real-data cases go only to providers this repo already uses (anthropic); openai is not one" in capsys.readouterr().err
+        assert model.requests == [] and judge.requests == []
