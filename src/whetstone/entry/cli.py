@@ -14,6 +14,7 @@ from typing import Any, cast
 
 import qrcode
 
+from whetstone.features.baseline.core import baseline_report
 from whetstone.features.baseline.store import save_run
 from whetstone.features.cases.core import provider_refusal
 from whetstone.features.cases.load import CaseError, load_cases
@@ -232,15 +233,22 @@ def run_baseline(prompt: PromptSettings, others: list[str], make_model: MakeMode
     suite = prepare_suite(prompt, make_model, make_judge)
     cards: list[dict[str, Any]] = []
     sources: dict[str, str] = {}  # "<case-id>:<tag>" -> the model that wrote it
+    runs: dict[str, list[dict[str, list[str]]]] = {}
+    tokens: dict[str, tuple[int, int]] = {}
     for model in [prompt.model, *others]:
+        runs[model], used = [], (0, 0)
         for case_id, case_input, request in suite.requests:
-            output = suite.model({**request, "model": model}).output
-            failures = suite.score(case_id, case_input, output)
-            cards.append({"case_id": case_id, "input": case_input, "output": output, "caught_by": caught(failures), "tag": secrets.token_hex(4)})
+            result = suite.model({**request, "model": model})
+            used = (used[0] + result.input_tokens, used[1] + result.output_tokens)
+            failures = suite.score(case_id, case_input, result.output)
+            runs[model].append(failures)
+            cards.append({"case_id": case_id, "input": case_input, "output": result.output, "caught_by": caught(failures), "tag": secrets.token_hex(4)})
             sources[f"{case_id}:{cards[-1]['tag']}"] = model
+        tokens[model] = used
     random.shuffle(cards)
     deck_id = save_deck(prompt.workspace, prompt.dir.name, cards)
-    save_run(prompt.dir, deck_id, {f"{deck_id}:{card}": model for card, model in sources.items()}, "")
+    report = baseline_report(prompt.dir.name, suite.check_names(), runs, tokens)
+    save_run(prompt.dir, deck_id, {f"{deck_id}:{card}": model for card, model in sources.items()}, report)
     return 0
 
 
