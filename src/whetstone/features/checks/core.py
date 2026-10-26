@@ -88,3 +88,19 @@ def judge_failures(rubric: Rubric, reply: str) -> list[str]:
     if not isinstance(answer, str) or answer not in rubric.fail:
         raise JudgeAnswerError(answer if isinstance(answer, str) else reply)
     return [rubric.fail[answer]]
+
+
+@dataclass(frozen=True)
+class Side:
+    agreed: int
+    total: int
+
+
+@dataclass(frozen=True)
+class Agreement:
+    good: Side  # cards the grader called good, and how many of them the judge passed
+    bad: Side  # cards the grader called bad for this judge's rule, and how many of them the judge failed
+
+
+def agreement(labels: list[dict[str, Any]], verdicts: dict[str, bool], rule: set[str]) -> dict[str, Agreement]:
+    raise NotImplementedError
