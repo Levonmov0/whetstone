@@ -1,3 +1,4 @@
+import json
 import subprocess
 import tomllib
 from datetime import date
@@ -6,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from tests.fakes import unused_model
-from tests.test_check_cli import make_prompt, make_suite, make_workspace
+from tests.test_check_cli import echo_model, make_prompt, make_suite, make_workspace
 from whetstone.entry.cli import run
 
 
@@ -85,3 +86,22 @@ def test_a_private_case_without_consent_stops_before_the_harness(
     assert code == 2
     assert f"real-data case {case_id} has no consent record; run whetstone add-source" in err
     assert "harness ran" not in err
+
+
+def add_diary_case(prompt: Path) -> None:
+    source = prompt / "cases" / "private" / "diary"
+    source.mkdir(parents=True)
+    (source / "consent.toml").write_text('consented_by = "Levon"\nconsented_on = 2026-10-26\n')
+    (source / "day1.json").write_text(json.dumps({"text": "Slept badly."}))
+
+
+def test_private_cases_need_repo_providers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    add_diary_case(make_suite(tmp_path, {"a": "Rest today."}))
+    model = echo_model()
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=lambda _settings: model)
+
+    assert code == 2
+    assert "whetstone.toml has no repo_providers; real-data cases need it" in capsys.readouterr().err
+    assert model.requests == []
