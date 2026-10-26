@@ -25,3 +25,13 @@ def save_deck(workspace: Path, prompt: str, cards: list[dict[str, Any]]) -> None
 
 def load_deck(workspace: Path, prompt: str) -> dict[str, Any]:
     return json.loads((workspace / ".whetstone" / "decks" / f"{prompt}.json").read_text())
+
+
+def add_label(prompt_dir: Path, label: dict[str, Any]) -> None:
+    with (prompt_dir / "labels.jsonl").open("a") as f:
+        f.write(json.dumps(label) + "\n")
+
+
+def load_labels(prompt_dir: Path) -> list[dict[str, Any]]:
+    labels = prompt_dir / "labels.jsonl"
+    return [json.loads(line) for line in labels.read_text().splitlines()] if labels.is_file() else []
