@@ -25,3 +25,7 @@ def tailscale_address() -> str:
     if tailscale is None:
         raise TailscaleMissing()
     return subprocess.run([tailscale, "ip", "-4"], capture_output=True, text=True, timeout=10, check=True).stdout.split()[0]
+
+
+class TailscaleError(Exception):
+    pass
