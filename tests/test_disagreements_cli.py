@@ -88,3 +88,13 @@ def test_settling_needs_good_or_bad(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         run(["settle", "daily", "d1:a", "skip", "--grader", "Levon"], make_model=unused_model)
 
     assert exit.value.code == 2
+
+
+def test_a_dictated_note_stays_on_one_line(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today."})
+    write_labels(prompt / "labels.jsonl", [label("d1:a", "Levon", "good"), label("d1:a", "Hampus", "bad", note='Too "chirpy".\nDay one should welcome them.')])
+    monkeypatch.chdir(tmp_path)
+
+    run(["disagreements", "daily"], make_model=unused_model)
+
+    assert capsys.readouterr().out.splitlines()[0] == r'd1:a  Levon: good  Hampus: bad "Too \"chirpy\".\nDay one should welcome them."'
