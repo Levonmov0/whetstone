@@ -2,6 +2,7 @@ import argparse
 import fcntl
 import ipaddress
 import json
+import random
 import secrets
 import socket
 import sys
@@ -50,17 +51,19 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge = no_judge
     verify = commands.add_parser("verify-harness", help="compare the harness's request with a real production request")
     verify.add_argument("--case", required=True, help="the case id to build the request from")
     verify.add_argument("--expected", type=Path, required=True, help="a JSON file holding the request production sent")
+    baseline = commands.add_parser("baseline", help="run the prompt on several models into one blind deck, and say if a model change is the fix")
+    baseline.add_argument("--models", default="", help="the models to compare with production, comma-separated")
     agree = commands.add_parser("agreement", help="measure each judge against the swipes and say whether it can be trusted")
     reasons = commands.add_parser("reasons", help="list left-swipe reasons that no check stands for yet")
     disagree = commands.add_parser("disagreements", help="list the cards graders disagree on")
     settle = commands.add_parser("settle", help="record your call on a card graders disagree on")
     serve = commands.add_parser("serve", help="start the swipe server in the background and show its QR code")
     source = commands.add_parser("add-source", help="make a private folder for one real-data source and record its consent")
-    for command in (check, verify, source, disagree, settle, reasons, agree):
+    for command in (check, verify, source, disagree, settle, reasons, agree, baseline):
         command.add_argument("prompt")
     serve.add_argument("prompt", nargs="?")
     serve.add_argument("--stop", action="store_true", help="stop the running swipe server")
-    for command in (check, verify, source, disagree, settle, serve, reasons, agree):
+    for command in (check, verify, source, disagree, settle, serve, reasons, agree, baseline):
         command.add_argument("--workspace", type=Path, help="the workspace folder, when it is not ./ or ./whetstone/")
     serve.add_argument("--host", help="the address to listen on")
     settle.add_argument("card", help="the card id, as disagreements prints it")
@@ -78,6 +81,8 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge = no_judge
         prompt = find_prompt(args.workspace, args.prompt)
         if args.command == "verify-harness":
             return verify_harness(prompt, args.case, args.expected)
+        if args.command == "baseline":
+            return run_baseline(prompt, [m for m in args.models.split(",") if m], make_model, make_judge)
         if args.command == "agreement":
             return show_agreement(prompt, make_judge)
         if args.command == "reasons":
@@ -218,6 +223,21 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
     lines, code = report(results, suite.check_names())
     print("\n".join(lines))
     return code
+
+
+def run_baseline(prompt: PromptSettings, others: list[str], make_model: MakeModel, make_judge: MakeJudge) -> int:
+    """The prompt on its production model and each other model, every output in one shuffled deck that never says
+    which model wrote a card."""
+    suite = prepare_suite(prompt, make_model, make_judge)
+    cards: list[dict[str, Any]] = []
+    for model in [prompt.model, *others]:
+        for case_id, case_input, request in suite.requests:
+            output = suite.model({**request, "model": model}).output
+            failures = suite.score(case_id, case_input, output)
+            cards.append({"case_id": case_id, "input": case_input, "output": output, "caught_by": caught(failures), "tag": secrets.token_hex(4)})
+    random.shuffle(cards)
+    save_deck(prompt.workspace, prompt.dir.name, cards)
+    return 0
 
 
 def verify_harness(prompt: PromptSettings, case_id: str, expected_file: Path) -> int:
