@@ -45,3 +45,46 @@ def test_nothing_to_settle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caps
 
     assert code == 0
     assert capsys.readouterr().out.splitlines() == ["nothing to settle"]
+
+
+def test_settling_a_card_takes_it_off_the_queue(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today."})
+    source = prompt / "cases" / "private" / "diary" / "labels.jsonl"
+    write_labels(source, [label("d1:private/diary/day1", "Levon", "good"), label("d1:private/diary/day1", "Hampus", "bad")])
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["settle", "daily", "d1:private/diary/day1", "bad", "--grader", "Levon", "--note", "rule: never guess sleep"], make_model=unused_model)
+    run(["disagreements", "daily"], make_model=unused_model)
+
+    assert code == 0
+    assert capsys.readouterr().out.splitlines()[-1] == "nothing to settle"
+    settled = json.loads(source.read_text().splitlines()[-1])
+    assert {k: settled[k] for k in ("card_id", "case_id", "grader", "verdict", "note", "settled")} == {
+        "card_id": "d1:private/diary/day1",
+        "case_id": "private/diary/day1",
+        "grader": "Levon",
+        "verdict": "bad",
+        "note": "rule: never guess sleep",
+        "settled": True,
+    }
+    assert not (prompt / "labels.jsonl").exists()
+
+
+def test_settling_an_unknown_card_exits_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_suite(tmp_path, {"a": "Rest today."})
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["settle", "daily", "d9:a", "good", "--grader", "Levon"], make_model=unused_model)
+
+    assert code == 2
+    assert "no labels for card d9:a" in capsys.readouterr().err
+
+
+def test_settling_needs_good_or_bad(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    make_suite(tmp_path, {"a": "Rest today."})
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(SystemExit) as exit:
+        run(["settle", "daily", "d1:a", "skip", "--grader", "Levon"], make_model=unused_model)
+
+    assert exit.value.code == 2
