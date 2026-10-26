@@ -35,4 +35,11 @@ def swipe_problem(body: object) -> str | None:
 
 
 def disagreements(labels: list[dict[str, Any]]) -> list[str]:
-    raise NotImplementedError
+    """Cards where one grader's latest swipe is good and another's is bad, unless settled; in first-swiped order."""
+    latest: dict[str, dict[str, str]] = {}
+    settled: set[str] = set()
+    for label in labels:
+        if label.get("settled"):
+            settled.add(label["card_id"])
+        latest.setdefault(label["card_id"], {})[label["grader"]] = label["verdict"]
+    return [card for card, verdicts in latest.items() if card not in settled and {"good", "bad"} <= set(verdicts.values())]
