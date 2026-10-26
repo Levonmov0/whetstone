@@ -2,6 +2,7 @@ import argparse
 import json
 import sys
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -11,7 +12,7 @@ from whetstone.features.cases.sources import SourceError, add_source
 from whetstone.features.checks.core import CaseResult, report
 from whetstone.features.checks.load import CheckLoadError, load_checks
 from whetstone.features.grading.core import disagreements
-from whetstone.features.grading.store import load_labels, save_deck
+from whetstone.features.grading.store import add_label, load_labels, save_deck
 from whetstone.features.workspace.core import request_differences, request_problem
 from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, prompt_names, repo_providers
 from whetstone.platform.anthropic import anthropic_model
@@ -34,10 +35,15 @@ def run(argv: list[str], make_model: MakeModel) -> int:
     verify.add_argument("--case", required=True, help="the case id to build the request from")
     verify.add_argument("--expected", type=Path, required=True, help="a JSON file holding the request production sent")
     disagree = commands.add_parser("disagreements", help="list the cards graders disagree on")
+    settle = commands.add_parser("settle", help="record your call on a card graders disagree on")
     source = commands.add_parser("add-source", help="make a private folder for one real-data source and record its consent")
-    for command in (check, verify, source, disagree):
+    for command in (check, verify, source, disagree, settle):
         command.add_argument("prompt")
         command.add_argument("--workspace", type=Path, help="the workspace folder, when it is not ./ or ./whetstone/")
+    settle.add_argument("card", help="the card id, as disagreements prints it")
+    settle.add_argument("verdict", choices=["good", "bad"])
+    settle.add_argument("--grader", required=True, help="your name")
+    settle.add_argument("--note", default="", help="the rule this settles, in your words")
     source.add_argument("source", help="the source's folder name, such as diary")
     source.add_argument("--consented-by", required=True, help="who consented")
     source.add_argument("--consented-on", required=True, help="the date they consented, such as 2026-10-26")
@@ -49,6 +55,8 @@ def run(argv: list[str], make_model: MakeModel) -> int:
             return verify_harness(prompt, args.case, args.expected)
         if args.command == "disagreements":
             return list_disagreements(prompt)
+        if args.command == "settle":
+            return settle_card(prompt, args.card, args.verdict, args.grader, args.note)
         if args.command == "add-source":
             try:
                 add_source(prompt.dir, args.source, args.consented_by, args.consented_on)
@@ -162,6 +170,15 @@ def list_disagreements(prompt: PromptSettings) -> int:
         latest = {label["grader"]: label for label in labels if label["card_id"] == card}
         print(f"{card}  " + "  ".join(_verdict(label) for label in latest.values()))
     print(f"{len(queued)} card{'' if len(queued) == 1 else 's'} to settle" if queued else "nothing to settle")
+    return 0
+
+
+def settle_card(prompt: PromptSettings, card: str, verdict: str, grader: str, note: str) -> int:
+    swiped = [label for label in load_labels(prompt.dir) if label["card_id"] == card]
+    if not swiped:
+        raise Stop(f"no labels for card {card}")
+    swipe: dict[str, Any] = {"grader": grader, "verdict": verdict, "reasons": [], "note": note, "settled": True, "at": datetime.now(UTC).isoformat()}
+    add_label(prompt.dir, {**swiped[-1], **swipe})
     return 0
 
 
