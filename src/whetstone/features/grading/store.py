@@ -20,7 +20,10 @@ def save_deck(workspace: Path, prompt: str, cards: list[dict[str, Any]]) -> None
     decks = private_dir(workspace) / "decks"
     decks.mkdir(exist_ok=True)
     deck = {"id": deck_id, "cards": [{"card_id": f"{deck_id}:{c['case_id']}", **c} for c in cards]}
-    (decks / f"{prompt}.json").write_text(json.dumps(deck, indent=2))
+    # Written aside, then swapped in: the server reads the deck on every request, and must never see half of one.
+    partial = decks / f".{prompt}.json.partial"
+    partial.write_text(json.dumps(deck, indent=2))
+    partial.replace(decks / f"{prompt}.json")
 
 
 def load_deck(workspace: Path, prompt: str) -> dict[str, Any] | None:
