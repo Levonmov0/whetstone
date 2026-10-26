@@ -343,5 +343,9 @@ def production_model(settings: PromptSettings) -> ModelCall:
     return anthropic_model(load_key(settings.workspace, "GENERATION_API_KEY"))
 
 
+def production_judge(workspace: Path) -> ModelCall:
+    raise NotImplementedError
+
+
 def main() -> None:
     sys.exit(run(sys.argv[1:], make_model=production_model))

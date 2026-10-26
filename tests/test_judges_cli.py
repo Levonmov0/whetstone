@@ -5,7 +5,7 @@ import pytest
 
 from tests.fakes import FakeModel, unused_model
 from tests.test_check_cli import echo_model, make_suite
-from whetstone.entry.cli import run
+from whetstone.entry.cli import production_judge, run
 
 RUBRIC = '''question = "Does the line assume whether the athlete did what Kin advised?"
 guide = "Asking either way is fine."
@@ -161,3 +161,17 @@ def test_judges_need_an_openai_judge_model(settings: str, tmp_path: Path, monkey
 
     assert code == 2
     assert 'whetstone.toml: [models] judge needs provider = "openai" and a model' in capsys.readouterr().err
+
+
+def test_missing_judge_key_stops_before_any_model_call(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_judged_suite(tmp_path, {"a": "Rest today."})
+    (tmp_path / ".env").write_text("GENERATION_API_KEY=k\n")
+    monkeypatch.setenv("JUDGE_API_KEY", "shell-key")  # the shell's never counts
+    model = echo_model()
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=lambda _settings: model, make_judge=production_judge)
+
+    assert code == 2
+    assert f"JUDGE_API_KEY is not set in {tmp_path / '.env'}" in capsys.readouterr().err
+    assert model.requests == []
