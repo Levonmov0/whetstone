@@ -87,7 +87,11 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel) -> int:
     if not cases:
         raise Stop(f"no cases in {prompt.dir / 'cases'}")
     has_private = any(case_id.startswith("private/") for case_id, _ in cases)
-    if refusal := provider_refusal(prompt.provider, repo_providers(prompt.workspace), has_private):
+    try:
+        providers = repo_providers(prompt.workspace)
+    except PromptError as e:
+        raise Stop(str(e)) from None
+    if refusal := provider_refusal(prompt.provider, providers, has_private):
         raise Stop(refusal)
     requests: list[tuple[str, Any]] = []
     for case_id, case_json in cases:

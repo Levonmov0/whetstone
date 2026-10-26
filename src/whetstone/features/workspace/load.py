@@ -1,6 +1,7 @@
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 
 def find_workspace(cwd: Path, explicit: Path | None) -> Path | None:
@@ -48,4 +49,11 @@ def load_prompt(workspace: Path, name: str) -> PromptSettings:
 
 def repo_providers(workspace: Path) -> list[str] | None:
     """The model providers this repo already uses, as init recorded them; None when not recorded."""
-    return tomllib.loads((workspace / "whetstone.toml").read_text()).get("repo_providers")
+    settings_file = workspace / "whetstone.toml"
+    try:
+        providers = tomllib.loads(settings_file.read_text()).get("repo_providers")
+    except tomllib.TOMLDecodeError as e:
+        raise PromptError(f"{settings_file}: invalid TOML: {e}") from None
+    if providers is not None and not (isinstance(providers, list) and all(isinstance(p, str) for p in cast(list[Any], providers))):
+        raise PromptError(f"{settings_file}: repo_providers must be a list of provider names")
+    return cast(list[str] | None, providers)
