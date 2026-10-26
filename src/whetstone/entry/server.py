@@ -72,7 +72,7 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
                 return refuse("body is over 64 KB")
         try:
             body = json.loads(raw)
-        except ValueError:
+        except (ValueError, RecursionError):  # RecursionError: nested deeper than the parser goes
             return refuse("body must be a JSON object")
         if problem := swipe_problem(body):
             return refuse(problem)
@@ -91,8 +91,10 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
         return HTMLResponse((STATIC / "app.html").read_text())
 
     async def theme(request: Request) -> Response:
+        # Whetstone's theme first, the repo's on top: a repo theme holds only the tokens init found, and every other
+        # variable falls back to Whetstone's.
         workspace_theme = prompt.workspace / "theme.css"
-        css = workspace_theme if workspace_theme.is_file() else STATIC / "default.css"
-        return Response(css.read_text(), media_type="text/css")
+        css = (STATIC / "default.css").read_text() + (workspace_theme.read_text() if workspace_theme.is_file() else "")
+        return Response(css, media_type="text/css")
 
     return Starlette(lifespan=lifespan, routes=[Route("/", app_page), Route("/theme.css", theme), Route("/api/cards", guarded(cards)), Route("/api/swipes", guarded(swipes), methods=["POST"])])

@@ -6,7 +6,7 @@ def provider_refusal(provider: str, repo_providers: list[str] | None, has_privat
     Every model call that may carry a real-data case asks this first."""
     if not has_private:
         return None
-    if repo_providers is None:
+    if not repo_providers:
         return "whetstone.toml has no repo_providers; real-data cases need it"
     if provider not in repo_providers:
         return f"real-data cases go only to providers this repo already uses ({', '.join(repo_providers)}); {provider} is not one"

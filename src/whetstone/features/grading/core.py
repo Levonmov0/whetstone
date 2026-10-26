@@ -38,7 +38,8 @@ def disagreements(labels: list[dict[str, Any]]) -> list[str]:
     """Cards where one grader's latest swipe is good and another's is bad, unless settled; in first-swiped order."""
     latest: dict[str, dict[str, str]] = {}
     settled: set[str] = set()
-    for label in labels:
+    # Labels come from several files; their time (ISO, UTC) puts them back in the order they were swiped.
+    for label in sorted(labels, key=lambda label: str(label.get("at", ""))):
         if label.get("settled"):
             settled.add(label["card_id"])
         latest.setdefault(label["card_id"], {})[label["grader"]] = label["verdict"]
