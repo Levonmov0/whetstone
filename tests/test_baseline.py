@@ -67,3 +67,45 @@ def test_baseline_report_has_the_verdict_and_a_row_per_model(tmp_path: Path, mon
     assert "| model | every check | banned | length | assumes (judge) | input tokens | output tokens |" in lines
     assert "| fake-model | 1/3 | 2/3 | 3/3 | 2/3 | 30 | 15 |" in lines
     assert "| model-b | 1/3 | 2/3 | 3/3 | 2/3 | 30 | 15 |" in lines
+
+
+def test_baseline_report_adds_the_swipes_per_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today.", "b": "Walk later."})
+    monkeypatch.chdir(tmp_path)
+    run(["baseline", "daily", "--models", "model-b"], make_model=lambda _settings: by_model())
+    deck = json.loads((tmp_path / ".whetstone" / "decks" / "daily.json").read_text())
+    [folder] = (prompt / "runs").glob("baseline-*")
+    sources = json.loads((folder / "cards.json").read_text())
+    by = {model: [card for card in deck["cards"] if sources[card["card_id"]] == model] for model in ("fake-model", "model-b")}
+
+    def swipe(card: dict[str, Any], verdict: str, grader: str = "Levon", at: str = "2026-10-26T08:00:00+00:00") -> str:
+        return json.dumps({**card, "deck_id": deck["id"], "grader": grader, "verdict": verdict, "reasons": [], "note": "", "at": at}) + "\n"
+
+    (prompt / "labels.jsonl").write_text(
+        swipe(by["fake-model"][0], "bad")
+        + swipe(by["fake-model"][0], "good", at="2026-10-26T09:00:00+00:00")  # Levon changed his mind: only this counts
+        + swipe(by["fake-model"][1], "good")
+        + swipe(by["fake-model"][1], "bad", grader="Hampus")
+        + swipe(by["model-b"][0], "skip")
+        + json.dumps({"card_id": "older:a", "grader": "Levon", "verdict": "bad", "reasons": [], "note": "", "at": "1"}) + "\n"
+    )
+
+    first = run(["baseline", "daily", "--report"], make_model=lambda _settings: by_model())
+    code = run(["baseline", "daily", "--report"], make_model=lambda _settings: by_model())  # rewritten, not appended
+
+    lines = (folder / "report.md").read_text().splitlines()
+    assert (first, code) == (0, 0)
+    assert "fake-model passes every check on every case; a model change has nothing to fix." in lines
+    assert lines.count("## Swipes") == 1
+    assert "- fake-model: good 2, bad 1, skip 0" in lines
+    assert "- model-b: good 0, bad 0, skip 1" in lines
+
+
+def test_baseline_report_without_a_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_suite(tmp_path, {"a": "Rest today."})
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["baseline", "daily", "--report"], make_model=lambda _settings: by_model())
+
+    assert code == 2
+    assert "no baseline run for daily yet; run whetstone baseline daily --models …" in capsys.readouterr().err
