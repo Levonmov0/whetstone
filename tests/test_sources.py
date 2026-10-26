@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from tests.fakes import unused_model
-from tests.test_check_cli import make_suite
+from tests.test_check_cli import make_prompt, make_suite, make_workspace
 from whetstone.entry.cli import run
 
 
@@ -67,3 +67,21 @@ def test_add_source_never_overwrites_a_consent_record(tmp_path: Path, monkeypatc
     assert code == 2
     assert f"source diary already exists; its consent is in {consent}" in capsys.readouterr().err
     assert consent.read_text() == before
+
+
+@pytest.mark.parametrize(("path", "case_id"), [("diary/day1.json", "private/diary/day1"), ("x.json", "private/x")])
+def test_a_private_case_without_consent_stops_before_the_harness(
+    path: str, case_id: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    prompt = make_prompt(make_workspace(tmp_path), "import sys; print('harness ran', file=sys.stderr); sys.exit(3)", {"a": {}})
+    case = prompt / "cases" / "private" / path
+    case.parent.mkdir(parents=True)
+    case.write_text("{}")
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=unused_model)
+
+    err = capsys.readouterr().err
+    assert code == 2
+    assert f"real-data case {case_id} has no consent record; run whetstone add-source" in err
+    assert "harness ran" not in err
