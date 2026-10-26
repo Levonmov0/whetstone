@@ -153,11 +153,14 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
     except CheckLoadError as e:
         raise Stop(str(e)) from None
     try:
+        judged_by = judge_model(prompt.workspace) if judges else ""
+    except PromptError as e:
+        raise Stop(str(e)) from None
+    try:
         model = make_model(prompt)
     except MissingKey as e:
         raise Stop(str(e)) from None
     judge = make_judge(prompt.workspace) if judges else None
-    judged_by = judge_model(prompt.workspace) if judges else ""
     results: list[CaseResult] = []
     cards: list[dict[str, Any]] = []
     for case_id, case_input, request in requests:
