@@ -102,3 +102,17 @@ def test_a_swipe_is_stored_with_its_grader_and_card(tmp_path: Path, monkeypatch:
     assert datetime.fromisoformat(label["at"]).tzinfo is not None
     assert card_ids(client.get("/api/cards", headers={**AUTH, "X-Grader": "Levon"})) == ["a"]
     assert card_ids(client.get("/api/cards", headers={**AUTH, "X-Grader": "Hampus"})) == ["a", "b"]
+
+
+def stored_labels(tmp_path: Path) -> list[dict[str, Any]]:
+    labels = tmp_path / "prompts" / "daily" / "labels.jsonl"
+    return [json.loads(line) for line in labels.read_text().splitlines()] if labels.is_file() else []
+
+
+def test_a_bad_swipe_on_a_caught_card_takes_its_checks_as_reasons(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = graded_suite(tmp_path, monkeypatch)
+    card_b = client.get("/api/cards", headers={**AUTH, "X-Grader": "Levon"}).json()["cards"][1]
+
+    client.post("/api/swipes", headers=AUTH, json={"card_id": card_b["card_id"], "grader": "Levon", "verdict": "bad", "reasons": [], "note": ""})
+
+    assert [label["reasons"] for label in stored_labels(tmp_path)] == [["banned"]]
