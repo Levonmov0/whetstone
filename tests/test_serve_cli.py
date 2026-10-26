@@ -105,3 +105,57 @@ def test_stop_with_nothing_running(workspace: Path) -> None:
 
     assert result.returncode == 0
     assert "no server running" in result.stdout
+
+
+def set_access(workspace: Path, access: str) -> None:
+    (workspace / "whetstone.toml").write_text(f'[phone]\naccess = "{access}"\n')
+
+
+def test_lan_access_serves_on_the_lan_address(workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    set_access(workspace, "lan")
+    monkeypatch.setattr("whetstone.entry.cli.lan_address", lambda: "127.0.0.1")  # stands in for the Wi-Fi address
+
+    code = run(["serve", "daily"], make_model=lambda _settings: echo_model())
+
+    assert code == 0
+    assert "http://127.0.0.1:" in capsys.readouterr().out
+
+
+def test_tailscale_access_serves_on_the_tailscale_address(
+    workspace: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    set_access(workspace, "tailscale")
+    bin_dir = tmp_path_factory.mktemp("bin")
+    (bin_dir / "tailscale").write_text("#!/bin/sh\n[ \"$1 $2\" = 'ip -4' ] && echo 127.0.0.1\n")
+    (bin_dir / "tailscale").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+
+    code = run(["serve", "daily"], make_model=lambda _settings: echo_model())
+
+    assert code == 0
+    assert "http://127.0.0.1:" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("access", "error"),
+    [("tailscale", "phone.access is tailscale but the tailscale command was not found"), ("tunnel", 'phone.access must be "lan" or "tailscale"')],
+)
+def test_bad_phone_access_exits_2(
+    access: str, error: str, workspace: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    set_access(workspace, access)
+    monkeypatch.setenv("PATH", str(tmp_path_factory.mktemp("empty")))
+
+    code = run(["serve", "daily"], make_model=lambda _settings: echo_model())
+
+    assert code == 2
+    assert error in capsys.readouterr().err
+
+
+def test_no_lan_address_says_to_pass_host(workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.setattr("whetstone.entry.cli.lan_address", lambda: None)
+
+    code = run(["serve", "daily"], make_model=lambda _settings: echo_model())
+
+    assert code == 2
+    assert "no Wi-Fi or LAN address found; pass --host" in capsys.readouterr().err
