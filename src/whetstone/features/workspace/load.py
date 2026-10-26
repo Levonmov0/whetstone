@@ -81,3 +81,8 @@ def repo_providers(workspace: Path) -> list[str] | None:
     if providers is not None and not (isinstance(providers, list) and all(isinstance(p, str) for p in cast(list[Any], providers))):
         raise PromptError(f"{settings_file}: repo_providers must be a list of provider names")
     return cast(list[str] | None, providers)
+
+
+def judge_model(workspace: Path) -> str:
+    """The model judges run on, from `[models] judge` in whetstone.toml."""
+    return _workspace_settings(workspace)["models"]["judge"]["model"]

@@ -15,12 +15,12 @@ import qrcode
 from whetstone.features.cases.core import provider_refusal
 from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.cases.sources import SourceError, add_source
-from whetstone.features.checks.core import CaseResult, report
-from whetstone.features.checks.load import CheckLoadError, load_checks
+from whetstone.features.checks.core import CaseResult, judge_failures, judge_request, report
+from whetstone.features.checks.load import CheckLoadError, load_checks, load_judges
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, private_dir, save_deck
 from whetstone.features.workspace.core import request_differences, request_problem
-from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, phone_access, prompt_names, repo_providers
+from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, judge_model, load_prompt, phone_access, prompt_names, repo_providers
 from whetstone.platform.anthropic import anthropic_model
 from whetstone.platform.config import MissingKey, load_key
 from whetstone.platform.daemon import command_line, is_running, start_detached, stop, write_private
@@ -85,7 +85,7 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge = no_judge
             except SourceError as e:
                 raise Stop(str(e)) from None
             return 0
-        return check_prompt(prompt, make_model)
+        return check_prompt(prompt, make_model, make_judge)
     except Stop as e:
         print(e, file=sys.stderr)
         return 2
@@ -116,7 +116,7 @@ def build(prompt: PromptSettings, case_id: str, case_json: str) -> Any:
         raise Stop(f"case {case_id}: {e}") from None
 
 
-def check_prompt(prompt: PromptSettings, make_model: MakeModel) -> int:
+def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: MakeJudge) -> int:
     if prompt.editable is None:
         raise Stop(f'{prompt.dir / "prompt.toml"} has no "editable" part yet')
     # Every request is built and vetted before the first model call, so a broken harness costs nothing.
@@ -148,10 +148,13 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel) -> int:
         checks = load_checks(prompt.dir)
     except CheckLoadError as e:
         raise Stop(str(e)) from None
+    judges = load_judges(prompt.dir)
     try:
         model = make_model(prompt)
     except MissingKey as e:
         raise Stop(str(e)) from None
+    judge = make_judge(prompt.workspace) if judges else None
+    judged_by = judge_model(prompt.workspace) if judges else ""
     results: list[CaseResult] = []
     cards: list[dict[str, Any]] = []
     for case_id, case_input, request in requests:
@@ -168,11 +171,15 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel) -> int:
             if not isinstance(messages, list) or not all(isinstance(m, str) for m in cast(list[Any], messages)):
                 raise Stop(f"check {name} returned {messages!r} on case {case_id}; a check returns a list of failure messages")
             failures[name] = cast(list[str], messages)
+        for name, rubric in judges.items():
+            assert judge
+            reply = judge(judge_request(rubric, judged_by, case_input, output)).output
+            failures[f"{name} (judge)"] = judge_failures(rubric, reply)
         results.append(CaseResult(case_id, failures))
-        caught_by = [name for name, messages in failures.items() if messages]
+        caught_by = [name.removesuffix(" (judge)") for name, messages in failures.items() if messages]
         cards.append({"case_id": case_id, "input": case_input, "output": output, "caught_by": caught_by})
     save_deck(prompt.workspace, prompt.dir.name, cards)
-    lines, code = report(results, list(checks))
+    lines, code = report(results, [*checks, *(f"{name} (judge)" for name in judges)])
     print("\n".join(lines))
     return code
 

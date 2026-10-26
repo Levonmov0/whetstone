@@ -1,6 +1,7 @@
 """Pure rules for a check run: how results are reported and what exit code they give."""
 
 from dataclasses import dataclass
+import json
 from typing import Any
 
 
@@ -38,3 +39,28 @@ def uncovered_reasons(labels: list[dict[str, Any]], covered: set[str]) -> list[t
             if reason not in covered:
                 counts[reason] = counts.get(reason, 0) + 1
     return list(counts.items())
+
+
+@dataclass(frozen=True)
+class Rubric:
+    """A judge: one question about one rule, one passing answer, and failing answers each mapped to its reason."""
+
+    question: str
+    guide: str
+    passing: str
+    fail: dict[str, str]
+
+
+JUDGE_INSTRUCTIONS = "You check one output of a prompt against one rule. Answer the question about the output, using the input only as context."
+
+
+def judge_request(rubric: Rubric, model: str, case_input: Any, output: Any) -> dict[str, Any]:
+    """The judge's request body, for the OpenAI Responses API."""
+    text = f"Question: {rubric.question}\n\n{rubric.guide}\n\nInput:\n{json.dumps(case_input, ensure_ascii=False)}\n\nOutput:\n{json.dumps(output, ensure_ascii=False)}"
+    return {"model": model, "instructions": JUDGE_INSTRUCTIONS, "input": text}
+
+
+def judge_failures(rubric: Rubric, reply: str) -> list[str]:
+    """The judge's reply as a check result: no messages when it gave the passing answer, else that answer's reason."""
+    answer = json.loads(reply)["answer"]
+    return [] if answer == rubric.passing else [rubric.fail[answer]]

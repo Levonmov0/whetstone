@@ -1,7 +1,10 @@
 import importlib.util
+import tomllib
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+from whetstone.features.checks.core import Rubric
 
 Check = Callable[[Any], Any]
 
@@ -25,3 +28,12 @@ def load_checks(prompt_dir: Path) -> dict[str, Check]:
             raise CheckLoadError(f'check {path.stem} failed to load: {path} has no "check" function')
         checks[path.stem] = module.check
     return checks
+
+
+def load_judges(prompt_dir: Path) -> dict[str, Rubric]:
+    """Each `checks/<name>.judge.toml` rubric."""
+    judges: dict[str, Rubric] = {}
+    for path in sorted((prompt_dir / "checks").glob("*.judge.toml")):
+        raw = tomllib.loads(path.read_text())
+        judges[path.name.removesuffix(".judge.toml")] = Rubric(raw["question"], raw.get("guide", ""), raw["pass"], raw["fail"])
+    return judges
