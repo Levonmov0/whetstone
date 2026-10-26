@@ -261,7 +261,7 @@ def settle_card(prompt: PromptSettings, card: str, verdict: str, grader: str, no
 
 def _verdict(label: dict[str, Any]) -> str:
     reasons = f" ({', '.join(label['reasons'])})" if label["reasons"] else ""
-    note = f' "{label["note"]}"' if label["note"] else ""
+    note = f" {json.dumps(label['note'], ensure_ascii=False)}" if label["note"] else ""
     return f"{label['grader']}: {label['verdict']}{reasons}{note}"
 
 
