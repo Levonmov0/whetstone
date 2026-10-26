@@ -161,6 +161,7 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
         model = make_model(prompt)
     except MissingKey as e:
         raise Stop(str(e)) from None
+    print(_calls(len(requests), len(requests) * len(judges)), flush=True)
     results: list[CaseResult] = []
     cards: list[dict[str, Any]] = []
     for case_id, case_input, request in requests:
@@ -352,6 +353,7 @@ def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
     ask = prepare_judge(prompt, providers, any(label["case_id"].startswith("private/") for label in labels), make_judge)
     # Each swiped card is judged once, from the input and output its label kept, however many graders swiped it.
     cards = {label["card_id"]: label for label in labels}
+    print(f"{len(cards) * len(judges)} judge calls", flush=True)
     code = 0
     for name, rubric in judges.items():
         verdicts = {card: not ask(name, rubric, label["case_id"], label["input"], label["output"]) for card, label in cards.items()}
@@ -363,6 +365,12 @@ def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
         print("".join(f"  {line}\n" for line in advice), end="")
         code = 1 if status == "untrusted" else code
     return code
+
+
+def _calls(generation: int, judging: int) -> str:
+    """What a run is about to spend, said before its first call."""
+    calls = f"{generation} generation call{'' if generation == 1 else 's'}"
+    return f"{calls} and {judging} judge calls" if judging else calls
 
 
 def _side(side: Side) -> str:
