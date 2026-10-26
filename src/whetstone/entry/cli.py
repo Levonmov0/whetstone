@@ -29,13 +29,18 @@ from whetstone.platform.model import ModelCall, ModelError
 from whetstone.platform.network import TailscaleError, TailscaleMissing, lan_address, tailscale_address
 
 MakeModel = Callable[[PromptSettings], ModelCall]
+MakeJudge = Callable[[Path], ModelCall]  # takes the workspace, whose .env holds the judge key
 
 
 class Stop(Exception):
     """A broken setup: the message is printed and the command exits 2."""
 
 
-def run(argv: list[str], make_model: MakeModel) -> int:
+def no_judge(_workspace: Path) -> ModelCall:
+    raise NotImplementedError
+
+
+def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge = no_judge) -> int:
     parser = argparse.ArgumentParser(prog="whetstone")
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("check", help="run every case through the prompt and its checks")
