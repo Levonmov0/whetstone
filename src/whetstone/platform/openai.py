@@ -15,7 +15,9 @@ def openai_model(api_key: str, transport: httpx.BaseTransport | None = None) -> 
     # and extra headers from the shell. Empty values stop the environment lookups; Omit() drops each shell header, and
     # our own Authorization makes the SDK drop a shell one.
     shell_headers = [line.split(":", 1)[0].strip() for line in os.environ.get("OPENAI_CUSTOM_HEADERS", "").splitlines() if ":" in line]
-    headers: dict[str, Any] = {name: openai.Omit() for name in shell_headers} | {"Authorization": f"Bearer {api_key}"}
+    # The empty organisation and project would still go out as empty headers, so those are omitted too.
+    omitted = [*shell_headers, "OpenAI-Organization", "OpenAI-Project"]
+    headers: dict[str, Any] = {name: openai.Omit() for name in omitted} | {"Authorization": f"Bearer {api_key}"}
     client = openai.OpenAI(
         api_key=api_key,
         admin_api_key="",
