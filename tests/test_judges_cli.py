@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.fakes import FakeModel
+from tests.fakes import FakeModel, unused_model
 from tests.test_check_cli import echo_model, make_suite
 from whetstone.entry.cli import run
 
@@ -101,3 +101,41 @@ def test_multiple_choice_judge_fails_with_the_chosen_answer(tmp_path: Path, monk
     assert code == 1
     assert judge.requests[0]["text"]["format"]["schema"]["properties"]["answer"]["enum"] == ["none", "device", "instruction"]
     assert "FAIL b: assumes (judge): tells them what to do" in capsys.readouterr().out.splitlines()
+
+
+@pytest.mark.parametrize(
+    ("rubric", "message"),
+    [
+        ("question = ", "checks/x.judge.toml: invalid TOML"),
+        ('pass = "no"\n[fail]\nyes = "bad"\n', 'checks/x.judge.toml: missing "question"'),
+        ('question = "Q?"\n[fail]\nyes = "bad"\n', 'checks/x.judge.toml: missing "pass"'),
+        ('question = "Q?"\npass = "no"\n[fail]\n', "checks/x.judge.toml: needs at least one failing answer under [fail]"),
+        ('question = "Q?"\npass = "no"\n', "checks/x.judge.toml: needs at least one failing answer under [fail]"),
+        ('question = "Q?"\npass = "no"\n[fail]\nno = "bad"\n', "checks/x.judge.toml: \"no\" can't be both the passing answer and a failing one"),
+        ('question = "Q?"\npass = "no"\n[fail]\nyes = 3\n', "checks/x.judge.toml: [fail] maps each failing answer to its reason text"),
+        ('question = "Q?"\npass = "no"\nguide = 3\n[fail]\nyes = "bad"\n', "checks/x.judge.toml: guide must be text"),
+        ('question = "Q?"\npass = "no"\nreasons = "bad"\n[fail]\nyes = "bad"\n', "checks/x.judge.toml: reasons must be a list of text"),
+    ],
+)
+def test_bad_rubric_stops_before_any_model_call(
+    rubric: str, message: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    (prompt / "checks" / "x.judge.toml").write_text(rubric)
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=unused_model, make_judge=unused_model)
+
+    assert code == 2
+    assert message in capsys.readouterr().err
+
+
+def test_judge_named_like_a_code_check_stops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    (prompt / "checks" / "banned.judge.toml").write_text(RUBRIC)
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=unused_model, make_judge=unused_model)
+
+    assert code == 2
+    assert "check banned is both banned.py and banned.judge.toml" in capsys.readouterr().err
