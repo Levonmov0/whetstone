@@ -15,7 +15,7 @@ import qrcode
 from whetstone.features.cases.core import provider_refusal
 from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.cases.sources import SourceError, add_source
-from whetstone.features.checks.core import CaseResult, JudgeAnswerError, covered_reasons, judge_failures, judge_request, report, uncovered_reasons
+from whetstone.features.checks.core import CaseResult, JudgeAnswerError, Rubric, Side, agreement, covered_reasons, judge_failures, judge_gate, judge_request, report, uncovered_reasons
 from whetstone.features.checks.load import CheckLoadError, code_check_names, load_checks, load_judges
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, private_dir, save_deck
@@ -48,16 +48,17 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge = no_judge
     verify = commands.add_parser("verify-harness", help="compare the harness's request with a real production request")
     verify.add_argument("--case", required=True, help="the case id to build the request from")
     verify.add_argument("--expected", type=Path, required=True, help="a JSON file holding the request production sent")
+    agree = commands.add_parser("agreement", help="measure each judge against the swipes and say whether it can be trusted")
     reasons = commands.add_parser("reasons", help="list left-swipe reasons that no check stands for yet")
     disagree = commands.add_parser("disagreements", help="list the cards graders disagree on")
     settle = commands.add_parser("settle", help="record your call on a card graders disagree on")
     serve = commands.add_parser("serve", help="start the swipe server in the background and show its QR code")
     source = commands.add_parser("add-source", help="make a private folder for one real-data source and record its consent")
-    for command in (check, verify, source, disagree, settle, reasons):
+    for command in (check, verify, source, disagree, settle, reasons, agree):
         command.add_argument("prompt")
     serve.add_argument("prompt", nargs="?")
     serve.add_argument("--stop", action="store_true", help="stop the running swipe server")
-    for command in (check, verify, source, disagree, settle, serve, reasons):
+    for command in (check, verify, source, disagree, settle, serve, reasons, agree):
         command.add_argument("--workspace", type=Path, help="the workspace folder, when it is not ./ or ./whetstone/")
     serve.add_argument("--host", help="the address to listen on")
     settle.add_argument("card", help="the card id, as disagreements prints it")
@@ -75,6 +76,8 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge = no_judge
         prompt = find_prompt(args.workspace, args.prompt)
         if args.command == "verify-harness":
             return verify_harness(prompt, args.case, args.expected)
+        if args.command == "agreement":
+            return show_agreement(prompt, make_judge)
         if args.command == "reasons":
             return list_reasons(prompt)
         if args.command == "disagreements":
@@ -150,19 +153,12 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
 
     try:
         checks = load_checks(prompt.dir)
-        judges = load_judges(prompt.dir)
     except CheckLoadError as e:
         raise Stop(str(e)) from None
-    try:
-        judged_by = judge_model(prompt.workspace) if judges else ""
-    except PromptError as e:
-        raise Stop(str(e)) from None
-    # Judges see each case's input, so a real-data case goes to them only on a provider the repo already uses.
-    if judges and (refusal := provider_refusal("openai", providers, has_private)):
-        raise Stop(refusal)
+    judges = judges_or_stop(prompt)
+    ask = prepare_judge(prompt, providers, has_private, make_judge) if judges else None
     try:
         model = make_model(prompt)
-        judge = make_judge(prompt.workspace) if judges else None
     except MissingKey as e:
         raise Stop(str(e)) from None
     results: list[CaseResult] = []
@@ -182,15 +178,8 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
                 raise Stop(f"check {name} returned {messages!r} on case {case_id}; a check returns a list of failure messages")
             failures[name] = cast(list[str], messages)
         for name, rubric in judges.items():
-            assert judge
-            try:
-                reply = judge(judge_request(rubric, judged_by, case_input, output)).output
-                failures[f"{name} (judge)"] = judge_failures(rubric, reply)
-            except ModelError as e:
-                raise Stop(f"judge {name} failed on case {case_id}: {e}") from None
-            except JudgeAnswerError as e:
-                choices = ", ".join([rubric.passing, *rubric.fail])
-                raise Stop(f"judge {name} answered {json.dumps(str(e))} on case {case_id}; expected one of: {choices}") from None
+            assert ask
+            failures[f"{name} (judge)"] = ask(name, rubric, case_id, case_input, output)
         results.append(CaseResult(case_id, failures))
         caught_by = [name.removesuffix(" (judge)") for name, messages in failures.items() if messages]
         cards.append({"case_id": case_id, "input": case_input, "output": output, "caught_by": caught_by})
@@ -313,11 +302,75 @@ def show_link(url: str) -> None:
     print(url)
 
 
-def list_reasons(prompt: PromptSettings) -> int:
+Ask = Callable[[str, Rubric, str, Any, Any], list[str]]
+
+
+def judges_or_stop(prompt: PromptSettings) -> dict[str, Rubric]:
     try:
-        judges = load_judges(prompt.dir)
+        return load_judges(prompt.dir)
     except CheckLoadError as e:
         raise Stop(str(e)) from None
+
+
+def prepare_judge(prompt: PromptSettings, providers: list[str] | None, has_private: bool, make_judge: MakeJudge) -> Ask:
+    """Asks one judge about one case's output, giving its failure messages. Everything that can stop it is checked here,
+    before any model call."""
+    try:
+        judged_by = judge_model(prompt.workspace)
+    except PromptError as e:
+        raise Stop(str(e)) from None
+    # Judges see each case's input, so a real-data case goes to them only on a provider the repo already uses.
+    if refusal := provider_refusal("openai", providers, has_private):
+        raise Stop(refusal)
+    try:
+        judge = make_judge(prompt.workspace)
+    except MissingKey as e:
+        raise Stop(str(e)) from None
+
+    def ask(name: str, rubric: Rubric, case_id: str, case_input: Any, output: Any) -> list[str]:
+        try:
+            return judge_failures(rubric, judge(judge_request(rubric, judged_by, case_input, output)).output)
+        except ModelError as e:
+            raise Stop(f"judge {name} failed on case {case_id}: {e}") from None
+        except JudgeAnswerError as e:
+            choices = ", ".join([rubric.passing, *rubric.fail])
+            raise Stop(f"judge {name} answered {json.dumps(str(e))} on case {case_id}; expected one of: {choices}") from None
+
+    return ask
+
+
+def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
+    judges = judges_or_stop(prompt)
+    if not judges:
+        print("no judges in checks/")
+        return 0
+    labels = load_labels(prompt.dir)
+    try:
+        providers = repo_providers(prompt.workspace)
+    except PromptError as e:
+        raise Stop(str(e)) from None
+    ask = prepare_judge(prompt, providers, any(label["case_id"].startswith("private/") for label in labels), make_judge)
+    # Each swiped card is judged once, from the input and output its label kept, however many graders swiped it.
+    cards = {label["card_id"]: label for label in labels}
+    code = 0
+    for name, rubric in judges.items():
+        verdicts = {card: not ask(name, rubric, label["case_id"], label["input"], label["output"]) for card, label in cards.items()}
+        rows = agreement(labels, verdicts, covered_reasons([], {name: rubric}))
+        status, advice = judge_gate(rows)
+        print(f"{name}: {status}")
+        for grader, row in rows.items():
+            print(f"  {grader}: good {_side(row.good)}, bad {_side(row.bad)}")
+        print("".join(f"  {line}\n" for line in advice), end="")
+        code = 1 if status == "untrusted" else code
+    return code
+
+
+def _side(side: Side) -> str:
+    return f"{side.agreed}/{side.total} ({round(100 * side.agreed / side.total)}%)" if side.total else "0/0"
+
+
+def list_reasons(prompt: PromptSettings) -> int:
+    judges = judges_or_stop(prompt)
     covered = covered_reasons(code_check_names(prompt.dir), judges)
     uncovered = uncovered_reasons(load_labels(prompt.dir), covered)
     print("\n".join(f"{count}  {reason}" for reason, count in uncovered) if uncovered else "every reason has a check")
