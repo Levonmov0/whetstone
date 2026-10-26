@@ -220,3 +220,13 @@ def test_the_server_stops_itself_at_its_lifetime(tmp_path: Path, monkeypatch: py
     with TestClient(app):
         assert not stopped.wait(0.1)
         assert stopped.wait(2)
+
+
+def test_a_grader_name_outside_latin_1_arrives_url_encoded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = graded_suite(tmp_path, monkeypatch)
+    card_a = client.get("/api/cards", headers={**AUTH, "X-Grader": "%C5%81ukasz"}).json()["cards"][0]
+
+    client.post("/api/swipes", headers=AUTH, json={"card_id": card_a["card_id"], **GOOD_SWIPE, "grader": "Łukasz"})
+
+    # A header can't carry "Ł", so the app URL-encodes the name; the server decodes it before matching.
+    assert card_ids(client.get("/api/cards", headers={**AUTH, "X-Grader": "%C5%81ukasz"})) == ["b"]
