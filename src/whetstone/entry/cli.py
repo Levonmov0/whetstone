@@ -5,12 +5,13 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
+from whetstone.features.cases.core import provider_refusal
 from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.cases.sources import SourceError, add_source
 from whetstone.features.checks.core import CaseResult, report
 from whetstone.features.checks.load import CheckLoadError, load_checks
 from whetstone.features.workspace.core import request_differences, request_problem
-from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, prompt_names
+from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, prompt_names, repo_providers
 from whetstone.platform.anthropic import anthropic_model
 from whetstone.platform.config import MissingKey, load_key
 from whetstone.platform.harness import HarnessError, build_request
@@ -85,6 +86,9 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel) -> int:
         raise Stop(str(e)) from None
     if not cases:
         raise Stop(f"no cases in {prompt.dir / 'cases'}")
+    has_private = any(case_id.startswith("private/") for case_id, _ in cases)
+    if refusal := provider_refusal(prompt.provider, repo_providers(prompt.workspace), has_private):
+        raise Stop(refusal)
     requests: list[tuple[str, Any]] = []
     for case_id, case_json in cases:
         request = build(prompt, case_id, case_json)

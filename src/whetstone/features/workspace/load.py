@@ -44,3 +44,8 @@ def load_prompt(workspace: Path, name: str) -> PromptSettings:
     return PromptSettings(
         workspace=workspace, dir=prompt_dir, harness=raw["harness"], provider=raw["provider"], model=raw["model"], editable=raw.get("editable")
     )
+
+
+def repo_providers(workspace: Path) -> list[str] | None:
+    """The model providers this repo already uses, as init recorded them; None when not recorded."""
+    return tomllib.loads((workspace / "whetstone.toml").read_text()).get("repo_providers")
