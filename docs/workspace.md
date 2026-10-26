@@ -85,7 +85,7 @@ It calls the repo's real prompt builder, so a change to the builder shows up in 
 
 ## Code checks
 
-`checks/<name>.py` defines `check(output) -> list[str]`, returning one message per broken rule. An empty list means the check passed. `output` is the tool input dict for a forced tool call, or the reply text otherwise.
+`checks/<name>.py` defines `check(output) -> list[str]`, returning one message per broken rule. An empty list means the check passed. A module-level `REASONS = ["too long"]` (a literal list of text, read without running the check) names the swipe reasons it stands for, for `whetstone reasons`. `output` is the tool input dict for a forced tool call, or the reply text otherwise.
 
 ## Judges
 
@@ -106,7 +106,7 @@ yes = "assumes whether they did Kin's advice"
 - A judge and a code check can't share a name.
 - Real-data cases go to a judge only when `repo_providers` lists `openai`; otherwise `check` exits 2 before any call.
 
-`whetstone check` reports judges among the code checks, marked `(judge)`. A card's `caught_by` names them without the mark.
+`whetstone check` reports judges among the code checks, marked `(judge)`. A card's `caught_by` names them without the mark, and its `judges` lists which of them are judges. A bad swipe with no reasons inherits only the code checks' names: on a card only judges caught, the app asks why, because a judge's own catch must never count as a grader agreeing with it.
 
 ## Reasons and agreement
 
@@ -120,14 +120,15 @@ yes = "assumes whether they did Kin's advice"
   - **warn:** 80% to 90%;
   - **untrusted:** below 80% on either side, or with no grader at 5 swipes on a side.
 
-  Every grader with 5 or more swipes on a side must clear that side. It exits 1 when any judge is untrusted, and the optimizer refuses to run against one.
+  Every grader with 5 or more swipes on a side must clear that side. It exits 1 when any judge is untrusted. The optimizer (#4) will refuse to run against one.
 
 ## Baseline
 
 `whetstone baseline <prompt> --models <a>,<b>` runs every case on the production model and each listed model, all on the production provider, through every check and judge.
 - It vets the suite as `check` does, and prints the call count first.
 - It replaces the prompt's deck with all the outputs, shuffled. Card ids are `<deck-id>:<case-id>:<tag>`, and nothing on a card names its model.
-- `runs/baseline-<deck-id>/cards.json` maps each card id to its model. It holds no outputs.
+- `runs/baseline-<deck-id>/cards.json` maps each card's tag to its model. It holds no outputs and no case ids, so it can be committed even when some cases are real data. It is written before the deck is replaced; if it can't be written, the run exits 2 and the old deck stays.
+- Models listed twice run once, and the run goes case by case across the models, so a model that rejects the request fails on the first case.
 - `report.md` says whether a model change alone fixes most of the production model's failures, then gives each model's pass counts and tokens.
 - A model call that fails exits 2 and leaves the previous deck.
 
@@ -165,7 +166,7 @@ Each line of `labels.jsonl` is one swipe, self-contained so it outlives the deck
  "grader": "Levon", "verdict": "bad", "reasons": ["too long"], "note": "…", "at": "2026-10-26T08:00:00+00:00"}
 ```
 
-`verdict` is `good`, `bad` or `skip`. A bad swipe with no reasons on a card a check caught takes the check names as reasons. `whetstone settle` adds a line with `"settled": true`.
+`verdict` is `good`, `bad` or `skip`. A bad swipe with no reasons on a card a code check caught takes those checks' names as reasons. `whetstone settle` adds a line with `"settled": true`, carrying the reasons of the latest swipe it sides with.
 
 `whetstone disagreements <prompt>` lists cards where one grader's latest swipe is good and another's is bad, until `whetstone settle <prompt> <card> good|bad --grader <name> [--note <rule>]` records the call.
 

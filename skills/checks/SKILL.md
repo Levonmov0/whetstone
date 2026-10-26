@@ -24,7 +24,7 @@ Done when you can say, for each reason, what the outputs it was given for have i
 
 One check per rule, never one check for several rules. Write each into `checks/proposed/`. The engine never runs anything there.
 
-- **Code check** (`checks/proposed/<name>.py`) whenever code can decide it: length, banned words, structure, placeholders, a pattern. It's free, fast and exact. `check(output)` returns one message per broken rule, and an empty list when it passes.
+- **Code check** (`checks/proposed/<name>.py`) whenever code can decide it: length, banned words, structure, placeholders, a pattern. It's free, fast and exact. `check(output)` returns one message per broken rule, and an empty list when it passes. Start the file with `REASONS = ["…"]`, the swipe reasons it stands for, including the exact one from step 1, so `whetstone reasons` counts them as covered.
 - **Judge** (`checks/proposed/<name>.judge.toml`) only when code can't decide it: voice, implied causation, invented facts, what the reads already covered. A judge costs one OpenAI call per case on every run.
   - `question` asks one thing about the output. The judge sees the case input as context.
   - `pass` is the answer that means the output is fine.
@@ -32,7 +32,7 @@ One check per rule, never one check for several rules. Write each into `checks/p
   - `reasons` lists the swipe reasons this judge stands for, including the exact one from step 1. It sits above `[fail]`, since TOML puts every key after `[fail]` inside it.
   - `guide` (optional) gives the detail the question needs: what counts and what doesn't, with a good and a bad example taken from the swipes.
 
-For each judge, also add its reason to `prompt.toml`'s `reasons` list if it isn't there yet. That way graders can tap it on later swipes, and only swipes that name the rule count when the judge is measured.
+For each judge, also add its reason to `prompt.toml`'s `reasons` list if it isn't there yet. On a card only a judge caught, the app still asks why, so graders tap it there and on later swipes. Only swipes that name the rule count when the judge is measured.
 
 Done when every line from step 1 has one proposal, or a sentence saying why it shouldn't become a check (a one-off, or a taste call the user should make).
 
@@ -58,7 +58,7 @@ whetstone agreement <prompt>
 It judges every swiped card once (one OpenAI call per card per judge, printed before it starts). For each judge and each grader, it shows how often the judge agreed: on cards they called good, and on cards they called bad for that judge's rule.
 - **trusted:** 90% or more on both sides.
 - **warn:** 80% to 90%.
-- **untrusted:** below 80% on either side, or fewer than 5 swipes on a side. The optimizer refuses to run against an untrusted judge.
+- **untrusted:** below 80% on either side, or fewer than 5 swipes on a side. The optimizer (`/whetstone:run`, coming next) will refuse to run against an untrusted judge.
 
 For each untrusted judge, follow its advice:
 - "fails outputs … called good": the judge is too strict. Sharpen `guide` with the good outputs it failed, then run `agreement` again.
