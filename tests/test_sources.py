@@ -122,3 +122,62 @@ def test_a_broken_whetstone_toml_exits_2(
 
     assert code == 2
     assert f"{tmp_path / 'whetstone.toml'}: {reason}" in capsys.readouterr().err
+
+
+def private_case(prompt: Path, relative: str) -> None:
+    case = prompt / "cases" / "private" / relative
+    case.parent.mkdir(parents=True, exist_ok=True)
+    case.write_text(json.dumps({"text": "Slept badly."}))
+
+
+@pytest.mark.parametrize(
+    ("consent_at", "case", "error"),
+    [
+        # A consent record loose in cases/private/ belongs to no source, so it covers nothing.
+        ("consent.toml", "x.json", "real-data case private/x has no consent record; run whetstone add-source"),
+        ("diary/consent.toml", "diary/2026/day1.json", "real-data case private/diary/2026/day1 must sit directly in its source folder, cases/private/diary/"),
+    ],
+)
+def test_a_private_case_must_sit_directly_in_its_source(
+    consent_at: str, case: str, error: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today."})
+    (tmp_path / "whetstone.toml").write_text('repo_providers = ["anthropic"]\n')
+    consent = prompt / "cases" / "private" / consent_at
+    consent.parent.mkdir(parents=True, exist_ok=True)
+    consent.write_text('consented_by = "Levon"\nconsented_on = 2026-10-26\n')
+    private_case(prompt, case)
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=unused_model)
+
+    assert code == 2
+    assert error in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("consent", ["", 'consented_by = ""\nconsented_on = 2026-10-26\n', 'consented_by = "Levon"\nconsented_on = "soon"\n', "not = [toml"])
+def test_a_consent_record_must_say_who_and_when(
+    consent: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today."})
+    (tmp_path / "whetstone.toml").write_text('repo_providers = ["anthropic"]\n')
+    (prompt / "cases" / "private" / "diary").mkdir(parents=True)
+    (prompt / "cases" / "private" / "diary" / "consent.toml").write_text(consent)
+    private_case(prompt, "diary/day1.json")
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=unused_model)
+
+    assert code == 2
+    assert f"{prompt / 'cases' / 'private' / 'diary' / 'consent.toml'} must record consented_by (a name) and consented_on (a date)" in capsys.readouterr().err
+
+
+def test_add_source_refuses_an_empty_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today."})
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["add-source", "daily", "", "--consented-by", "Levon", "--consented-on", "2026-10-26"], make_model=unused_model)
+
+    assert code == 2
+    assert "source must be a plain folder name" in capsys.readouterr().err
+    assert not (prompt / "cases" / "private").exists()
