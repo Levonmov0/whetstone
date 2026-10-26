@@ -27,6 +27,7 @@ from whetstone.platform.daemon import command_line, is_running, start_detached, 
 from whetstone.platform.harness import HarnessError, build_request
 from whetstone.platform.model import ModelCall, ModelError
 from whetstone.platform.network import TailscaleError, TailscaleMissing, lan_address, tailscale_address
+from whetstone.platform.openai import openai_model
 
 MakeModel = Callable[[PromptSettings], ModelCall]
 MakeJudge = Callable[[Path], ModelCall]  # takes the workspace, whose .env holds the judge key
@@ -158,9 +159,9 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
         raise Stop(str(e)) from None
     try:
         model = make_model(prompt)
+        judge = make_judge(prompt.workspace) if judges else None
     except MissingKey as e:
         raise Stop(str(e)) from None
-    judge = make_judge(prompt.workspace) if judges else None
     results: list[CaseResult] = []
     cards: list[dict[str, Any]] = []
     for case_id, case_input, request in requests:
@@ -344,8 +345,8 @@ def production_model(settings: PromptSettings) -> ModelCall:
 
 
 def production_judge(workspace: Path) -> ModelCall:
-    raise NotImplementedError
+    return openai_model(load_key(workspace, "JUDGE_API_KEY"))
 
 
 def main() -> None:
-    sys.exit(run(sys.argv[1:], make_model=production_model))
+    sys.exit(run(sys.argv[1:], make_model=production_model, make_judge=production_judge))
