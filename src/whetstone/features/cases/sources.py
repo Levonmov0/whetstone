@@ -19,7 +19,10 @@ def add_source(prompt_dir: Path, name: str, consented_by: str, consented_on: str
     except ValueError:
         raise SourceError("consented-on must be a date like 2026-10-26") from None
     source = prompt_dir / "cases" / "private" / name
-    source.mkdir(parents=True)
+    try:
+        source.mkdir(parents=True)
+    except FileExistsError:
+        raise SourceError(f"source {name} already exists; its consent is in {source / 'consent.toml'}") from None
     # Its own ignore file, so the folder stays out of git whatever the workspace's .gitignore says.
     (source / ".gitignore").write_text("*\n")
     (source / "consent.toml").write_text(f"consented_by = {json.dumps(consented_by.strip())}\nconsented_on = {on.isoformat()}\n")
