@@ -30,15 +30,16 @@ def report(results: list[CaseResult], check_names: list[str]) -> tuple[list[str]
 
 
 def uncovered_reasons(labels: list[dict[str, Any]], covered: set[str]) -> list[tuple[str, int]]:
-    """Left-swipe reasons, and notes without one, that no check stands for yet: how often each came up, in first-seen order."""
+    """Left-swipe reasons, and notes without one, that no check stands for yet, with how often each came up: most
+    frequent first, ties in first-seen order. A bad swipe with neither says nothing a check could stand for."""
     counts: dict[str, int] = {}
     for label in labels:
         if label["verdict"] != "bad":
             continue
-        for reason in label["reasons"] or [f'note: "{label["note"]}"']:
+        for reason in label["reasons"] or ([f'note: "{label["note"]}"'] if label["note"] else []):
             if reason not in covered:
                 counts[reason] = counts.get(reason, 0) + 1
-    return list(counts.items())
+    return sorted(counts.items(), key=lambda item: -item[1])
 
 
 @dataclass(frozen=True)

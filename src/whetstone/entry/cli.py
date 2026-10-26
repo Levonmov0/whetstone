@@ -436,7 +436,7 @@ def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
     ask = prepare_judge(prompt, providers, any(label["case_id"].startswith("private/") for label in labels), make_judge)
     # Each swiped card is judged once, from the input and output its label kept, however many graders swiped it.
     cards = {label["card_id"]: label for label in labels}
-    print(f"{len(cards) * len(judges)} judge calls", flush=True)
+    print(_count(len(cards) * len(judges), "judge call"), flush=True)
     code = 0
     for name, rubric in judges.items():
         verdicts = {card: not ask(name, rubric, label["case_id"], label["input"], label["output"]) for card, label in cards.items()}
@@ -452,8 +452,12 @@ def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
 
 def _calls(generation: int, judging: int) -> str:
     """What a run is about to spend, said before its first call."""
-    calls = f"{generation} generation call{'' if generation == 1 else 's'}"
-    return f"{calls} and {judging} judge calls" if judging else calls
+    calls = _count(generation, "generation call")
+    return f"{calls} and {_count(judging, 'judge call')}" if judging else calls
+
+
+def _count(n: int, thing: str) -> str:
+    return f"{n} {thing}{'' if n == 1 else 's'}"
 
 
 def _side(side: Side) -> str:
