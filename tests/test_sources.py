@@ -105,3 +105,20 @@ def test_private_cases_need_repo_providers(tmp_path: Path, monkeypatch: pytest.M
     assert code == 2
     assert "whetstone.toml has no repo_providers; real-data cases need it" in capsys.readouterr().err
     assert model.requests == []
+
+
+@pytest.mark.parametrize(
+    ("toml", "reason"),
+    [("repo_providers = [\n", "invalid TOML"), ('repo_providers = "anthropic"\n', "repo_providers must be a list of provider names")],
+)
+def test_a_broken_whetstone_toml_exits_2(
+    toml: str, reason: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    add_diary_case(make_suite(tmp_path, {"a": "Rest today."}))
+    (tmp_path / "whetstone.toml").write_text(toml)
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=unused_model)
+
+    assert code == 2
+    assert f"{tmp_path / 'whetstone.toml'}: {reason}" in capsys.readouterr().err
