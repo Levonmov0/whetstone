@@ -17,8 +17,8 @@ from whetstone.features.workspace.load import load_prompt
 def main() -> None:
     workspace, name, fd = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
     token = sys.stdin.readline().strip()
-    # Idle, it stops the way `serve --stop` does, so its token dies with it.
-    app = make_app(load_prompt(workspace, name), token, on_idle=lambda: os.kill(os.getpid(), signal.SIGTERM))
+    # At the end of its lifetime it stops the way `serve --stop` does, so its token dies with it.
+    app = make_app(load_prompt(workspace, name), token, on_expiry=lambda: os.kill(os.getpid(), signal.SIGTERM))
     uvicorn.Server(uvicorn.Config(app)).run(sockets=[socket.socket(fileno=fd)])
 
 
