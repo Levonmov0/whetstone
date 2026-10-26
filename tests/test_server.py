@@ -175,3 +175,13 @@ def test_a_swipe_on_a_private_card_stays_in_its_source(tmp_path: Path, monkeypat
     assert [json.loads(line)["case_id"] for line in private_labels] == ["private/diary/day1"]
     assert stored_labels(tmp_path) == []
     assert card_ids(client.get("/api/cards", headers={**AUTH, "X-Grader": "Levon"})) == ["a"]
+
+
+def test_no_deck_yet_says_to_run_check(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    make_suite(tmp_path, {"a": "Rest today."})
+    client = TestClient(make_app(load_prompt(tmp_path, "daily"), TOKEN))
+
+    response = client.get("/api/cards", headers={**AUTH, "X-Grader": "Levon"})
+
+    assert response.status_code == 409
+    assert response.json() == {"error": "no cards yet; run whetstone check daily"}
