@@ -32,15 +32,16 @@ def baseline_report(prompt: str, check_names: list[str], runs: dict[str, list[di
     return "\n".join(lines) + "\n"
 
 
-def swipe_section(report: str, labels: list[dict[str, Any]], card_models: dict[str, str]) -> str:
+def swipe_section(report: str, labels: list[dict[str, Any]], deck_id: str, tag_models: dict[str, str]) -> str:
     """The report with its swipes section written afresh: per model, the latest good, bad and skip swipes of each
-    grader on this run's cards. Models come in `card_models`' order, production first."""
+    grader on this run's cards, `<deck-id>:<case-id>:<tag>`. Models come in `tag_models`' order, production first."""
     latest: dict[tuple[str, str], str] = {}
     for label in sorted(labels, key=lambda label: str(label.get("at", ""))):
-        if label["card_id"] in card_models:
-            latest[label["grader"], label["card_id"]] = label["verdict"]
-    tally = {model: {"good": 0, "bad": 0, "skip": 0} for model in card_models.values()}
-    for (_grader, card), verdict in latest.items():
-        tally[card_models[card]][verdict] += 1
+        tag = str(label["card_id"]).rsplit(":", 1)[-1]
+        if label["card_id"].startswith(f"{deck_id}:") and tag in tag_models:
+            latest[label["grader"], tag] = label["verdict"]
+    tally = {model: {"good": 0, "bad": 0, "skip": 0} for model in tag_models.values()}
+    for (_grader, tag), verdict in latest.items():
+        tally[tag_models[tag]][verdict] += 1
     lines = [f"- {model}: good {t['good']}, bad {t['bad']}, skip {t['skip']}" for model, t in tally.items()]
     return report.split("\n## Swipes\n")[0].rstrip("\n") + "\n\n## Swipes\n\n" + "\n".join(lines) + "\n"

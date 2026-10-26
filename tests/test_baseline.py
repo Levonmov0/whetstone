@@ -51,7 +51,7 @@ def test_baseline_keeps_which_model_wrote_each_card_in_its_run_folder(tmp_path: 
     deck = json.loads((tmp_path / ".whetstone" / "decks" / "daily.json").read_text())
     folder = prompt / "runs" / f"baseline-{deck['id']}"
     sources = json.loads((folder / "cards.json").read_text())
-    assert sources == {card["card_id"]: "model-b" if card["output"].isupper() else "fake-model" for card in deck["cards"]}
+    assert sources == {card["card_id"].rsplit(":", 1)[1]: "model-b" if card["output"].isupper() else "fake-model" for card in deck["cards"]}
     assert "rest today" not in (folder / "cards.json").read_text().lower()  # model names only, never outputs
     assert (folder / "report.md").is_file()
 
@@ -77,7 +77,7 @@ def test_baseline_report_adds_the_swipes_per_model(tmp_path: Path, monkeypatch: 
     deck = json.loads((tmp_path / ".whetstone" / "decks" / "daily.json").read_text())
     [folder] = (prompt / "runs").glob("baseline-*")
     sources = json.loads((folder / "cards.json").read_text())
-    by = {model: [card for card in deck["cards"] if sources[card["card_id"]] == model] for model in ("fake-model", "model-b")}
+    by = {model: [card for card in deck["cards"] if sources[card["card_id"].rsplit(":", 1)[1]] == model] for model in ("fake-model", "model-b")}
 
     def swipe(card: dict[str, Any], verdict: str, grader: str = "Levon", at: str = "2026-10-26T08:00:00+00:00") -> str:
         return json.dumps({**card, "deck_id": deck["id"], "grader": grader, "verdict": verdict, "reasons": [], "note": "", "at": at}) + "\n"

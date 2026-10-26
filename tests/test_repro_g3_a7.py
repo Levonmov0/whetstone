@@ -26,7 +26,7 @@ def test_agreement_counts_a_bad_swipe_whose_reasons_were_filled_from_caught_by(t
                 json={"card_id": card["card_id"], "grader": "Levon", "verdict": "bad", "reasons": [], "note": ""})
     labels = load_labels(prompt)
 
-    rows = agreement(labels, {card["card_id"]: False}, covered_reasons([], load_judges(prompt)))
+    rows = agreement(labels, {card["card_id"]: False}, covered_reasons({}, load_judges(prompt)))
 
     # The grader gave no reason; the "assumes" reason on the label is the judge's own catch, copied from caught_by.
     assert rows == {"Levon": Agreement(Side(0, 0), Side(0, 0))}

@@ -53,9 +53,10 @@ class Rubric:
     reasons: list[str]  # swipe reasons this judge stands for, besides its failing answers
 
 
-def covered_reasons(code_checks: list[str], judges: dict[str, Rubric]) -> set[str]:
-    """The swipe reasons some check already stands for: its name, or one of a judge's failing answers or reasons."""
-    covered = set(code_checks) | set(judges)
+def covered_reasons(code_checks: dict[str, list[str]], judges: dict[str, Rubric]) -> set[str]:
+    """The swipe reasons some check already stands for: its name, a code check's declared reasons, or one of a judge's
+    failing answers or reasons."""
+    covered = set(code_checks) | set(judges) | {reason for reasons in code_checks.values() for reason in reasons}
     for rubric in judges.values():
         covered |= set(rubric.fail.values()) | set(rubric.reasons)
     return covered

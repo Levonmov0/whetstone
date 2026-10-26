@@ -20,9 +20,9 @@ from whetstone.features.cases.core import provider_refusal
 from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.cases.sources import SourceError, add_source
 from whetstone.features.checks.core import CaseResult, JudgeAnswerError, Rubric, Side, agreement, covered_reasons, judge_failures, judge_gate, judge_request, report, uncovered_reasons
-from whetstone.features.checks.load import Check, CheckLoadError, code_check_names, load_checks, load_judges
+from whetstone.features.checks.load import Check, CheckLoadError, code_check_reasons, load_checks, load_judges
 from whetstone.features.grading.core import disagreements
-from whetstone.features.grading.store import add_label, load_labels, private_dir, save_deck
+from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
 from whetstone.features.workspace.core import request_differences, request_problem
 from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, judge_model, load_prompt, phone_access, prompt_names, repo_providers
 from whetstone.platform.anthropic import anthropic_model
@@ -237,33 +237,39 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
 def run_baseline(prompt: PromptSettings, others: list[str], make_model: MakeModel, make_judge: MakeJudge) -> int:
     """The prompt on its production model and each other model, every output in one shuffled deck that never says
     which model wrote a card."""
-    others = [model for model in others if model != prompt.model]
+    others = list(dict.fromkeys(model for model in others if model != prompt.model))
     if not others:
         raise Stop(f"--models needs at least one model besides {prompt.model}")
     suite = prepare_suite(prompt, make_model, make_judge)
     calls = len(suite.requests) * (1 + len(others))
     print(_calls(calls, calls * len(suite.judges)), flush=True)
+    models = [prompt.model, *others]
     cards: list[dict[str, Any]] = []
-    sources: dict[str, str] = {}  # "<case-id>:<tag>" -> the model that wrote it
-    runs: dict[str, list[dict[str, list[str]]]] = {}
-    tokens: dict[str, tuple[int, int]] = {}
-    for model in [prompt.model, *others]:
-        runs[model], used = [], (0, 0)
-        for case_id, case_input, request in suite.requests:
+    sources: dict[str, str] = {}  # each card's tag -> the model that wrote it; tags name no case, so this can be committed
+    runs: dict[str, list[dict[str, list[str]]]] = {model: [] for model in models}
+    tokens = {model: (0, 0) for model in models}
+    # Case by case across the models, so a model that rejects the request fails on the first case, not after a
+    # whole production run has been paid for.
+    for case_id, case_input, request in suite.requests:
+        for model in models:
             try:
                 result = suite.model({**request, "model": model})
             except ModelError as e:
                 raise Stop(f"{model} failed on case {case_id}: {e}") from None
-            used = (used[0] + result.input_tokens, used[1] + result.output_tokens)
+            tokens[model] = (tokens[model][0] + result.input_tokens, tokens[model][1] + result.output_tokens)
             failures = suite.score(case_id, case_input, result.output)
             runs[model].append(failures)
-            cards.append(card(case_id, case_input, result.output, failures) | {"tag": secrets.token_hex(4)})
-            sources[f"{case_id}:{cards[-1]['tag']}"] = model
-        tokens[model] = used
+            tag = secrets.token_hex(4)
+            cards.append(card(case_id, case_input, result.output, failures) | {"tag": tag})
+            sources[tag] = model
     random.shuffle(cards)
-    deck_id = save_deck(prompt.workspace, prompt.dir.name, cards)
-    report = baseline_report(prompt.dir.name, suite.check_names(), runs, tokens)
-    save_run(prompt.dir, deck_id, {f"{deck_id}:{card}": model for card, model in sources.items()}, report)
+    # The run folder first: a deck whose cards can't be traced to their models must never replace the last one.
+    deck_id = new_deck_id()
+    try:
+        save_run(prompt.dir, deck_id, sources, baseline_report(prompt.dir.name, suite.check_names(), runs, tokens))
+    except OSError as e:
+        raise Stop(f"can't write the baseline run in {prompt.dir / 'runs'}: {e.strerror or e}") from None
+    save_deck(prompt.workspace, prompt.dir.name, cards, deck_id)
     return 0
 
 
@@ -272,7 +278,8 @@ def refresh_baseline_report(prompt: PromptSettings) -> int:
     if folder is None:
         raise Stop(f"no baseline run for {prompt.dir.name} yet; run whetstone baseline {prompt.dir.name} --models …")
     report = folder / "report.md"
-    report.write_text(swipe_section(report.read_text(), load_labels(prompt.dir), card_models(folder)))
+    deck_id = folder.name.removeprefix("baseline-")
+    report.write_text(swipe_section(report.read_text(), load_labels(prompt.dir), deck_id, card_models(folder)))
     return 0
 
 
@@ -440,7 +447,7 @@ def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
     code = 0
     for name, rubric in judges.items():
         verdicts = {card: not ask(name, rubric, label["case_id"], label["input"], label["output"]) for card, label in cards.items()}
-        rows = agreement(labels, verdicts, covered_reasons([], {name: rubric}))
+        rows = agreement(labels, verdicts, covered_reasons({}, {name: rubric}))
         status, advice = judge_gate(rows)
         print(f"{name}: {status}")
         for grader, row in rows.items():
@@ -466,7 +473,11 @@ def _side(side: Side) -> str:
 
 def list_reasons(prompt: PromptSettings) -> int:
     judges = judges_or_stop(prompt)
-    covered = covered_reasons(code_check_names(prompt.dir), judges)
+    try:
+        code_checks = code_check_reasons(prompt.dir)
+    except CheckLoadError as e:
+        raise Stop(str(e)) from None
+    covered = covered_reasons(code_checks, judges)
     uncovered = uncovered_reasons(load_labels(prompt.dir), covered)
     print("\n".join(f"{count}  {reason}" for reason, count in uncovered) if uncovered else "every reason has a check")
     return 0

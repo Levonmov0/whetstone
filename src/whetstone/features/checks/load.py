@@ -1,3 +1,4 @@
+import ast
 import importlib.util
 import tomllib
 from collections.abc import Callable
@@ -65,10 +66,20 @@ def _rubric(path: Path) -> Rubric:
     return Rubric(raw["question"], guide, raw["pass"], cast(dict[str, str], fail), cast(list[str], reasons))
 
 
-def code_check_names(prompt_dir: Path) -> list[str]:
-    """The code checks' names, without running their code."""
-    return [path.stem for path in sorted((prompt_dir / "checks").glob("*.py"))]
-
-
 def code_check_reasons(prompt_dir: Path) -> dict[str, list[str]]:
-    raise NotImplementedError
+    """Each code check's name, and the swipe reasons it declares as `REASONS = [...]`, read without running its code."""
+    declared: dict[str, list[str]] = {}
+    for path in sorted((prompt_dir / "checks").glob("*.py")):
+        try:
+            tree = ast.parse(path.read_text())
+        except SyntaxError as e:
+            raise CheckLoadError(f"check {path.stem} failed to load: SyntaxError: {e}") from None
+        values = [node.value for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "REASONS" for t in node.targets)]
+        try:
+            reasons: Any = ast.literal_eval(values[-1]) if values else []
+        except ValueError:
+            reasons = None
+        if not (isinstance(reasons, list) and all(isinstance(r, str) for r in cast(list[Any], reasons))):
+            raise CheckLoadError(f"check {path.stem}: REASONS must be a list of text")
+        declared[path.stem] = cast(list[str], reasons)
+    return declared

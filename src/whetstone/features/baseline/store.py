@@ -4,13 +4,13 @@ import json
 from pathlib import Path
 
 
-def save_run(prompt_dir: Path, deck_id: str, card_models: dict[str, str], report: str) -> Path:
-    """`card_models` maps each card id to its model; it holds no outputs, so the folder can be committed."""
+def save_run(prompt_dir: Path, deck_id: str, card_models: dict[str, str], report: str) -> None:
+    """`card_models` maps each card's tag to its model. Tags are random and name no case, and the report holds only
+    counts, so the folder can be committed even when some cases are real data."""
     folder = prompt_dir / "runs" / f"baseline-{deck_id}"
     folder.mkdir(parents=True)
     (folder / "cards.json").write_text(json.dumps(card_models, indent=2))
     (folder / "report.md").write_text(report)
-    return folder
 
 
 def latest_run(prompt_dir: Path) -> Path | None:

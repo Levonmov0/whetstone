@@ -14,10 +14,14 @@ def private_dir(workspace: Path) -> Path:
     return folder
 
 
-def save_deck(workspace: Path, prompt: str, cards: list[dict[str, Any]]) -> str:
+def new_deck_id() -> str:
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+
+
+def save_deck(workspace: Path, prompt: str, cards: list[dict[str, Any]], deck_id: str | None = None) -> str:
     """Replace the prompt's deck, and give its id. Each card is case_id, input, output and caught_by, plus a tag when one
     case has several cards; card ids, `<deck-id>:<case-id>[:<tag>]`, are added here."""
-    deck_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    deck_id = deck_id or new_deck_id()
     decks = private_dir(workspace) / "decks"
     decks.mkdir(exist_ok=True)
     deck = {"id": deck_id, "cards": [{"card_id": _card_id(deck_id, c), **{k: v for k, v in c.items() if k != "tag"}} for c in cards]}
