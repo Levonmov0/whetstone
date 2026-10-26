@@ -15,7 +15,7 @@ import qrcode
 from whetstone.features.cases.core import provider_refusal
 from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.cases.sources import SourceError, add_source
-from whetstone.features.checks.core import CaseResult, covered_reasons, judge_failures, judge_request, report, uncovered_reasons
+from whetstone.features.checks.core import CaseResult, JudgeAnswerError, covered_reasons, judge_failures, judge_request, report, uncovered_reasons
 from whetstone.features.checks.load import CheckLoadError, code_check_names, load_checks, load_judges
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, private_dir, save_deck
@@ -183,8 +183,14 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
             failures[name] = cast(list[str], messages)
         for name, rubric in judges.items():
             assert judge
-            reply = judge(judge_request(rubric, judged_by, case_input, output)).output
-            failures[f"{name} (judge)"] = judge_failures(rubric, reply)
+            try:
+                reply = judge(judge_request(rubric, judged_by, case_input, output)).output
+                failures[f"{name} (judge)"] = judge_failures(rubric, reply)
+            except ModelError as e:
+                raise Stop(f"judge {name} failed on case {case_id}: {e}") from None
+            except JudgeAnswerError as e:
+                choices = ", ".join([rubric.passing, *rubric.fail])
+                raise Stop(f"judge {name} answered {json.dumps(str(e))} on case {case_id}; expected one of: {choices}") from None
         results.append(CaseResult(case_id, failures))
         caught_by = [name.removesuffix(" (judge)") for name, messages in failures.items() if messages]
         cards.append({"case_id": case_id, "input": case_input, "output": output, "caught_by": caught_by})

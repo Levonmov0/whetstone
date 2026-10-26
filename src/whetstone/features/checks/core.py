@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 import json
-from typing import Any
+from typing import Any, cast
 
 
 @dataclass(frozen=True)
@@ -72,7 +72,19 @@ def judge_request(rubric: Rubric, model: str, case_input: Any, output: Any) -> d
     return {"model": model, "instructions": JUDGE_INSTRUCTIONS, "input": text, "text": {"format": {"type": "json_schema", "name": "verdict", "strict": True, "schema": schema}}}
 
 
+class JudgeAnswerError(Exception):
+    """A judge reply that isn't one of the rubric's answers. Its message is the reply, or the answer in it."""
+
+
 def judge_failures(rubric: Rubric, reply: str) -> list[str]:
     """The judge's reply as a check result: no messages when it gave the passing answer, else that answer's reason."""
-    answer = json.loads(reply)["answer"]
-    return [] if answer == rubric.passing else [rubric.fail[answer]]
+    try:
+        parsed = json.loads(reply)
+    except ValueError:
+        raise JudgeAnswerError(reply) from None
+    answer = cast(dict[str, Any], parsed).get("answer") if isinstance(parsed, dict) else None
+    if answer == rubric.passing:
+        return []
+    if not isinstance(answer, str) or answer not in rubric.fail:
+        raise JudgeAnswerError(answer if isinstance(answer, str) else reply)
+    return [rubric.fail[answer]]
