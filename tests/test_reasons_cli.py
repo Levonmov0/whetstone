@@ -35,3 +35,14 @@ def test_reasons_with_everything_covered(tmp_path: Path, monkeypatch: pytest.Mon
 
     assert code == 0
     assert capsys.readouterr().out.splitlines() == ["every reason has a check"]
+
+
+def test_reasons_with_a_bad_rubric_stops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    (prompt / "checks" / "x.judge.toml").write_text("question = ")
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["reasons", "daily"], make_model=unused_model)
+
+    assert code == 2
+    assert "checks/x.judge.toml: invalid TOML" in capsys.readouterr().err
