@@ -5,6 +5,7 @@ import hmac
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import unquote
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
@@ -59,7 +60,7 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
         deck = load_deck(prompt.workspace, prompt.dir.name)
         if deck is None:
             return no_deck()
-        grader = request.headers.get("x-grader", "")
+        grader = unquote(request.headers.get("x-grader", ""))  # URL-encoded: a header can't carry most names
         swiped = {label["card_id"] for label in load_labels(prompt.dir) if label["grader"] == grader}
         return JSONResponse({"cards": [c for c in deck["cards"] if c["card_id"] not in swiped], "reasons": prompt.reasons})
 

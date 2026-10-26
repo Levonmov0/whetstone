@@ -129,7 +129,8 @@ function askName() {
 async function api(path, options = {}) {
   const response = await fetch(path, {
     ...options,
-    headers: { "Authorization": `Bearer ${token}`, "X-Grader": grader, "Content-Type": "application/json", ...(options.headers || {}) },
+    // A header can't carry most names (Łukasz, 陈), so the name travels URL-encoded.
+    headers: { "Authorization": `Bearer ${token}`, "X-Grader": encodeURIComponent(grader), "Content-Type": "application/json", ...(options.headers || {}) },
   });
   const body = await response.json().catch(() => ({}));
   return { ok: response.ok, status: response.status, body };
@@ -256,6 +257,7 @@ function askWhy(card) {
   const onKey = (event) => { if (event.key === "Escape") close(); };
   const save = el("button", { type: "button", class: "save" }, "Save as bad");
   save.addEventListener("click", async () => {
+    if (busy) return;  // a double tap must not save twice
     if (!picked.size && !note.value.trim()) { error.textContent = "Pick a reason or say what's wrong."; return; }
     const sent = await send(card, { verdict: "bad", reasons: [...picked], note: note.value.trim() }, error);
     if (sent) close();
@@ -277,6 +279,13 @@ async function send(card, swipe, errorNode) {
   try {
     const result = await api("/api/swipes", { method: "POST", body: JSON.stringify({ card_id: card.card_id, grader, ...swipe }) });
     if (result.status === 401) { tokenProblem(); return false; }
+    // A newer check replaced the deck: these cards are gone, so fetch the new ones.
+    if (result.status === 409 || (result.status === 400 && /in the current deck/.test(result.body.error || ""))) {
+      document.querySelector(".sheet-backdrop")?.remove();
+      status.textContent = "New cards arrived; loading them.";
+      load();
+      return false;
+    }
     if (!result.ok) {
       const text = result.body.error || "Couldn't save that swipe.";
       (errorNode || document.getElementById("card-error")).textContent = text;
