@@ -57,3 +57,47 @@ def test_proposed_checks_never_run(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     out = capsys.readouterr().out
     assert code == 0
     assert "x:" not in out and "y (judge)" not in out
+
+
+def test_judge_request_asks_one_question_with_listed_answers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    make_judged_suite(tmp_path, {"a": "Rest today."})
+    judge = judging("no")
+    monkeypatch.chdir(tmp_path)
+
+    run(["check", "daily"], make_model=lambda _settings: echo_model(), make_judge=lambda _workspace: judge)
+
+    [request] = judge.requests
+    assert request["model"] == "judge-model"
+    for part in ("Does the line assume whether the athlete did what Kin advised?", "Asking either way is fine.", '{"text": "Rest today."}', '"Rest today."'):
+        assert part in request["input"]
+    assert request["text"]["format"] == {
+        "type": "json_schema",
+        "name": "verdict",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {"answer": {"type": "string", "enum": ["no", "yes"]}},
+            "required": ["answer"],
+            "additionalProperties": False,
+        },
+    }
+
+
+MULTIPLE_CHOICE = '''question = "What is wrong with this line, if anything?"
+pass = "none"
+[fail]
+device = "asks about something a watch measures"
+instruction = "tells them what to do"
+'''
+
+
+def test_multiple_choice_judge_fails_with_the_chosen_answer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_judged_suite(tmp_path, {"b": "Go skip less."}, MULTIPLE_CHOICE)
+    judge = judging("instruction")
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=lambda _settings: echo_model(), make_judge=lambda _workspace: judge)
+
+    assert code == 1
+    assert judge.requests[0]["text"]["format"]["schema"]["properties"]["answer"]["enum"] == ["none", "device", "instruction"]
+    assert "FAIL b: assumes (judge): tells them what to do" in capsys.readouterr().out.splitlines()
