@@ -38,3 +38,17 @@ def test_baseline_runs_every_case_on_every_model_into_one_blind_deck(tmp_path: P
     assert "fake-model" not in json.dumps(deck["cards"]) and "model-b" not in json.dumps(deck["cards"])
     from_b = [card["output"].isupper() for card in deck["cards"]]
     assert from_b not in ([False] * 3 + [True] * 3, [True] * 3 + [False] * 3)
+
+
+def test_baseline_keeps_which_model_wrote_each_card_in_its_run_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today.", "b": "Walk later.", "c": "Sleep early."})
+    monkeypatch.chdir(tmp_path)
+
+    run(["baseline", "daily", "--models", "model-b"], make_model=lambda _settings: by_model())
+
+    deck = json.loads((tmp_path / ".whetstone" / "decks" / "daily.json").read_text())
+    folder = prompt / "runs" / f"baseline-{deck['id']}"
+    sources = json.loads((folder / "cards.json").read_text())
+    assert sources == {card["card_id"]: "model-b" if card["output"].isupper() else "fake-model" for card in deck["cards"]}
+    assert "rest today" not in (folder / "cards.json").read_text().lower()  # model names only, never outputs
+    assert (folder / "report.md").is_file()
