@@ -29,7 +29,9 @@ Done when `theme.css` exists and every value in it names its source file in a co
 
 Find the provider, model and parameters this prompt's production call uses, from the call site and its config. Ask only for what the code can't settle.
 
-Done when you can name the provider, the model and every parameter, each with the file and line it came from.
+Also list every model provider the repo's code already calls, for any feature, and write it to `whetstone.toml` as `repo_providers = ["anthropic", ...]`. Real-data cases are only ever sent to these.
+
+Done when you can name the provider, the model and every parameter, each with the file and line it came from, and `repo_providers` lists each provider with the file that calls it.
 
 ## 4. Keys
 
