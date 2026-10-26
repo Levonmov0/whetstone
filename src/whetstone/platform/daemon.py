@@ -21,3 +21,12 @@ def write_private(path: Path, text: str) -> None:
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         f.write(text)
+
+
+def is_running(pid: int) -> bool:
+    # ponytail: a pid the OS has reused for another process counts as running; serve --stop clears it.
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True

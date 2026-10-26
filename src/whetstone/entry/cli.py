@@ -21,7 +21,7 @@ from whetstone.features.workspace.core import request_differences, request_probl
 from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, prompt_names, repo_providers
 from whetstone.platform.anthropic import anthropic_model
 from whetstone.platform.config import MissingKey, load_key
-from whetstone.platform.daemon import start_detached, write_private
+from whetstone.platform.daemon import is_running, start_detached, write_private
 from whetstone.platform.harness import HarnessError, build_request
 from whetstone.platform.model import ModelCall, ModelError
 
@@ -173,16 +173,24 @@ def verify_harness(prompt: PromptSettings, case_id: str, expected_file: Path) ->
 
 
 def start_server(prompt: PromptSettings, host: str) -> int:
+    folder = private_dir(prompt.workspace)
+    state_file = folder / "serve.json"
+    if state_file.is_file():
+        state = json.loads(state_file.read_text())
+        if is_running(state["pid"]):
+            if state["prompt"] != prompt.dir.name:
+                raise Stop(f"already serving {state['prompt']}; run whetstone serve --stop first")
+            show_link(state["url"])
+            return 0
     token = secrets.token_urlsafe(32)
     # This process binds the socket and hands it over, so the port is known before the server starts and never races.
     listener = socket.create_server((host, 0))
     port = listener.getsockname()[1]
-    folder = private_dir(prompt.workspace)
     argv = [sys.executable, "-m", "whetstone.entry.serve_main", str(prompt.workspace), prompt.dir.name, str(listener.fileno())]
     pid = start_detached(argv, token + "\n", folder / "server.log", pass_fds=(listener.fileno(),))
     listener.close()
     url = f"http://{host}:{port}/#t={token}"  # after the #, so the token is never sent in a URL or logged
-    write_private(folder / "serve.json", json.dumps({"pid": pid, "host": host, "port": port, "prompt": prompt.dir.name, "token": token, "url": url}))
+    write_private(state_file, json.dumps({"pid": pid, "host": host, "port": port, "prompt": prompt.dir.name, "token": token, "url": url}))
     show_link(url)
     return 0
 
