@@ -32,3 +32,7 @@ def swipe_problem(body: object) -> str | None:
     if len(note) > MAX_NOTE:
         return f"note is over {MAX_NOTE} characters"
     return None
+
+
+def disagreements(labels: list[dict[str, Any]]) -> list[str]:
+    raise NotImplementedError
