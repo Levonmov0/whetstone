@@ -51,14 +51,21 @@ def test_agreement(labels: list[dict[str, object]], verdicts: dict[str, bool], r
     assert agreement(labels, verdicts, RULE) == rows
 
 
+def rows_none() -> dict[str, Agreement]:
+    return {}
+
+
 def rows(good: tuple[int, int], bad: tuple[int, int], **others: tuple[tuple[int, int], tuple[int, int]]) -> dict[str, Agreement]:
     return {"Levon": Agreement(Side(*good), Side(*bad)), **{name: Agreement(Side(*g), Side(*b)) for name, (g, b) in others.items()}}
+
+
+NO_ADVICE: list[str] = []
 
 
 @pytest.mark.parametrize(
     ("agreements", "gate"),
     [
-        (rows((9, 10), (5, 5)), ("trusted", [])),
+        (rows((9, 10), (5, 5)), ("trusted", NO_ADVICE)),
         (rows((17, 20), (5, 5)), ("warn", ["agrees with Levon on 85% of good cards; below 90% is a warning"])),
         (rows((8, 10), (5, 5)), ("warn", ["agrees with Levon on 80% of good cards; below 90% is a warning"])),
         (rows((10, 10), (17, 20)), ("warn", ["agrees with Levon on 85% of bad cards for this rule; below 90% is a warning"])),
@@ -66,21 +73,25 @@ def rows(good: tuple[int, int], bad: tuple[int, int], **others: tuple[tuple[int,
         (rows((10, 10), (3, 5)), ("untrusted", ["misses problems Levon flagged (60%); sharpen the rubric or swipe more examples"])),
         (rows((10, 10), (3, 3)), ("untrusted", ["only 3 bad swipes for this rule; swipe at least 2 more"])),
         (rows((3, 3), (5, 5)), ("untrusted", ["only 3 good swipes; swipe at least 2 more"])),
-        (rows((10, 10), (5, 5), Hampus=((0, 2), (0, 0))), ("trusted", [])),
+        (rows((10, 10), (5, 5), Hampus=((0, 2), (0, 0))), ("trusted", NO_ADVICE)),
         (rows((10, 10), (5, 5), Hampus=((6, 10), (5, 5))), ("untrusted", ["fails outputs Hampus called good (60%); sharpen the rubric"])),
-        ({}, ("untrusted", ["only 0 good swipes; swipe at least 5 more", "only 0 bad swipes for this rule; swipe at least 5 more"])),
+        (rows_none(), ("untrusted", ["only 0 good swipes; swipe at least 5 more", "only 0 bad swipes for this rule; swipe at least 5 more"])),
     ],
 )
 def test_judge_gate(agreements: dict[str, Agreement], gate: tuple[str, list[str]]) -> None:
     assert judge_gate(agreements) == gate
 
 
+def no_gates() -> dict[str, tuple[str, list[str]]]:
+    return {}
+
+
 @pytest.mark.parametrize(
     ("gates", "decision"),
     [
-        ({}, (True, [])),
-        ({"assumes": ("trusted", [])}, (True, [])),
-        ({"assumes": ("trusted", []), "voice": ("warn", ["agrees with Levon on 85% of good cards; below 90% is a warning"])},
+        (no_gates(), (True, NO_ADVICE)),
+        ({"assumes": ("trusted", NO_ADVICE)}, (True, NO_ADVICE)),
+        ({"assumes": ("trusted", NO_ADVICE), "voice": ("warn", ["agrees with Levon on 85% of good cards; below 90% is a warning"])},
          (True, ["voice: agrees with Levon on 85% of good cards; below 90% is a warning"])),
         ({"assumes": ("untrusted", ["fails outputs Levon called good (70%); sharpen the rubric"]), "voice": ("warn", ["w"])},
          (False, ["assumes: fails outputs Levon called good (70%); sharpen the rubric"])),

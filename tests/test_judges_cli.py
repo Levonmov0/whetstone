@@ -207,13 +207,17 @@ def failing_judge(_request: dict[str, object]) -> str:
     raise ModelError("RateLimitError 429")
 
 
+def replying(text: str) -> Callable[[dict[str, object]], str]:
+    return lambda _request: text
+
+
 @pytest.mark.parametrize(
     ("answer", "message"),
     [
         (failing_judge, "judge assumes failed on case b: RateLimitError 429"),
-        (lambda _request: "not json", 'judge assumes answered "not json" on case b; expected one of: no, yes'),
-        (lambda _request: '{"answer": "maybe"}', 'judge assumes answered "maybe" on case b; expected one of: no, yes'),
-        (lambda _request: '["yes"]', 'judge assumes answered "[\\"yes\\"]" on case b; expected one of: no, yes'),
+        (replying("not json"), 'judge assumes answered "not json" on case b; expected one of: no, yes'),
+        (replying('{"answer": "maybe"}'), 'judge assumes answered "maybe" on case b; expected one of: no, yes'),
+        (replying('["yes"]'), 'judge assumes answered "[\\"yes\\"]" on case b; expected one of: no, yes'),
     ],
 )
 def test_unusable_judge_answer_stops_and_keeps_the_deck(
