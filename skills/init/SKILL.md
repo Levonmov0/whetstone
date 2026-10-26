@@ -15,7 +15,7 @@ The engine is `whetstone` on the Bash tool's PATH, built by the session-start ho
 Ask where the workspace lives: `whetstone/` in this repo (recommended when the repo will keep its harness), or a folder outside it.
 - In a repo, work on a branch named `whetstone/<something>`, never on the default branch. Create the branch first if needed.
 - Write `.gitignore` with `.env` and `prompts/*/cases/private/` before anything else.
-- Write `whetstone.toml` with the user's answers for judge model (another model family from the generator), rewrites (Claude Code or the API), phone access and apply target, defaulting to `claude-code`, `lan` and `branch`.
+- Write `whetstone.toml` with the user's answers for judge model (another model family from the generator, on OpenAI), rewrites (Claude Code or the API), phone access and apply target, defaulting to `judge = { provider = "openai", model = "gpt-5.5" }`, `claude-code`, `lan` and `branch`.
 
 Done when `whetstone.toml` and `.gitignore` exist, and `git check-ignore <ws>/.env` confirms the key file is ignored.
 
@@ -35,7 +35,7 @@ Done when you can name the provider, the model and every parameter, each with th
 
 ## 4. Keys
 
-Tell the user which variables the workspace needs (`GENERATION_API_KEY` now, the others when their features run). Ask them to create a key for each purpose and paste it into `<ws>/.env` themselves. Never read, print or write a key's value. Check that a key is present with `grep -cE '^(export )?GENERATION_API_KEY *= *[^ ]' <ws>/.env`.
+Tell the user which variables the workspace needs (`GENERATION_API_KEY` now, `JUDGE_API_KEY` once the prompt has a judge, `REWRITE_API_KEY` only for API rewrites). Ask them to create a key for each purpose and paste it into `<ws>/.env` themselves. Never read, print or write a key's value. Check that a key is present with `grep -cE '^(export )?GENERATION_API_KEY *= *[^ ]' <ws>/.env`.
 
 Done when that count is 1.
 
