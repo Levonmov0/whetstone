@@ -149,3 +149,7 @@ def judge_gate(agreements: dict[str, Agreement], minimum: int = 5) -> tuple[str,
     if untrusted:
         return "untrusted", untrusted
     return ("warn", warned) if warned else ("trusted", [])
+
+
+def optimize_gate(gates: dict[str, tuple[str, list[str]]]) -> tuple[bool, list[str]]:
+    raise NotImplementedError

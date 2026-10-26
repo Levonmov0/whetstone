@@ -1,6 +1,6 @@
 import pytest
 
-from whetstone.features.checks.core import Agreement, Side, agreement, judge_gate, uncovered_reasons
+from whetstone.features.checks.core import Agreement, Side, agreement, judge_gate, optimize_gate, uncovered_reasons
 
 
 def swipe(verdict: str, reasons: list[str], note: str = "", card: str = "X") -> dict[str, object]:
@@ -73,3 +73,18 @@ def rows(good: tuple[int, int], bad: tuple[int, int], **others: tuple[tuple[int,
 )
 def test_judge_gate(agreements: dict[str, Agreement], gate: tuple[str, list[str]]) -> None:
     assert judge_gate(agreements) == gate
+
+
+@pytest.mark.parametrize(
+    ("gates", "decision"),
+    [
+        ({}, (True, [])),
+        ({"assumes": ("trusted", [])}, (True, [])),
+        ({"assumes": ("trusted", []), "voice": ("warn", ["agrees with Levon on 85% of good cards; below 90% is a warning"])},
+         (True, ["voice: agrees with Levon on 85% of good cards; below 90% is a warning"])),
+        ({"assumes": ("untrusted", ["fails outputs Levon called good (70%); sharpen the rubric"]), "voice": ("warn", ["w"])},
+         (False, ["assumes: fails outputs Levon called good (70%); sharpen the rubric"])),
+    ],
+)
+def test_optimize_gate(gates: dict[str, tuple[str, list[str]]], decision: tuple[bool, list[str]]) -> None:
+    assert optimize_gate(gates) == decision
