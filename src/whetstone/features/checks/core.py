@@ -29,4 +29,12 @@ def report(results: list[CaseResult], check_names: list[str]) -> tuple[list[str]
 
 
 def uncovered_reasons(labels: list[dict[str, Any]], covered: set[str]) -> list[tuple[str, int]]:
-    raise NotImplementedError
+    """Left-swipe reasons, and notes without one, that no check stands for yet: how often each came up, in first-seen order."""
+    counts: dict[str, int] = {}
+    for label in labels:
+        if label["verdict"] != "bad":
+            continue
+        for reason in label["reasons"] or [f'note: "{label["note"]}"']:
+            if reason not in covered:
+                counts[reason] = counts.get(reason, 0) + 1
+    return list(counts.items())
