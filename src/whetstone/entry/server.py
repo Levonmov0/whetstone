@@ -35,8 +35,13 @@ def make_app(prompt: PromptSettings, token: str) -> Starlette:
 
         return guard
 
+    def no_deck() -> Response:
+        return JSONResponse({"error": f"no cards yet; run whetstone check {prompt.dir.name}"}, status_code=409)
+
     async def cards(request: Request) -> Response:
         deck = load_deck(prompt.workspace, prompt.dir.name)
+        if deck is None:
+            return no_deck()
         grader = request.headers.get("x-grader", "")
         swiped = {label["card_id"] for label in load_labels(prompt.dir) if label["grader"] == grader}
         return JSONResponse({"cards": [c for c in deck["cards"] if c["card_id"] not in swiped], "reasons": prompt.reasons})
@@ -55,6 +60,8 @@ def make_app(prompt: PromptSettings, token: str) -> Starlette:
         if problem := swipe_problem(body):
             return refuse(problem)
         deck = load_deck(prompt.workspace, prompt.dir.name)
+        if deck is None:
+            return no_deck()
         card = next((c for c in deck["cards"] if c["card_id"] == body.get("card_id")), None)
         if card is None:
             return refuse(f"no card {body.get('card_id')} in the current deck")

@@ -23,8 +23,9 @@ def save_deck(workspace: Path, prompt: str, cards: list[dict[str, Any]]) -> None
     (decks / f"{prompt}.json").write_text(json.dumps(deck, indent=2))
 
 
-def load_deck(workspace: Path, prompt: str) -> dict[str, Any]:
-    return json.loads((workspace / ".whetstone" / "decks" / f"{prompt}.json").read_text())
+def load_deck(workspace: Path, prompt: str) -> dict[str, Any] | None:
+    deck = workspace / ".whetstone" / "decks" / f"{prompt}.json"
+    return json.loads(deck.read_text()) if deck.is_file() else None
 
 
 def add_label(prompt_dir: Path, label: dict[str, Any]) -> None:
