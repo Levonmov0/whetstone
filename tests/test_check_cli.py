@@ -345,15 +345,18 @@ def test_a_request_that_is_not_an_object_exits_2(tmp_path: Path, monkeypatch: py
 
 def test_private_cases_run_with_the_rest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     prompt = make_suite(tmp_path, {"a": "Rest today."})
-    (prompt / "cases" / "private").mkdir()
-    (prompt / "cases" / "private" / "real.json").write_text(json.dumps({"text": "Your HRV is low."}))
+    source = prompt / "cases" / "private" / "diary"
+    source.mkdir(parents=True)
+    (source / "consent.toml").write_text('consented_by = "Levon"\nconsented_on = 2026-10-26\n')
+    (source / "day1.json").write_text(json.dumps({"text": "Your HRV is low."}))
+    (tmp_path / "whetstone.toml").write_text('repo_providers = ["anthropic"]\n')
     monkeypatch.chdir(tmp_path)
 
     code = run(["check", "daily"], make_model=lambda _settings: echo_model())
 
     out = capsys.readouterr().out.splitlines()
     assert code == 1
-    assert "FAIL private/real: banned: Uses banned term HRV." in out
+    assert "FAIL private/diary/day1: banned: Uses banned term HRV." in out
 
 
 def test_a_provider_other_than_anthropic_exits_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
