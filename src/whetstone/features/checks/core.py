@@ -103,4 +103,19 @@ class Agreement:
 
 
 def agreement(labels: list[dict[str, Any]], verdicts: dict[str, bool], rule: set[str]) -> dict[str, Agreement]:
-    raise NotImplementedError
+    """Per grader, how often the judge agreed with their latest swipe on each card. `verdicts` holds whether the judge
+    passed each card; `rule` is every reason that means this judge's rule. A bad swipe for another reason, or a skip,
+    says nothing about this judge and isn't counted. A settled call is just that grader's latest swipe."""
+    latest: dict[tuple[str, str], dict[str, Any]] = {}
+    for label in sorted(labels, key=lambda label: str(label.get("at", ""))):
+        latest[label["grader"], label["card_id"]] = label
+    rows: dict[str, list[int]] = {}
+    for (grader, card), label in latest.items():
+        row = rows.setdefault(grader, [0, 0, 0, 0])
+        if label["verdict"] == "good":
+            row[0] += verdicts[card]
+            row[1] += 1
+        elif label["verdict"] == "bad" and rule & set(label["reasons"]):
+            row[2] += not verdicts[card]
+            row[3] += 1
+    return {grader: Agreement(Side(row[0], row[1]), Side(row[2], row[3])) for grader, row in rows.items()}
