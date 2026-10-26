@@ -10,7 +10,8 @@ from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.cases.sources import SourceError, add_source
 from whetstone.features.checks.core import CaseResult, report
 from whetstone.features.checks.load import CheckLoadError, load_checks
-from whetstone.features.grading.store import save_deck
+from whetstone.features.grading.core import disagreements
+from whetstone.features.grading.store import load_labels, save_deck
 from whetstone.features.workspace.core import request_differences, request_problem
 from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, prompt_names, repo_providers
 from whetstone.platform.anthropic import anthropic_model
@@ -32,8 +33,9 @@ def run(argv: list[str], make_model: MakeModel) -> int:
     verify = commands.add_parser("verify-harness", help="compare the harness's request with a real production request")
     verify.add_argument("--case", required=True, help="the case id to build the request from")
     verify.add_argument("--expected", type=Path, required=True, help="a JSON file holding the request production sent")
+    disagree = commands.add_parser("disagreements", help="list the cards graders disagree on")
     source = commands.add_parser("add-source", help="make a private folder for one real-data source and record its consent")
-    for command in (check, verify, source):
+    for command in (check, verify, source, disagree):
         command.add_argument("prompt")
         command.add_argument("--workspace", type=Path, help="the workspace folder, when it is not ./ or ./whetstone/")
     source.add_argument("source", help="the source's folder name, such as diary")
@@ -45,6 +47,8 @@ def run(argv: list[str], make_model: MakeModel) -> int:
         prompt = find_prompt(args.workspace, args.prompt)
         if args.command == "verify-harness":
             return verify_harness(prompt, args.case, args.expected)
+        if args.command == "disagreements":
+            return list_disagreements(prompt)
         if args.command == "add-source":
             try:
                 add_source(prompt.dir, args.source, args.consented_by, args.consented_on)
@@ -149,6 +153,22 @@ def verify_harness(prompt: PromptSettings, case_id: str, expected_file: Path) ->
         return 0
     print("\n".join(f"{path} differs" for path in differences))
     return 1
+
+
+def list_disagreements(prompt: PromptSettings) -> int:
+    labels = load_labels(prompt.dir)
+    queued = disagreements(labels)
+    for card in queued:
+        latest = {label["grader"]: label for label in labels if label["card_id"] == card}
+        print(f"{card}  " + "  ".join(_verdict(label) for label in latest.values()))
+    print(f"{len(queued)} card{'' if len(queued) == 1 else 's'} to settle" if queued else "nothing to settle")
+    return 0
+
+
+def _verdict(label: dict[str, Any]) -> str:
+    reasons = f" ({', '.join(label['reasons'])})" if label["reasons"] else ""
+    note = f' "{label["note"]}"' if label["note"] else ""
+    return f"{label['grader']}: {label['verdict']}{reasons}{note}"
 
 
 def production_model(settings: PromptSettings) -> ModelCall:
