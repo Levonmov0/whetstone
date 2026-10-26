@@ -8,8 +8,8 @@ import pytest
 
 from tests.fakes import FakeModel
 from tests.test_check_cli import make_suite
-from tests.test_judges_cli import judging, make_judged_suite
-from whetstone.entry.cli import run
+from tests.test_judges_cli import JUDGE_SETTINGS, add_private_case, judging, make_judged_suite
+from whetstone.entry.cli import production_judge, run
 from whetstone.platform.model import ModelError
 
 
@@ -154,3 +154,30 @@ def test_a_failing_model_stops_the_baseline_and_keeps_the_deck(tmp_path: Path, m
     assert "model-b failed on case a: BadRequestError 400" in capsys.readouterr().err
     assert deck.read_text() == before
     assert not (prompt / "runs").exists()
+
+
+@pytest.mark.parametrize("broken", ["consent", "provider", "harness", "judge key"])
+def test_baseline_vets_the_suite_like_check(broken: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    message = {
+        "consent": "real-data case private/diary/day1 has no consent record; run whetstone add-source",
+        "provider": "real-data cases go only to providers this repo already uses (openai); anthropic is not one",
+        "harness": "case a: ",
+        "judge key": f"JUDGE_API_KEY is not set in {tmp_path / '.env'}",
+    }[broken]
+    if broken in ("consent", "provider"):
+        add_private_case(prompt)
+    if broken == "consent":
+        (prompt / "cases" / "private" / "diary" / "consent.toml").unlink()
+    if broken == "provider":
+        (tmp_path / "whetstone.toml").write_text('repo_providers = ["openai"]\n' + JUDGE_SETTINGS)
+    if broken == "harness":
+        (prompt / "harness.py").write_text("import sys; sys.exit(3)")
+    model = by_model()
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["baseline", "daily", "--models", "model-b"], make_model=lambda _settings: model, make_judge=production_judge)
+
+    assert code == 2
+    assert message in capsys.readouterr().err
+    assert model.requests == []
