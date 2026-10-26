@@ -171,3 +171,16 @@ def test_the_server_log_never_holds_the_token(workspace: Path) -> None:
 
     assert "GET /api/cards" in log
     assert state["token"] not in log
+
+
+def test_a_server_that_stops_itself_removes_its_state(workspace: Path) -> None:
+    serve(workspace, "daily", "--host", "127.0.0.1")
+    state_file = workspace / ".whetstone" / "serve.json"
+    pid = json.loads(state_file.read_text())["pid"]
+
+    os.kill(pid, signal.SIGTERM)  # what the server does to itself at the end of its lifetime
+    deadline = time.monotonic() + 5
+    while state_file.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+
+    assert not state_file.exists()
