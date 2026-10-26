@@ -9,6 +9,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
+from whetstone.features.grading.core import swipe_reasons
 from whetstone.features.grading.store import add_label, load_deck, load_labels
 from whetstone.features.workspace.load import PromptSettings
 
@@ -39,6 +40,7 @@ def make_app(prompt: PromptSettings, token: str) -> Starlette:
         deck = load_deck(prompt.workspace, prompt.dir.name)
         card = next(c for c in deck["cards"] if c["card_id"] == body["card_id"])
         swipe = {k: body[k] for k in ("grader", "verdict", "reasons", "note")}
+        swipe["reasons"] = swipe_reasons(body["verdict"], body["reasons"], card["caught_by"])
         add_label(prompt.dir, {**card, "deck_id": deck["id"], **swipe, "at": datetime.now(UTC).isoformat()})
         return JSONResponse({}, status_code=201)
 
