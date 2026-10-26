@@ -1,5 +1,7 @@
 """Pure rules for a baseline: no I/O, environment or SDKs."""
 
+from typing import Any
+
 
 def baseline_verdict(results: dict[str, dict[str, bool]]) -> str:
     """Whether a model change alone fixes most of the production model's failures. `results` maps each model, the
@@ -28,3 +30,17 @@ def baseline_report(prompt: str, check_names: list[str], runs: dict[str, list[di
         counts = [f"{sum(passed[model].values())}/{len(cases)}", *(f"{sum(not c[name] for c in cases)}/{len(cases)}" for name in check_names)]
         lines.append("| " + " | ".join([model, *counts, *map(str, tokens[model])]) + " |")
     return "\n".join(lines) + "\n"
+
+
+def swipe_section(report: str, labels: list[dict[str, Any]], card_models: dict[str, str]) -> str:
+    """The report with its swipes section written afresh: per model, the latest good, bad and skip swipes of each
+    grader on this run's cards. Models come in `card_models`' order, production first."""
+    latest: dict[tuple[str, str], str] = {}
+    for label in sorted(labels, key=lambda label: str(label.get("at", ""))):
+        if label["card_id"] in card_models:
+            latest[label["grader"], label["card_id"]] = label["verdict"]
+    tally = {model: {"good": 0, "bad": 0, "skip": 0} for model in card_models.values()}
+    for (_grader, card), verdict in latest.items():
+        tally[card_models[card]][verdict] += 1
+    lines = [f"- {model}: good {t['good']}, bad {t['bad']}, skip {t['skip']}" for model, t in tally.items()]
+    return report.split("\n## Swipes\n")[0].rstrip("\n") + "\n\n## Swipes\n\n" + "\n".join(lines) + "\n"

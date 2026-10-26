@@ -11,3 +11,13 @@ def save_run(prompt_dir: Path, deck_id: str, card_models: dict[str, str], report
     (folder / "cards.json").write_text(json.dumps(card_models, indent=2))
     (folder / "report.md").write_text(report)
     return folder
+
+
+def latest_run(prompt_dir: Path) -> Path | None:
+    """The newest baseline run's folder; deck ids are timestamps, so the names sort by time."""
+    runs = sorted((prompt_dir / "runs").glob("baseline-*"))
+    return runs[-1] if runs else None
+
+
+def card_models(folder: Path) -> dict[str, str]:
+    return json.loads((folder / "cards.json").read_text())

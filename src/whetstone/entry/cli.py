@@ -14,8 +14,8 @@ from typing import Any, cast
 
 import qrcode
 
-from whetstone.features.baseline.core import baseline_report
-from whetstone.features.baseline.store import save_run
+from whetstone.features.baseline.core import baseline_report, swipe_section
+from whetstone.features.baseline.store import card_models, latest_run, save_run
 from whetstone.features.cases.core import provider_refusal
 from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.cases.sources import SourceError, add_source
@@ -55,6 +55,7 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge = no_judge
     verify.add_argument("--expected", type=Path, required=True, help="a JSON file holding the request production sent")
     baseline = commands.add_parser("baseline", help="run the prompt on several models into one blind deck, and say if a model change is the fix")
     baseline.add_argument("--models", default="", help="the models to compare with production, comma-separated")
+    baseline.add_argument("--report", action="store_true", help="add the swipes so far to the latest run's report")
     agree = commands.add_parser("agreement", help="measure each judge against the swipes and say whether it can be trusted")
     reasons = commands.add_parser("reasons", help="list left-swipe reasons that no check stands for yet")
     disagree = commands.add_parser("disagreements", help="list the cards graders disagree on")
@@ -83,6 +84,8 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge = no_judge
         prompt = find_prompt(args.workspace, args.prompt)
         if args.command == "verify-harness":
             return verify_harness(prompt, args.case, args.expected)
+        if args.command == "baseline" and args.report:
+            return refresh_baseline_report(prompt)
         if args.command == "baseline":
             return run_baseline(prompt, [m for m in args.models.split(",") if m], make_model, make_judge)
         if args.command == "agreement":
@@ -249,6 +252,15 @@ def run_baseline(prompt: PromptSettings, others: list[str], make_model: MakeMode
     deck_id = save_deck(prompt.workspace, prompt.dir.name, cards)
     report = baseline_report(prompt.dir.name, suite.check_names(), runs, tokens)
     save_run(prompt.dir, deck_id, {f"{deck_id}:{card}": model for card, model in sources.items()}, report)
+    return 0
+
+
+def refresh_baseline_report(prompt: PromptSettings) -> int:
+    folder = latest_run(prompt.dir)
+    if folder is None:
+        raise Stop(f"no baseline run for {prompt.dir.name} yet; run whetstone baseline {prompt.dir.name} --models …")
+    report = folder / "report.md"
+    report.write_text(swipe_section(report.read_text(), load_labels(prompt.dir), card_models(folder)))
     return 0
 
 
