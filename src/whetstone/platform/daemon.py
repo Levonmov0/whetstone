@@ -31,15 +31,28 @@ def is_running(pid: int) -> bool:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
+    except PermissionError:  # alive, but another user's
+        return True
     return True
 
 
 def stop(pid: int, timeout: float = 5) -> None:
-    """End the process and wait for it to go, so its port is free when this returns."""
+    """End the process and wait for it to go, so its port is free when this returns: SIGTERM, then SIGKILL after timeout."""
+    for sig, wait in ((signal.SIGTERM, timeout), (signal.SIGKILL, timeout)):
+        try:
+            os.kill(pid, sig)
+        except ProcessLookupError:
+            return
+        deadline = time.monotonic() + wait
+        while _alive(pid) and time.monotonic() < deadline:
+            time.sleep(0.05)
+
+
+def _alive(pid: int) -> bool:
+    # A child of this process lingers as a zombie until reaped, and a zombie still answers kill(pid, 0).
     try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return
-    deadline = time.monotonic() + timeout
-    while is_running(pid) and time.monotonic() < deadline:
-        time.sleep(0.05)
+        if os.waitpid(pid, os.WNOHANG)[0] == pid:
+            return False
+    except ChildProcessError:
+        pass  # not our child: someone else reaps it
+    return is_running(pid)
