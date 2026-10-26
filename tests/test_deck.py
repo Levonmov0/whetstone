@@ -20,3 +20,17 @@ def test_check_saves_its_outputs_as_the_deck(tmp_path: Path, monkeypatch: pytest
     ]
     assert deck["id"]
     assert (tmp_path / ".whetstone" / ".gitignore").read_text() == "*\n"
+
+
+def test_a_check_that_stops_keeps_the_previous_deck(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today.", "b": "Walk later."})
+    monkeypatch.chdir(tmp_path)
+    run(["check", "daily"], make_model=lambda _settings: echo_model())
+    deck_file = tmp_path / ".whetstone" / "decks" / "daily.json"
+    before = deck_file.read_text()
+    (prompt / "checks" / "banned.py").write_text("def check(output):\n    if 'Walk' in output:\n        raise ValueError('boom')\n    return []\n")
+
+    code = run(["check", "daily"], make_model=lambda _settings: echo_model())
+
+    assert code == 2
+    assert deck_file.read_text() == before
