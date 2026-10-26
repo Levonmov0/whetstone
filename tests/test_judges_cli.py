@@ -1,4 +1,5 @@
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -6,6 +7,7 @@ import pytest
 from tests.fakes import FakeModel, unused_model
 from tests.test_check_cli import echo_model, make_suite
 from whetstone.entry.cli import production_judge, run
+from whetstone.platform.model import ModelError
 
 RUBRIC = '''question = "Does the line assume whether the athlete did what Kin advised?"
 guide = "Asking either way is fine."
@@ -199,3 +201,32 @@ def test_real_data_reaches_judges_only_on_a_provider_the_repo_uses(
     if code == 2:
         assert "real-data cases go only to providers this repo already uses (anthropic); openai is not one" in capsys.readouterr().err
         assert model.requests == [] and judge.requests == []
+
+
+def failing_judge(_request: dict[str, object]) -> str:
+    raise ModelError("RateLimitError 429")
+
+
+@pytest.mark.parametrize(
+    ("answer", "message"),
+    [
+        (failing_judge, "judge assumes failed on case b: RateLimitError 429"),
+        (lambda _request: "not json", 'judge assumes answered "not json" on case b; expected one of: no, yes'),
+        (lambda _request: '{"answer": "maybe"}', 'judge assumes answered "maybe" on case b; expected one of: no, yes'),
+        (lambda _request: '["yes"]', 'judge assumes answered "[\\"yes\\"]" on case b; expected one of: no, yes'),
+    ],
+)
+def test_unusable_judge_answer_stops_and_keeps_the_deck(
+    answer: Callable[[dict[str, object]], str], message: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    make_judged_suite(tmp_path, {"b": "Why did you skip it?"})
+    monkeypatch.chdir(tmp_path)
+    run(["check", "daily"], make_model=lambda _settings: echo_model(), make_judge=lambda _workspace: judging("no"))
+    deck = tmp_path / ".whetstone" / "decks" / "daily.json"
+    before = deck.read_text()
+
+    code = run(["check", "daily"], make_model=lambda _settings: echo_model(), make_judge=lambda _workspace: FakeModel(answer))
+
+    assert code == 2
+    assert message in capsys.readouterr().err
+    assert deck.read_text() == before
