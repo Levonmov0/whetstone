@@ -1,3 +1,5 @@
+import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -69,3 +71,34 @@ def test_reason_chips_come_from_prompt_toml(tmp_path: Path, monkeypatch: pytest.
     client = TestClient(make_app(load_prompt(tmp_path, "daily"), TOKEN))
 
     assert client.get("/api/cards", headers={**AUTH, "X-Grader": "Levon"}).json()["reasons"] == ["too long", "wrong voice"]
+
+
+def test_a_swipe_is_stored_with_its_grader_and_card(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = graded_suite(tmp_path, monkeypatch)
+    card_b = client.get("/api/cards", headers={**AUTH, "X-Grader": "Levon"}).json()["cards"][1]
+    note = ("It reads like a lab report.\nNobody talks like that at 7am. " * 40)[:2000]
+
+    response = client.post(
+        "/api/swipes",
+        headers=AUTH,
+        json={"card_id": card_b["card_id"], "grader": "Levon", "verdict": "bad", "reasons": ["too long"], "note": note},
+    )
+
+    assert response.status_code == 201
+    [line] = (tmp_path / "prompts" / "daily" / "labels.jsonl").read_text().splitlines()
+    label = json.loads(line)
+    assert {k: v for k, v in label.items() if k != "at"} == {
+        "card_id": card_b["card_id"],
+        "deck_id": card_b["card_id"].split(":")[0],
+        "case_id": "b",
+        "input": {"text": "Your HRV is low."},
+        "output": "Your HRV is low.",
+        "caught_by": ["banned"],
+        "grader": "Levon",
+        "verdict": "bad",
+        "reasons": ["too long"],
+        "note": note,
+    }
+    assert datetime.fromisoformat(label["at"]).tzinfo is not None
+    assert card_ids(client.get("/api/cards", headers={**AUTH, "X-Grader": "Levon"})) == ["a"]
+    assert card_ids(client.get("/api/cards", headers={**AUTH, "X-Grader": "Hampus"})) == ["a", "b"]
