@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
-from whetstone.features.cases.load import load_cases
+from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.cases.sources import SourceError, add_source
 from whetstone.features.checks.core import CaseResult, report
 from whetstone.features.checks.load import CheckLoadError, load_checks
@@ -79,7 +79,10 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel) -> int:
     if prompt.editable is None:
         raise Stop(f'{prompt.dir / "prompt.toml"} has no "editable" part yet')
     # Every request is built and vetted before the first model call, so a broken harness costs nothing.
-    cases = load_cases(prompt.dir)
+    try:
+        cases = load_cases(prompt.dir)
+    except CaseError as e:
+        raise Stop(str(e)) from None
     if not cases:
         raise Stop(f"no cases in {prompt.dir / 'cases'}")
     requests: list[tuple[str, Any]] = []
