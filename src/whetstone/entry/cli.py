@@ -15,8 +15,8 @@ import qrcode
 from whetstone.features.cases.core import provider_refusal
 from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.cases.sources import SourceError, add_source
-from whetstone.features.checks.core import CaseResult, judge_failures, judge_request, report
-from whetstone.features.checks.load import CheckLoadError, load_checks, load_judges
+from whetstone.features.checks.core import CaseResult, covered_reasons, judge_failures, judge_request, report, uncovered_reasons
+from whetstone.features.checks.load import CheckLoadError, code_check_names, load_checks, load_judges
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, private_dir, save_deck
 from whetstone.features.workspace.core import request_differences, request_problem
@@ -47,15 +47,16 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge = no_judge
     verify = commands.add_parser("verify-harness", help="compare the harness's request with a real production request")
     verify.add_argument("--case", required=True, help="the case id to build the request from")
     verify.add_argument("--expected", type=Path, required=True, help="a JSON file holding the request production sent")
+    reasons = commands.add_parser("reasons", help="list left-swipe reasons that no check stands for yet")
     disagree = commands.add_parser("disagreements", help="list the cards graders disagree on")
     settle = commands.add_parser("settle", help="record your call on a card graders disagree on")
     serve = commands.add_parser("serve", help="start the swipe server in the background and show its QR code")
     source = commands.add_parser("add-source", help="make a private folder for one real-data source and record its consent")
-    for command in (check, verify, source, disagree, settle):
+    for command in (check, verify, source, disagree, settle, reasons):
         command.add_argument("prompt")
     serve.add_argument("prompt", nargs="?")
     serve.add_argument("--stop", action="store_true", help="stop the running swipe server")
-    for command in (check, verify, source, disagree, settle, serve):
+    for command in (check, verify, source, disagree, settle, serve, reasons):
         command.add_argument("--workspace", type=Path, help="the workspace folder, when it is not ./ or ./whetstone/")
     serve.add_argument("--host", help="the address to listen on")
     settle.add_argument("card", help="the card id, as disagreements prints it")
@@ -73,6 +74,8 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge = no_judge
         prompt = find_prompt(args.workspace, args.prompt)
         if args.command == "verify-harness":
             return verify_harness(prompt, args.case, args.expected)
+        if args.command == "reasons":
+            return list_reasons(prompt)
         if args.command == "disagreements":
             return list_disagreements(prompt)
         if args.command == "serve":
@@ -295,6 +298,13 @@ def show_link(url: str) -> None:
     qr.add_data(url)
     qr.print_ascii(out=sys.stdout, invert=True)
     print(url)
+
+
+def list_reasons(prompt: PromptSettings) -> int:
+    covered = covered_reasons(code_check_names(prompt.dir), load_judges(prompt.dir))
+    uncovered = uncovered_reasons(load_labels(prompt.dir), covered)
+    print("\n".join(f"{count}  {reason}" for reason, count in uncovered) if uncovered else "every reason has a check")
+    return 0
 
 
 def list_disagreements(prompt: PromptSettings) -> int:

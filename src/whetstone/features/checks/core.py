@@ -49,6 +49,15 @@ class Rubric:
     guide: str
     passing: str
     fail: dict[str, str]
+    reasons: list[str]  # swipe reasons this judge stands for, besides its failing answers
+
+
+def covered_reasons(code_checks: list[str], judges: dict[str, Rubric]) -> set[str]:
+    """The swipe reasons some check already stands for: its name, or one of a judge's failing answers or reasons."""
+    covered = set(code_checks) | set(judges)
+    for rubric in judges.values():
+        covered |= set(rubric.fail.values()) | set(rubric.reasons)
+    return covered
 
 
 JUDGE_INSTRUCTIONS = "You check one output of a prompt against one rule. Answer the question about the output, using the input only as context."
