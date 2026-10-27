@@ -113,8 +113,8 @@ COST = {
 
 
 def report_lines(average: dict[str, float], stuck: list[str] | None = None) -> list[str]:
-    original = "Keep it short.\nAsk one thing.\n" + "x" * 384
-    candidate = "Keep it short.\nAsk about one thing only.\n" + "x" * 421
+    original = "Keep it short.\nAsk one thing.\n" + "x" * 370
+    candidate = "Keep it short.\nAsk about one thing only.\n" + "x" * 407
     return run_report("daily", original, candidate, HELD, average, COST, stuck or []).splitlines()
 
 
