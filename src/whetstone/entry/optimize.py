@@ -71,6 +71,25 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
     except SplitError as e:
         raise Stop(str(e)) from None
     requests = {case_id: (case_input, request) for case_id, case_input, request in suite.requests}
+    # The folder first, so whatever happens, what the run spent is recorded.
+    folder = prompt_dir / "runs" / f"run-{run_id}"
+    folder.mkdir(parents=True)
+    if any(case_id.startswith("private/") for case_id in requests):
+        # Its report, split and deck name real-data cases, so the folder ignores itself, like a source folder.
+        (folder / ".gitignore").write_text("*\n")
+    (folder / "run.json").write_text(json.dumps({"model": model}))
+    (folder / "split.json").write_text(json.dumps({"training": train, "selection": select, "held_back": held}, indent=2))
+
+    def save_cost() -> None:
+        (folder / "cost.json").write_text(json.dumps({role: asdict(cost) for role, cost in meter.spent.items()}, indent=2))
+
+    def fail(message: str) -> int:
+        """A run with no winner: said loudly, and what it spent recorded all the same."""
+        print(message)
+        save_cost()
+        (folder / "report.md").write_text(f"# Run: {prompt_dir.name}\n\n{message}\n")
+        return 1
+
     generate = meter.wrap("generation", suite.model)
     rewrite = meter.wrap("rewrite", rewrite)
 
@@ -85,7 +104,10 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
         if over_cap():
             raise CapReached()
         case_input, request = requests[case_id]
-        output = generate({**swap_editable(request, editable, text), "model": model}).output
+        try:
+            output = generate({**swap_editable(request, editable, text), "model": model}).output
+        except ModelError as e:
+            raise Stop(f"{model} failed on case {case_id}: {e}") from None
         failures = suite.score(case_id, case_input, output)
         value, feedback = case_score(failures, length_factor(len(editable), len(text)))
         return value, feedback, case_input, output, failures
@@ -119,64 +141,56 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
             rewrite_errors.append(str(e))  # GEPA logs a failed rewrite and goes on, so it is kept to say why
             raise
 
-    gepa_running = True
     try:
-        optimize(editable, train, select, evaluate, reflect, budget, stop=over_cap)
-        capped = over_cap()  # GEPA also stops itself for the cap, between rounds
-    except CapReached:
-        capped = True
-    gepa_running = False
+        gepa_running = True
+        try:
+            optimize(editable, train, select, evaluate, reflect, budget, stop=over_cap)
+            capped = over_cap()  # GEPA also stops itself for the cap, between rounds
+        except CapReached:
+            capped = True
+        gepa_running = False
 
-    folder = prompt_dir / "runs" / f"run-{run_id}"
-    folder.mkdir(parents=True)
-    if any(case_id.startswith("private/") for case_id in requests):
-        # Its report, split and deck name real-data cases, so the folder ignores itself, like a source folder.
-        (folder / ".gitignore").write_text("*\n")
-    (folder / "run.json").write_text(json.dumps({"model": model}))
-    (folder / "split.json").write_text(json.dumps({"training": train, "selection": select, "held_back": held}, indent=2))
+        if not any(text != editable for text, _ in versions):
+            return fail("GEPA produced no new version" + (f"; the last rewrite failed: {rewrite_errors[-1]}" if rewrite_errors else ""))
+        best = max(versions, key=lambda version: version[1])[0]  # the first, so the original, on a tie
+        if best == editable:
+            return fail("no new version beat the original on the selection cases")
 
-    def fail(message: str) -> int:
-        """A run with no winner: said loudly, and what it spent recorded all the same."""
-        print(message)
-        (folder / "cost.json").write_text(json.dumps({role: asdict(cost) for role, cost in meter.spent.items()}, indent=2))
-        (folder / "report.md").write_text(f"# Run: {prompt_dir.name}\n\n{message}\n")
-        return 1
+        held_failures: dict[str, dict[str, dict[str, list[str]]]] = {"original": {}, "candidate": {}}
+        totals = {"original": 0.0, "candidate": 0.0}
+        cards: list[dict[str, Any]] = []
+        versions_by_tag: dict[str, str] = {}  # each card's tag -> the version that wrote it; tags name no case
+        for version, text in (("original", editable), ("candidate", best)):
+            for case_id in held:
+                value, _, case_input, output, failures = score(text, case_id)
+                held_failures[version][case_id] = failures
+                totals[version] += value
+                tag = secrets.token_hex(4)
+                cards.append(card(case_id, case_input, output, failures) | {"tag": tag})
+                versions_by_tag[tag] = version
+        random.shuffle(cards)
+        average = {version: total / len(held) for version, total in totals.items()}
 
-    if not any(text != editable for text, _ in versions):
-        return fail("GEPA produced no new version" + (f"; the last rewrite failed: {rewrite_errors[-1]}" if rewrite_errors else ""))
-    best = max(versions, key=lambda version: version[1])[0]  # the first, so the original, on a tie
-    if best == editable:
-        return fail("no new version beat the original on the selection cases")
+        (folder / "candidate.txt").write_text(best)
+        save_cost()
+        (folder / "cards.json").write_text(json.dumps(versions_by_tag, indent=2))
+        report = run_report(prompt_dir.name, editable, best, held_failures, average, meter.spent, stuck_reasons(records))
+        if capped:
+            report += f"\nStopped at the cap (${cap:.2f}): the best version so far is the candidate.\n"
+        (folder / "report.md").write_text(report)
+        save_deck(prompt.workspace, prompt_dir.name, cards, run_id)
+        return 0
 
-    held_failures: dict[str, dict[str, dict[str, list[str]]]] = {"original": {}, "candidate": {}}
-    totals = {"original": 0.0, "candidate": 0.0}
-    cards: list[dict[str, Any]] = []
-    versions_by_tag: dict[str, str] = {}  # each card's tag -> the version that wrote it; tags name no case
-    for version, text in (("original", editable), ("candidate", best)):
-        for case_id in held:
-            value, _, case_input, output, failures = score(text, case_id)
-            held_failures[version][case_id] = failures
-            totals[version] += value
-            tag = secrets.token_hex(4)
-            cards.append(card(case_id, case_input, output, failures) | {"tag": tag})
-            versions_by_tag[tag] = version
-    random.shuffle(cards)
-    average = {version: total / len(held) for version, total in totals.items()}
-
-    (folder / "candidate.txt").write_text(best)
-    (folder / "cost.json").write_text(json.dumps({role: asdict(cost) for role, cost in meter.spent.items()}, indent=2))
-    (folder / "cards.json").write_text(json.dumps(versions_by_tag, indent=2))
-    report = run_report(prompt_dir.name, editable, best, held_failures, average, meter.spent, stuck_reasons(records))
-    if capped:
-        report += f"\nStopped at the cap (${cap:.2f}): the best version so far is the candidate.\n"
-    (folder / "report.md").write_text(report)
-    save_deck(prompt.workspace, prompt_dir.name, cards, run_id)
-    return 0
-
+    except Stop as e:
+        save_cost()
+        (folder / "report.md").write_text(f"# Run: {prompt_dir.name}\n\nStopped: {e}\n")
+        raise
 
 def production_estimate(prompt: PromptSettings, budget: int, price: tuple[float, float]) -> float:
     """What a production run of `budget` GEPA generations should cost, scaled from the prompt's last cheap run."""
-    cheap = [folder for folder in sorted((prompt.dir / "runs").glob("run-*")) if json.loads((folder / "run.json").read_text())["model"] != prompt.model]
+    # A run folder without cost.json is a worker that was killed; it says nothing about cost.
+    runs = [folder for folder in sorted((prompt.dir / "runs").glob("run-*")) if (folder / "cost.json").is_file()]
+    cheap = [folder for folder in runs if json.loads((folder / "run.json").read_text())["model"] != prompt.model]
     if not cheap:
         raise Stop(f"run a cheap run first: whetstone run {prompt.dir.name} --model <a cheap model>")
     spent = {role: RoleCost(**cost) for role, cost in json.loads((cheap[-1] / "cost.json").read_text()).items()}
