@@ -49,7 +49,8 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
     serve = commands.add_parser("serve", help="start the swipe server in the background and show its QR code")
     source = commands.add_parser("add-source", help="make a private folder for one real-data source and record its consent")
     optimize = commands.add_parser("run", help="optimize the prompt's editable part with GEPA, and test the winner on held-back cases")
-    optimize.add_argument("--model", required=True, help="the cheap model to generate on")
+    optimize.add_argument("--model", help="the cheap model to generate on")
+    optimize.add_argument("--report", action="store_true", help="add the blind swipes so far to the latest run's report")
     optimize.add_argument("--budget", type=int, default=150, help="the most generation calls GEPA may make")
     optimize.add_argument("--foreground", action="store_true", help="run here instead of in the background")
     for command in (check, verify, source, disagree, settle, reasons, agree, baseline, optimize):
@@ -79,7 +80,11 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
             return refresh_baseline_report(prompt)
         if args.command == "baseline":
             return run_baseline(prompt, [m for m in args.models.split(",") if m], make_model, make_judge)
+        if args.command == "run" and args.report:
+            return refresh_run_report(prompt)
         if args.command == "run":
+            if args.model is None:
+                raise Stop("pass --model <a cheap model>, or --production")
             assert make_rewrite
             return start_run(prompt, args.model, args.budget, make_model, make_judge, make_rewrite)
         if args.command == "agreement":
@@ -202,6 +207,16 @@ def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeM
     print("".join(f"{line}\n" for line in advice), end="")
     suite = prepare_suite(prompt, make_model, lambda workspace: meter.wrap("judge", make_judge(workspace)))
     return run_optimize(suite, prompt, model, make_rewrite(prompt.workspace), budget, new_deck_id(), meter)
+
+
+def refresh_run_report(prompt: PromptSettings) -> int:
+    runs = sorted((prompt.dir / "runs").glob("run-*"))  # run ids are timestamps, so the names sort by time
+    if not runs:
+        raise Stop(f"no run of {prompt.dir.name} yet; run whetstone run {prompt.dir.name} --model …")
+    report = runs[-1] / "report.md"
+    deck_id = runs[-1].name.removeprefix("run-")
+    report.write_text(swipe_section(report.read_text(), load_labels(prompt.dir), deck_id, json.loads((runs[-1] / "cards.json").read_text())))
+    return 0
 
 
 def verify_harness(prompt: PromptSettings, case_id: str, expected_file: Path) -> int:
