@@ -9,7 +9,7 @@ from typing import Any
 from whetstone.entry.suite import Stop, Suite, card
 from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.grading.store import save_deck
-from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, length_factor, placeholder_problem, progress_line, run_report, split_cases, stuck_reasons, swap_editable
+from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, length_factor, placeholder_problem, progress_line, run_report, split_cases, stop_for_cap, stuck_reasons, swap_editable
 from whetstone.features.workspace.load import PromptSettings
 from whetstone.platform.gepa import optimize
 from whetstone.platform.model import ModelCall, ModelError, ModelResult
@@ -41,9 +41,23 @@ class Meter:
 
         return metered
 
+    def total(self) -> float:
+        """The dollars spent so far that are known."""
+        return sum(cost.dollars or 0.0 for cost in self.spent.values())
 
-def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: ModelCall, budget: int, run_id: str, meter: Meter) -> int:
-    """`suite`'s model and judges are already metered by `meter`."""
+    def per_generation(self) -> float:
+        """What one scored output has cost on average: its generation and its judges."""
+        generation, judge = self.spent["generation"], self.spent["judge"]
+        return ((generation.dollars or 0.0) + (judge.dollars or 0.0)) / generation.calls if generation.calls else 0.0
+
+
+class CapReached(Exception):
+    pass
+
+
+def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: ModelCall, budget: int, run_id: str, meter: Meter, cap: float | None = None) -> int:
+    """`suite`'s model and judges are already metered by `meter`. With a `cap`, GEPA stops while the held-back
+    scoring still fits under it, and the best version so far is kept."""
     prompt_dir, editable = prompt.dir, prompt.editable
     assert editable is not None  # the suite was prepared, which needs it
     try:
@@ -54,7 +68,15 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
     generate = meter.wrap("generation", suite.model)
     rewrite = meter.wrap("rewrite", rewrite)
 
+    gepa_running = False
+
+    def over_cap() -> bool:
+        # The held-back cases are scored twice (original and candidate), after one more output at most.
+        return gepa_running and stop_for_cap(meter.total(), (2 * len(held) + 1) * meter.per_generation(), cap)
+
     def score(text: str, case_id: str) -> tuple[float, str, Any, Any, dict[str, list[str]]]:
+        if over_cap():
+            raise CapReached()
         case_input, request = requests[case_id]
         output = generate({**swap_editable(request, editable, text), "model": model}).output
         failures = suite.score(case_id, case_input, output)
@@ -87,7 +109,13 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
             rewrite_errors.append(str(e))  # GEPA logs a failed rewrite and goes on, so it is kept to say why
             raise
 
-    optimize(editable, train, select, evaluate, reflect, budget, stop=lambda: False)
+    gepa_running = True
+    try:
+        optimize(editable, train, select, evaluate, reflect, budget, stop=over_cap)
+        capped = over_cap()  # GEPA also stops itself for the cap, between rounds
+    except CapReached:
+        capped = True
+    gepa_running = False
     if not any(text != editable for text, _ in versions):
         why = f"; the last rewrite failed: {rewrite_errors[-1]}" if rewrite_errors else ""
         print(f"GEPA produced no new version{why}")
@@ -122,7 +150,10 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
     (folder / "candidate.txt").write_text(best)
     (folder / "cost.json").write_text(json.dumps({role: asdict(cost) for role, cost in meter.spent.items()}, indent=2))
     (folder / "cards.json").write_text(json.dumps(versions_by_tag, indent=2))
-    (folder / "report.md").write_text(run_report(prompt_dir.name, editable, best, held_failures, average, meter.spent, stuck_reasons(records)))
+    report = run_report(prompt_dir.name, editable, best, held_failures, average, meter.spent, stuck_reasons(records))
+    if capped:
+        report += f"\nStopped at the cap (${cap:.2f}): the best version so far is the candidate.\n"
+    (folder / "report.md").write_text(report)
     save_deck(prompt.workspace, prompt_dir.name, cards, run_id)
     return 0
 

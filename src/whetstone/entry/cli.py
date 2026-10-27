@@ -85,7 +85,7 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
         if args.command == "run" and args.report:
             return refresh_run_report(prompt)
         if args.command == "run" and args.production:
-            return start_production_run(prompt, args.budget, args.yes)
+            return start_production_run(prompt, args.budget, args.yes, make_model, make_judge, make_rewrite)
         if args.command == "run":
             if args.model is None:
                 raise Stop("pass --model <a cheap model>, or --production")
@@ -199,7 +199,7 @@ def refresh_baseline_report(prompt: PromptSettings) -> int:
     return 0
 
 
-def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite) -> int:
+def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite, cap: float | None = None) -> int:
     try:
         meter = Meter(prices(prompt.workspace))
     except PromptError as e:
@@ -211,10 +211,10 @@ def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeM
     if not allowed:
         raise Stop("\n".join(advice))
     print("".join(f"{line}\n" for line in advice), end="")
-    return run_optimize(suite, prompt, model, make_rewrite(prompt.workspace), budget, new_deck_id(), meter)
+    return run_optimize(suite, prompt, model, make_rewrite(prompt.workspace), budget, new_deck_id(), meter, cap)
 
 
-def start_production_run(prompt: PromptSettings, budget: int, yes: bool) -> int:
+def start_production_run(prompt: PromptSettings, budget: int, yes: bool, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite | None) -> int:
     try:
         table = prices(prompt.workspace)
     except PromptError as e:
@@ -223,8 +223,11 @@ def start_production_run(prompt: PromptSettings, budget: int, yes: bool) -> int:
     if price is None:
         raise Stop(f"[prices] in whetstone.toml has no price for {prompt.model}; a production run needs one to estimate its cost")
     expected = production_estimate(prompt, budget, price)
-    print(f"a production run on {prompt.model}: about ${expected:.2f}; it stops at ${2 * expected:.2f}. Rerun with --yes to start.")
-    return 0
+    print(f"a production run on {prompt.model}: about ${expected:.2f}; it stops at ${2 * expected:.2f}." + ("" if yes else " Rerun with --yes to start."), flush=True)
+    if not yes:
+        return 0
+    assert make_rewrite
+    return start_run(prompt, prompt.model, budget, make_model, make_judge, make_rewrite, cap=2 * expected)
 
 
 def refresh_run_report(prompt: PromptSettings) -> int:
