@@ -378,3 +378,32 @@ def test_a_run_without_real_data_can_be_committed(tmp_path: Path, monkeypatch: p
     start_run(writer(), rewriter())
 
     assert not (run_folder(prompt) / ".gitignore").exists()
+
+
+PROD_PRICES = '[prices]\n"prod-model" = [3, 15]\n"cheap-model" = [1, 5]\n'
+CHEAP_COST = {
+    "generation": {"calls": 100, "input_tokens": 100_000, "output_tokens": 10_000, "dollars": 0.15},
+    "judge": {"calls": 100, "input_tokens": 50_000, "output_tokens": 1_000, "dollars": 0.20},
+    "rewrite": {"calls": 10, "input_tokens": 40_000, "output_tokens": 8_000, "dollars": 0.50},
+}
+
+
+def cheap_run_with_known_cost(prompt: Path) -> None:
+    """A real cheap run, its cost record then replaced with round numbers."""
+    start_run(writer(), rewriter())
+    (run_folder(prompt) / "cost.json").write_text(json.dumps(CHEAP_COST))
+
+
+def test_a_production_run_shows_its_estimate_and_waits_for_a_yes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_run_suite(tmp_path, settings=PROD_PRICES)
+    monkeypatch.chdir(tmp_path)
+    cheap_run_with_known_cost(prompt)
+    capsys.readouterr()
+    model, rewrite = writer(), rewriter()
+
+    # 92 GEPA generations and 2 x 4 held-back ones: 100 at the production price, and the cheap run's judges and rewrites
+    code = run(["run", "daily", "--production", "--budget", "92"], make_model=lambda _s: model, make_rewrite=lambda _w: rewrite)
+
+    assert code == 0
+    assert "a production run on prod-model: about $1.15; it stops at $2.30. Rerun with --yes to start." in capsys.readouterr().out
+    assert model.requests == [] and rewrite.requests == []
