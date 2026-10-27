@@ -8,7 +8,7 @@ import socket
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 import httpx2 as httpx
 import qrcode
@@ -99,8 +99,11 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
             else:
                 model, cap = args.model, None
             if not args.foreground:
+                # ponytail: checked, then let go for the worker to take; a run started in between makes the worker exit 2.
+                run_lock(prompt).close()
                 return start_in_background(prompt, argv, make_model, make_judge, make_rewrite)
-            return start_run(prompt, model, args.budget, make_model, make_judge, make_rewrite, cap, args.run_id or new_deck_id())
+            with run_lock(prompt):
+                return start_run(prompt, model, args.budget, make_model, make_judge, make_rewrite, cap, args.run_id or new_deck_id())
         if args.command == "agreement":
             return show_agreement(prompt, make_judge)
         if args.command == "reasons":
@@ -242,6 +245,20 @@ def production_cap(prompt: PromptSettings, budget: int, yes: bool) -> float | No
     return 2 * expected if yes else None
 
 
+def run_lock(prompt: PromptSettings) -> IO[str]:
+    """Held for a run's life, so two runs of one prompt never spend at once or replace each other's deck. The starting
+    command only checks it, and the worker takes it."""
+    logs = private_dir(prompt.workspace) / "runs"
+    logs.mkdir(exist_ok=True)
+    lock = (logs / f"{prompt.dir.name}.lock").open("w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock.close()
+        raise Stop(f"a run of {prompt.dir.name} is already going; its log is in .whetstone/runs/") from None
+    return lock
+
+
 def start_in_background(prompt: PromptSettings, argv: list[str], make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite) -> int:
     """Vets what needs no model call, then starts the run as a worker in a session of its own, so it outlives this
     command and the Claude session; the worker vets again and does the rest, logging as it goes."""
@@ -251,9 +268,7 @@ def start_in_background(prompt: PromptSettings, argv: list[str], make_model: Mak
     except (PromptError, MissingKey) as e:
         raise Stop(str(e)) from None
     run_id = new_deck_id()
-    logs = private_dir(prompt.workspace) / "runs"
-    logs.mkdir(exist_ok=True)
-    log = logs / f"{prompt.dir.name}-{run_id}.log"
+    log = prompt.workspace / ".whetstone" / "runs" / f"{prompt.dir.name}-{run_id}.log"
     worker = [sys.executable, "-m", "whetstone.entry.cli", *argv, "--foreground", "--run-id", run_id, "--workspace", str(prompt.workspace)]
     pid = start_detached(worker, "", log)
     print(f"run {run_id} of {prompt.dir.name} started in the background (pid {pid})")
