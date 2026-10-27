@@ -6,8 +6,6 @@ import sys
 import time
 from pathlib import Path
 
-import pytest
-
 from tests.test_run_cli import make_run_suite
 
 # Builds each case's request once; the second build of a case waits a second and fails, so the worker started in the

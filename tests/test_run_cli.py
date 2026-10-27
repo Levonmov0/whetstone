@@ -3,6 +3,7 @@ import json
 import random
 import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -48,7 +49,7 @@ def rewriter(text: str = "Be brief. Keep it short.") -> FakeModel:
     return FakeModel(lambda _request: f"```\n{text}\n```")
 
 
-def start_run(model: FakeModel, rewrite: FakeModel, *extra: str, judge: Any = None) -> int:
+def start_run(model: FakeModel, rewrite: FakeModel, *extra: str, judge: Callable[[Path], FakeModel] | None = None) -> int:
     argv = ["run", "daily", "--model", "cheap-model", "--budget", "30", "--foreground", *extra]
     return run(argv, make_model=lambda _settings: model, make_judge=judge, make_rewrite=lambda _workspace: rewrite)
 
@@ -305,7 +306,7 @@ def test_the_report_adds_the_blind_swipes_per_version(tmp_path: Path, monkeypatc
     monkeypatch.chdir(tmp_path)
     start_run(writer(), rewriter())
     deck = json.loads((tmp_path / ".whetstone" / "decks" / "daily.json").read_text())
-    labels = [
+    labels: list[dict[str, Any]] = [
         {"card_id": card["card_id"], "case_id": card["case_id"], "grader": "Levon", "at": f"2026-10-27T10:00:0{i}",
          "verdict": "bad" if "LONG" in card["output"] else "good", "reasons": [], "note": ""}
         for i, card in enumerate(deck["cards"])
