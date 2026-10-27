@@ -256,8 +256,8 @@ def test_progress_is_shown_as_versions_are_scored(tmp_path: Path, monkeypatch: p
     start_run(writer(), rewriter())
 
     out = capsys.readouterr().out.splitlines()
-    assert "version 1: 0 of 2 checks passing on selection cases (best so far)" in out
-    assert "version 2: 2 of 2 checks passing on selection cases (best so far)" in out
+    assert "version 1: 0 of 3 checks passing on selection cases (best so far)" in out
+    assert "version 2: 3 of 3 checks passing on selection cases (best so far)" in out
 
 
 def test_the_report_compares_held_back_results_and_explains_a_stuck_check(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -452,22 +452,22 @@ def test_a_production_run_stops_at_twice_the_estimate_and_keeps_the_best_so_far(
     prompt = make_run_suite(tmp_path, settings='[prices]\n"prod-model" = [3000, 15000]\n')
     monkeypatch.chdir(tmp_path)
     cheap_run_with_known_cost(prompt)
-    # 30 GEPA generations and 8 held-back ones, as many as the cheap run made, at no cost, and $2 of rewrites: $2 in all.
+    # 30 GEPA generations and 8 held-back ones, as many as the cheap run made, at no cost, and $2.50 of rewrites: $2.50 in all.
     free = {"calls": 38, "input_tokens": 0, "output_tokens": 0, "dollars": 0.0}
-    (run_folder(prompt) / "cost.json").write_text(json.dumps({"generation": free, "judge": free | {"calls": 0}, "rewrite": free | {"calls": 1, "dollars": 2.0}}))
+    (run_folder(prompt) / "cost.json").write_text(json.dumps({"generation": free, "judge": free | {"calls": 0}, "rewrite": free | {"calls": 1, "dollars": 2.5}}))
     model, rewrite = writer(), FakeModel(lambda _r: "```\nBe brief. Keep it short.\n```", cost_usd=2.0)
     capsys.readouterr()
 
     code = run(["run", "daily", "--production", "--yes", "--budget", "30", "--foreground"], make_model=lambda _s: model, make_rewrite=lambda _w: rewrite)
 
     assert code == 0
-    assert "a production run on prod-model: about $2.00; it stops at $4.00." in capsys.readouterr().out
+    assert "a production run on prod-model: about $2.50; it stops at $5.00." in capsys.readouterr().out
     assert {request["model"] for request in model.requests} == {"prod-model"}
     assert len(model.requests) < 38
     [folder] = [f for f in (prompt / "runs").glob("run-*") if json.loads((f / "run.json").read_text())["model"] == "prod-model"]
-    assert "Stopped at the cap ($4.00): the best version so far is the candidate." in (folder / "report.md").read_text()
+    assert "Stopped at the cap ($5.00): the best version so far is the candidate." in (folder / "report.md").read_text()
     assert "short" in (folder / "candidate.txt").read_text()
-    assert sum(cost["dollars"] for cost in json.loads((folder / "cost.json").read_text()).values()) <= 4.00
+    assert sum(cost["dollars"] for cost in json.loads((folder / "cost.json").read_text()).values()) <= 5.00
 
 
 @pytest.mark.parametrize("where", [["--foreground"], []])
