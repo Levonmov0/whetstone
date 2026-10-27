@@ -23,7 +23,7 @@ Pick the cheapest model of the production provider that accepts the production r
 whetstone run <prompt> --model <cheap model>
 ```
 
-`--budget` caps GEPA's generation calls (150 by default, about a dollar on Haiku). It returns at once and prints the run's log path; the run goes on in the background even after this session ends. One run per prompt at a time.
+`--budget` caps GEPA's generation calls (150 by default, about a dollar on Haiku). It vets the run first (the suite, the split, prices, the rewrite settings and the judges), then returns and prints the run's log path; the run goes on in the background even after this session ends. One run per prompt at a time.
 
 Follow the log with `tail` and relay its progress lines in plain words ("version 3: 17 of 20 checks passing on selection cases"). The run ends with:
 - **exit 0:** a candidate. Go on to the report.
