@@ -1,3 +1,4 @@
+import fcntl
 import json
 import random
 import re
@@ -466,3 +467,19 @@ def test_a_production_run_stops_at_twice_the_estimate_and_keeps_the_best_so_far(
     assert "Stopped at the cap ($4.00): the best version so far is the candidate." in (folder / "report.md").read_text()
     assert "short" in (folder / "candidate.txt").read_text()
     assert sum(cost["dollars"] for cost in json.loads((folder / "cost.json").read_text()).values()) <= 4.00
+
+
+@pytest.mark.parametrize("where", [["--foreground"], []])
+def test_one_run_per_prompt_at_a_time(where: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_run_suite(tmp_path)
+    model = writer()
+    (tmp_path / ".whetstone" / "runs").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+
+    with (tmp_path / ".whetstone" / "runs" / "daily.lock").open("w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)  # a run of daily going on
+        code = run(["run", "daily", "--model", "cheap-model", *where], make_model=lambda _s: model, make_rewrite=lambda _w: rewriter())
+
+    assert code == 2
+    assert "a run of daily is already going; its log is in .whetstone/runs/" in capsys.readouterr().err
+    assert model.requests == []
