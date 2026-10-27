@@ -36,3 +36,5 @@ pythonVersion = "3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not live'"
+markers = ["live: calls real models and costs money; run with make smoke"]
