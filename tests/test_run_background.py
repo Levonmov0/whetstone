@@ -1,3 +1,4 @@
+import fcntl
 import json
 import os
 import signal
@@ -44,3 +45,22 @@ def test_a_run_goes_on_in_the_background_after_its_session_ends(tmp_path: Path) 
         time.sleep(0.2)
     assert "harness exited 3" in log.read_text()
     assert json.dumps("never-used") not in log.read_text()
+
+
+def test_the_worker_holds_the_run_lock_from_the_moment_the_run_starts(tmp_path: Path) -> None:
+    prompt = make_run_suite(tmp_path, cases=3)
+    (prompt / "harness.py").write_text(HARNESS)
+    (tmp_path / ".env").write_text("GENERATION_API_KEY=never-used\n")
+    command = [sys.executable, "-c", "from whetstone.entry.cli import main; main()", "run", "daily", "--model", "cheap-model", "--workspace", str(tmp_path)]
+
+    started = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, timeout=60)
+
+    assert started.returncode == 0, started.stderr
+    # The worker is still busy (its harness waits a second): a second run must find the lock held, with no gap.
+    with (tmp_path / ".whetstone" / "runs" / "daily.lock").open("w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            held = False
+        except BlockingIOError:
+            held = True
+    assert held
