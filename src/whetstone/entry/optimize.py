@@ -113,6 +113,9 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
 
     folder = prompt_dir / "runs" / f"run-{run_id}"
     folder.mkdir(parents=True)
+    if any(case_id.startswith("private/") for case_id in requests):
+        # Its report, split and deck name real-data cases, so the folder ignores itself, like a source folder.
+        (folder / ".gitignore").write_text("*\n")
     (folder / "split.json").write_text(json.dumps({"training": train, "selection": select, "held_back": held}, indent=2))
     (folder / "candidate.txt").write_text(best)
     (folder / "cost.json").write_text(json.dumps({role: asdict(cost) for role, cost in meter.spent.items()}, indent=2))
