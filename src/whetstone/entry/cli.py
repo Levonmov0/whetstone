@@ -23,7 +23,7 @@ from whetstone.features.checks.load import CheckLoadError, code_check_reasons
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
 from whetstone.features.workspace.core import request_differences
-from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, phone_access, prompt_names
+from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, phone_access, prices, prompt_names
 from whetstone.platform.anthropic import anthropic_model
 from whetstone.platform.config import load_key
 from whetstone.platform.daemon import command_line, is_running, start_detached, stop, write_private
@@ -191,7 +191,10 @@ def refresh_baseline_report(prompt: PromptSettings) -> int:
 
 
 def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite) -> int:
-    meter = Meter()
+    try:
+        meter = Meter(prices(prompt.workspace))
+    except PromptError as e:
+        raise Stop(str(e)) from None
     gates = judge_gates(prompt, lambda workspace: meter.wrap("judge", make_judge(workspace))) or {}
     allowed, advice = optimize_gate({name: (status, lines) for name, (_rows, status, lines) in gates.items()})
     if not allowed:

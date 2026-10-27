@@ -92,3 +92,15 @@ def judge_model(workspace: Path) -> tuple[str, str]:
     if not (settings.get("provider") == "openai" and isinstance(settings.get("model"), str)):
         raise PromptError(f'{workspace / "whetstone.toml"}: [models] judge needs provider = "openai" and a model')
     return cast(str, settings["provider"]), cast(str, settings["model"])
+
+
+def prices(workspace: Path) -> dict[str, tuple[float, float]]:
+    """Each model's dollars per million input and output tokens, from `[prices]` in whetstone.toml."""
+    table = _workspace_settings(workspace).get("prices", {})
+    entries = cast(dict[str, Any], table) if isinstance(table, dict) else None
+    valid = entries is not None and all(
+        isinstance(v, list) and len(cast(list[Any], v)) == 2 and all(isinstance(n, int | float) for n in cast(list[Any], v)) for v in entries.values()
+    )
+    if entries is None or not valid:
+        raise PromptError(f"{workspace / 'whetstone.toml'}: [prices] maps each model to [input, output] dollars per million tokens")
+    return {model: (float(v[0]), float(v[1])) for model, v in entries.items()}

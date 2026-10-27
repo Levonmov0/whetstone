@@ -16,14 +16,22 @@ ROLES = ("generation", "judge", "rewrite")
 class Meter:
     """Counts every model call of a run by role: calls, tokens and the dollars a call reported."""
 
-    def __init__(self) -> None:
+    def __init__(self, prices: dict[str, tuple[float, float]]) -> None:
+        self.prices = prices
         self.spent = {role: RoleCost(0, 0, 0, 0.0) for role in ROLES}
+
+    def _dollars(self, request: dict[str, Any], result: ModelResult) -> float | None:
+        if result.cost_usd is not None:
+            return result.cost_usd
+        price = self.prices.get(str(request.get("model")))
+        return None if price is None else (result.input_tokens * price[0] + result.output_tokens * price[1]) / 1e6
 
     def wrap(self, role: str, call: ModelCall) -> ModelCall:
         def metered(request: dict[str, Any]) -> ModelResult:
             result = call(request)
             before = self.spent[role]
-            dollars = None if before.dollars is None or result.cost_usd is None else before.dollars + result.cost_usd
+            cost = self._dollars(request, result)
+            dollars = None if before.dollars is None or cost is None else before.dollars + cost
             self.spent[role] = RoleCost(before.calls + 1, before.input_tokens + result.input_tokens, before.output_tokens + result.output_tokens, dollars)
             return result
 
