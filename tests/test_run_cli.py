@@ -9,7 +9,7 @@ import pytest
 
 from tests.fakes import FakeModel, unused_model
 from tests.test_agreement_cli import RUBRIC_TAIL, swipes, write_labels
-from tests.test_judges_cli import JUDGE_SETTINGS, judging
+from tests.test_judges_cli import JUDGE_SETTINGS, add_private_case, judging
 from whetstone.entry.cli import run
 from whetstone.features.optimize.core import split_cases
 from whetstone.platform.model import ModelError
@@ -343,3 +343,38 @@ def test_a_run_needs_a_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ca
 
     assert code == 2
     assert "pass --model <a cheap model>, or --production" in capsys.readouterr().err
+
+
+def test_a_run_on_real_data_keeps_its_folder_out_of_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_run_suite(tmp_path, settings='repo_providers = ["anthropic"]\n')
+    add_private_case(prompt)
+    monkeypatch.chdir(tmp_path)
+
+    code = start_run(writer(), rewriter())
+
+    assert code == 0
+    assert (run_folder(prompt) / ".gitignore").read_text() == "*\n"
+
+
+def test_real_data_never_goes_to_a_provider_the_repo_does_not_use(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    prompt = make_run_suite(tmp_path, settings='repo_providers = ["openai"]\n')
+    add_private_case(prompt)
+    rewrite = rewriter()
+    monkeypatch.chdir(tmp_path)
+
+    code = start_run(writer(), rewrite)
+
+    assert code == 2
+    assert "real-data cases go only to providers this repo already uses (openai); anthropic is not one" in capsys.readouterr().err
+    assert rewrite.requests == []
+
+
+def test_a_run_without_real_data_can_be_committed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_run_suite(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    start_run(writer(), rewriter())
+
+    assert not (run_folder(prompt) / ".gitignore").exists()
