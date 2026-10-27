@@ -13,13 +13,23 @@ class SplitError(Exception):
 
 
 def split_cases(case_ids: list[str]) -> tuple[list[str], list[str], list[str]]:
-    """Training, selection and held-back case ids, 40/25/35. Each case's place comes from a hash of its id, so a case
-    held back in one run stays held back in the next."""
+    """Training, selection and held-back case ids, about 40/25/35. Each case's set comes from a hash of its own id,
+    so adding or removing other cases never moves it, and a case held back in one run stays held back in the next."""
     if len(case_ids) < 3:
         raise SplitError(f"a run needs at least 3 cases; this prompt has {len(case_ids)}")
-    ordered = sorted(case_ids, key=lambda case_id: hashlib.sha256(case_id.encode()).hexdigest())
-    train, select = round(0.4 * len(ordered)), round(0.25 * len(ordered))
-    return ordered[:train], ordered[train : train + select], ordered[train + select :]
+    bucket = {case_id: int(hashlib.sha256(case_id.encode()).hexdigest(), 16) % 100 for case_id in case_ids}
+    ordered = sorted(case_ids, key=lambda case_id: (bucket[case_id], case_id))
+    sets: list[list[str]] = [[c for c in ordered if bucket[c] < 40], [c for c in ordered if 40 <= bucket[c] < 65], [c for c in ordered if bucket[c] >= 65]]
+    middles = (20, 52, 82)
+    # ponytail: a small suite can leave a set empty; it takes the nearest case from the biggest set, which may move that
+    # one case when the suite grows. Past a dozen cases this rarely happens.
+    for i, chosen in enumerate(sets):
+        if not chosen:
+            biggest = max(sets, key=len)
+            moved = min(biggest, key=lambda case_id: abs(bucket[case_id] - middles[i]))
+            biggest.remove(moved)
+            chosen.append(moved)
+    return sets[0], sets[1], sets[2]
 
 
 MAX_GROWTH = 1.5
