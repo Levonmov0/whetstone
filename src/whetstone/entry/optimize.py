@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from whetstone.entry.suite import Stop, Suite
-from whetstone.features.optimize.core import RoleCost, SplitError, case_score, length_factor, placeholder_problem, progress_line, run_report, split_cases, swap_editable
+from whetstone.features.optimize.core import RoleCost, SplitError, case_score, length_factor, placeholder_problem, progress_line, run_report, split_cases, stuck_reasons, swap_editable
 from whetstone.platform.gepa import optimize
 from whetstone.platform.model import ModelCall, ModelError, ModelResult
 
@@ -56,6 +56,7 @@ def run_optimize(suite: Suite, prompt_dir: Path, editable: str, model: str, rewr
         return value, feedback, case_input, output, failures
 
     versions: list[tuple[str, float]] = []  # each version scored on every selection case, and its average there
+    records: list[tuple[int, str, dict[str, list[str]]]] = []  # each such version's failures per selection case
 
     def evaluate(text: str, batch: list[str]) -> list[tuple[float, str, Any, Any]]:
         if problem := placeholder_problem(editable, text):
@@ -66,6 +67,7 @@ def run_optimize(suite: Suite, prompt_dir: Path, editable: str, model: str, rewr
             average = sum(r[0] for r in results) / len(results)
             best = all(average > other for _, other in versions)
             versions.append((text, average))
+            records.extend((len(versions), case_id, r[4]) for case_id, r in zip(batch, results))
             passing = sum(not messages for r in results for messages in r[4].values())
             print(progress_line(len(versions), passing, sum(len(r[4]) for r in results), best), flush=True)
         return [r[:4] for r in results]
@@ -103,5 +105,5 @@ def run_optimize(suite: Suite, prompt_dir: Path, editable: str, model: str, rewr
     (folder / "split.json").write_text(json.dumps({"training": train, "selection": select, "held_back": held}, indent=2))
     (folder / "candidate.txt").write_text(best)
     (folder / "cost.json").write_text(json.dumps({role: asdict(cost) for role, cost in meter.spent.items()}, indent=2))
-    (folder / "report.md").write_text(run_report(prompt_dir.name, editable, best, held_failures, average, meter.spent, []))
+    (folder / "report.md").write_text(run_report(prompt_dir.name, editable, best, held_failures, average, meter.spent, stuck_reasons(records)))
     return 0
