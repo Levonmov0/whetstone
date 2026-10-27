@@ -23,6 +23,7 @@ The workspace is the one place Whetstone keeps a repo's settings, keys, theme an
     checks/<name>.judge.toml   judge rubrics, one rule each
     checks/proposed/    checks Claude proposed and the user hasn't approved; never run
     runs/baseline-<id>/ one baseline run: cards.json (card id → model) and report.md
+    runs/run-<id>/      one optimizing run: report.md, candidate.txt, cost.json, cards.json, split.json, run.json
     labels.jsonl        swipes on the invented cases
 ```
 
@@ -33,7 +34,10 @@ repo_providers = ["anthropic"]   # every model provider the repo already calls; 
 
 [models]
 judge = { provider = "openai", model = "gpt-5.5" }   # another family from the generator; needed once a prompt has a judge
-rewrite = { via = "claude-code" }                    # or { via = "api", model = "<model>" }
+rewrite = { via = "claude-code" }                    # the default; optional model = "<model>"; or { via = "api", model = "<model>" }
+
+[prices]              # dollars per million input and output tokens, per model a run uses
+"claude-haiku-5-5" = [0.10, 0.50]
 
 [phone]
 access = "lan"        # or "tailscale"; never a public tunnel
@@ -120,7 +124,7 @@ yes = "assumes whether they did Kin's advice"
   - **warn:** 80% to 90%;
   - **untrusted:** below 80% on either side, or with no grader at 5 swipes on a side.
 
-  Every grader with 5 or more swipes on a side must clear that side. It exits 1 when any judge is untrusted. The optimizer (#4) will refuse to run against one.
+  Every grader with 5 or more swipes on a side must clear that side. It exits 1 when any judge is untrusted. `whetstone run` refuses to start against one, and shows the warnings of warned ones.
 
 ## Baseline
 
@@ -133,6 +137,28 @@ yes = "assumes whether they did Kin's advice"
 - A model call that fails exits 2 and leaves the previous deck.
 
 `whetstone baseline <prompt> --report` rewrites the latest run's report with each model's good, bad and skip swipes, from each grader's latest swipe on that run's cards.
+
+## Optimizing
+
+`whetstone run <prompt> --model <cheap model>` optimizes the editable part with GEPA (pinned at 0.1.4).
+- It vets the suite as `check` does, then starts a worker in its own session and prints the run id and the log path, `.whetstone/runs/<prompt>-<id>.log`. The worker outlives the command and the Claude session. `--foreground` runs it in place. One run per prompt at a time; a second exits 2.
+- The worker refuses untrusted judges (exit 2, with each judge's advice) and prints warned judges' warnings, after one judge call per swiped card per judge.
+- Cases split 40% training, 25% selection, 35% held back, by a hash of each case id, so a case keeps its set from run to run. GEPA sees only training and selection cases. It needs at least 3 cases.
+- Each output is the harness's request with only `model` and the editable text changed. Its score is the share of checks (code and judges) it passes, times a length factor: 1 up to 1.5 times the original's length, then 1.5 × original ÷ length. A version that drops, changes or adds a `{{name}}` or `${name}` placeholder scores 0 without a model call.
+- Rewrites go through `[models] rewrite`: Claude Code's headless mode (`claude -p`, no tools, settings, plugins or MCP servers, in an empty folder) or, with `via = "api"`, the Anthropic API with `REWRITE_API_KEY`.
+- `--budget` (default 150) caps GEPA's generation calls. The log prints a line for each version scored on all selection cases.
+- The winner is the version with the best average on the selection cases, the original on a tie. With no new version, or none better than the original, the run exits 1 and says why; it writes no `candidate.txt` and no deck.
+- The run folder, `prompts/<prompt>/runs/run-<id>/`:
+  - `run.json` (the model it generated on), `split.json` (case ids per set) and `cost.json` (calls, tokens and dollars per role: generation, judge, rewrite), always;
+  - `report.md`: held-back results of the original and the candidate (cases passing every check, average score, each check), "within noise" when the averages differ by 0.03 or less, the rules now passing on every held-back case, the length change, the diff, the cost, and, when checks still fail, why it may be stuck;
+  - `candidate.txt` and `cards.json` (card tag → original or candidate), with a winner;
+  - a `.gitignore` of `*` when any case was real data.
+- Dollars come from what a call reports (Claude Code does) or `[prices]`; a model with no price makes its role's dollars null and the report say "$ unknown".
+- With a winner, the deck is replaced by the original's and the candidate's held-back outputs, shuffled, card ids `<run-id>:<case-id>:<tag>`. `whetstone run <prompt> --report` adds each version's good, bad and skip swipes to the latest run with a candidate.
+
+`whetstone run <prompt> --production` prints the estimate for a run on the production model and the cap at twice that, and stops. The estimate scales the last cheap run (the latest run on another model): its tokens per generation at the production price, and its judge and rewrite dollars, for `--budget` plus twice the held-back cases. It exits 2 with no earlier cheap run, no price for the production model, or a cheap run whose dollars are unknown. `--production --yes` starts the run. GEPA stops once the spend so far, plus scoring the held-back cases, reaches the cap; the best version so far is the candidate, and the report says it stopped at the cap.
+
+`make smoke` runs a live run on Haiku 5.5 (about $0.10), with `SMOKE_GENERATION_API_KEY` from the repo's `.env` and Claude Code for rewrites. `make check` skips it.
 
 ## Real-data cases
 

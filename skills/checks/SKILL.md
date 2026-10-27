@@ -58,7 +58,7 @@ whetstone agreement <prompt>
 It judges every swiped card once (one OpenAI call per card per judge, printed before it starts). For each judge and each grader, it shows how often the judge agreed: on cards they called good, and on cards they called bad for that judge's rule.
 - **trusted:** 90% or more on both sides.
 - **warn:** 80% to 90%.
-- **untrusted:** below 80% on either side, or fewer than 5 swipes on a side. The optimizer (`/whetstone:run`, coming next) will refuse to run against an untrusted judge.
+- **untrusted:** below 80% on either side, or fewer than 5 swipes on a side. The optimizer (`/whetstone:run`) refuses to run against an untrusted judge.
 
 For each untrusted judge, follow its advice:
 - "fails outputs … called good": the judge is too strict. Sharpen `guide` with the good outputs it failed, then run `agreement` again.
