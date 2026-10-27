@@ -1,8 +1,10 @@
 """A prompt's suite: its vetted requests, checks and judges, shared by every command that runs the prompt."""
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable
 from dataclasses import dataclass
+from itertools import repeat
 from pathlib import Path
 from typing import Any, cast
 
@@ -57,9 +59,11 @@ class Suite:
             if not isinstance(messages, list) or not all(isinstance(m, str) for m in cast(list[Any], messages)):
                 raise Stop(f"check {name} returned {messages!r} on case {case_id}; a check returns a list of failure messages")
             failures[name] = cast(list[str], messages)
-        for name, rubric in self.judges.items():
+        if self.judges:
             assert self.ask
-            failures[f"{name} (judge)"] = self.ask(name, rubric, case_id, case_input, output)
+            with ThreadPoolExecutor(len(self.judges)) as pool:  # the judges at once: each is a slow model call
+                answers = list(pool.map(self.ask, self.judges, self.judges.values(), repeat(case_id), repeat(case_input), repeat(output)))
+            failures |= {f"{name} (judge)": answer for name, answer in zip(self.judges, answers)}
         return failures
 
 

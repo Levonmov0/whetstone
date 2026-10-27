@@ -2,7 +2,10 @@
 
 import json
 import random
+from itertools import repeat
 import secrets
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from typing import Any
 
@@ -15,6 +18,8 @@ from whetstone.platform.gepa import optimize
 from whetstone.platform.model import ModelCall, ModelError, ModelResult
 
 ROLES = ("generation", "judge", "rewrite", "gate")  # gate: the one-off judge calls that check the judges first
+# ponytail: a fixed number of cases scored at once (each with its judges at once too); make it a setting if a provider rate-limits it.
+CASES_AT_ONCE = 8
 
 
 class Meter:
@@ -23,6 +28,7 @@ class Meter:
     def __init__(self, prices: dict[str, tuple[float, float]]) -> None:
         self.prices = prices
         self.spent = {role: RoleCost(0, 0, 0, 0.0) for role in ROLES}
+        self._lock = threading.Lock()  # cases are scored in parallel
 
     def _dollars(self, request: dict[str, Any], result: ModelResult) -> float | None:
         if result.cost_usd is not None:
@@ -33,10 +39,11 @@ class Meter:
     def wrap(self, role: str, call: ModelCall) -> ModelCall:
         def metered(request: dict[str, Any]) -> ModelResult:
             result = call(request)
-            before = self.spent[role]
             cost = self._dollars(request, result)
-            dollars = None if before.dollars is None or cost is None else before.dollars + cost
-            self.spent[role] = RoleCost(before.calls + 1, before.input_tokens + result.input_tokens, before.output_tokens + result.output_tokens, dollars)
+            with self._lock:
+                before = self.spent[role]
+                dollars = None if before.dollars is None or cost is None else before.dollars + cost
+                self.spent[role] = RoleCost(before.calls + 1, before.input_tokens + result.input_tokens, before.output_tokens + result.output_tokens, dollars)
             return result
 
         return metered
@@ -96,8 +103,8 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
     gepa_running = False
 
     def over_cap() -> bool:
-        # What may still come: one more output or one more rewrite, then the held-back cases scored twice.
-        reserve = (2 * len(held) + 1) * meter.per_generation() + meter.per_rewrite()
+        # What may still come: the outputs already being scored or one more rewrite, then the held-back cases scored twice.
+        reserve = (2 * len(held) + CASES_AT_ONCE) * meter.per_generation() + meter.per_rewrite()
         return gepa_running and stop_for_cap(meter.total(), reserve, cap)
 
     def score(text: str, case_id: str) -> tuple[float, str, Any, Any, dict[str, list[str]]]:
@@ -112,6 +119,10 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
         value, feedback = case_score(failures, length_factor(len(editable), len(text)))
         return value, feedback, case_input, output, failures
 
+    def score_all(text: str, batch: list[str]) -> list[tuple[float, str, Any, Any, dict[str, list[str]]]]:
+        with ThreadPoolExecutor(CASES_AT_ONCE) as pool:
+            return list(pool.map(score, repeat(text), batch))
+
     versions: list[tuple[str, float]] = []  # each version scored on every selection case, and its average there
     records: list[tuple[int, str, dict[str, list[str]]]] = []  # each such version's failures per selection case
 
@@ -119,7 +130,7 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
         if problem := (placeholder_problem(editable, text) if text.strip() else "is empty"):
             # It could never be applied to the source (or says nothing), so it is scored 0 without spending a call on it.
             return [(0.0, f"Rejected: it {problem}. Keep every placeholder exactly as it is.", requests[case_id][0], None) for case_id in batch]
-        results = [score(text, case_id) for case_id in batch]
+        results = score_all(text, batch)
         if sorted(batch) == sorted(select):
             average = sum(r[0] for r in results) / len(results)
             best = all(average > other for _, other in versions)
@@ -161,8 +172,7 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
         cards: list[dict[str, Any]] = []
         versions_by_tag: dict[str, str] = {}  # each card's tag -> the version that wrote it; tags name no case
         for version, text in (("original", editable), ("candidate", best)):
-            for case_id in held:
-                value, _, case_input, output, failures = score(text, case_id)
+            for case_id, (value, _, case_input, output, failures) in zip(held, score_all(text, held)):
                 held_failures[version][case_id] = failures
                 totals[version] += value
                 tag = secrets.token_hex(4)
