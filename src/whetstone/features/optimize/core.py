@@ -40,4 +40,8 @@ def placeholder_problem(original: str, candidate: str) -> str | None:
 
 
 def case_score(failures: dict[str, list[str]], factor: float) -> tuple[float, str]:
-    raise NotImplementedError
+    """One output's score, the share of checks it passed times the length factor, and the feedback GEPA reflects on."""
+    broken = [f"{name}: {message}" for name, messages in failures.items() for message in messages]
+    passed = sum(not messages for messages in failures.values())
+    feedback = "Broke these rules:\n" + "\n".join(f"- {line}" for line in broken) if broken else "All checks passed."
+    return factor * passed / len(failures), feedback
