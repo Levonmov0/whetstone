@@ -87,8 +87,8 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
     records: list[tuple[int, str, dict[str, list[str]]]] = []  # each such version's failures per selection case
 
     def evaluate(text: str, batch: list[str]) -> list[tuple[float, str, Any, Any]]:
-        if problem := placeholder_problem(editable, text):
-            # It could never be applied to the source, so it is scored 0 without spending a call on it.
+        if problem := (placeholder_problem(editable, text) if text.strip() else "is empty"):
+            # It could never be applied to the source (or says nothing), so it is scored 0 without spending a call on it.
             return [(0.0, f"Rejected: it {problem}. Keep every placeholder exactly as it is.", requests[case_id][0], None) for case_id in batch]
         results = [score(text, case_id) for case_id in batch]
         if sorted(batch) == sorted(select):
