@@ -106,3 +106,15 @@ def stuck_reasons(records: list[tuple[int, str, dict[str, list[str]]]]) -> list[
 def progress_line(version: int, passing: int, total: int, best: bool) -> str:
     """Where a run stands once a version is scored on the selection cases; `passing` of `total` check results."""
     return f"version {version}: {passing} of {total} checks passing on selection cases" + (" (best so far)" if best else "")
+
+
+def run_report(
+    prompt: str,
+    original: str,
+    candidate: str,
+    held: dict[str, dict[str, dict[str, list[str]]]],
+    average: dict[str, float],
+    cost: dict[str, RoleCost],
+    stuck: list[str],
+) -> str:
+    raise NotImplementedError
