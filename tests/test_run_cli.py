@@ -593,3 +593,18 @@ def test_a_production_estimate_skips_a_cheap_run_with_no_cost_record(tmp_path: P
 
     assert code == 0
     assert "about $1.15" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("setup", ["two cases", "bad prices", "untrusted judge"])
+def test_a_background_start_vets_the_run_before_detaching(setup: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    if setup == "untrusted judge":
+        judged_run_suite(tmp_path, good_failed=3)
+    else:
+        make_run_suite(tmp_path, cases=2 if setup == "two cases" else 10, settings='[prices]\n"m" = "cheap"\n' if setup == "bad prices" else "")
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["run", "daily", "--model", "cheap-model"], make_model=lambda _s: writer(), make_judge=lambda _w: judging("yes"), make_rewrite=lambda _w: rewriter())
+
+    assert code == 2
+    assert "started in the background" not in capsys.readouterr().out
+    assert not list((tmp_path / ".whetstone" / "runs").glob("*.log"))
