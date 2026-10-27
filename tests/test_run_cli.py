@@ -546,3 +546,50 @@ def test_a_production_run_needs_a_price_for_every_model_it_pays_by_the_token(
 
     assert code == 2
     assert f"[prices] in whetstone.toml has no price for {unpriced}; a production run needs one to estimate its cost" in capsys.readouterr().err
+
+
+def test_a_run_stopped_partway_still_records_what_it_cost(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_run_suite(tmp_path)
+    (prompt / "checks" / "crashes.py").write_text('def check(output):\n    if output.endswith("short."):\n        raise ValueError("boom")\n    return []\n')
+    model = FakeModel(lambda r: r["messages"][0]["content"] + (" short." if "short" in r["system"] else " LONG"))
+    monkeypatch.chdir(tmp_path)
+
+    code = start_run(model, rewriter())
+
+    assert code == 2
+    assert "check crashes crashed on case" in capsys.readouterr().err
+    folder = run_folder(prompt)
+    assert json.loads((folder / "cost.json").read_text())["generation"]["calls"] == len(model.requests)
+    assert "Stopped: check crashes crashed on case" in (folder / "report.md").read_text()
+
+
+def test_a_failed_generation_stops_the_run_and_records_its_cost(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_run_suite(tmp_path)
+
+    def flaky(request: dict[str, Any]) -> str:
+        if "short" in request["system"]:
+            raise ModelError("RateLimitError 429")
+        return request["messages"][0]["content"] + " LONG"
+
+    monkeypatch.chdir(tmp_path)
+
+    code = start_run(FakeModel(flaky), rewriter())
+
+    assert code == 2
+    assert "cheap-model failed on case" in capsys.readouterr().err
+    assert json.loads((run_folder(prompt) / "cost.json").read_text())["generation"]["calls"] > 0
+
+
+def test_a_production_estimate_skips_a_cheap_run_with_no_cost_record(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_run_suite(tmp_path, settings=PROD_PRICES)
+    monkeypatch.chdir(tmp_path)
+    cheap_run_with_known_cost(prompt)
+    killed = prompt / "runs" / "run-99991231T000000000000Z"  # a worker killed before it wrote its cost
+    killed.mkdir()
+    (killed / "run.json").write_text(json.dumps({"model": "cheap-model"}))
+    capsys.readouterr()
+
+    code = run(["run", "daily", "--production", "--budget", "92"], make_model=unused_model)
+
+    assert code == 0
+    assert "about $1.15" in capsys.readouterr().out
