@@ -5,6 +5,7 @@ description = "Test-driven prompt optimization, as a Claude Code plugin"
 requires-python = ">=3.12"
 dependencies = [
     "anthropic",
+    "gepa==0.1.4",
     "httpx2>=2.16.0",
     "openai>=3.39.0",
     "python-dotenv",
