@@ -25,10 +25,11 @@ def test_rewrites_go_through_claude_code_by_default(settings: str, tmp_path: Pat
 
 
 def test_claude_code_rewrites_can_name_a_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    (tmp_path / "whetstone.toml").write_text('[models]\nrewrite = { via = "claude-code", model = "claude-sonnet-5-5" }\n')
+    make_run_suite(tmp_path, settings='[models]\nrewrite = { via = "claude-code", model = "claude-sonnet-5-5" }\n')
     record = fake_claude(tmp_path, monkeypatch, REPLY)
+    monkeypatch.chdir(tmp_path)
 
-    production_rewrite(tmp_path)(REWRITE)
+    run(["run", "daily", "--model", "cheap-model", "--budget", "10", "--foreground"], make_model=lambda _settings: writer())
 
     assert json.loads(record.read_text())["argv"][-2:] == ["--model", "claude-sonnet-5-5"]
 
@@ -45,7 +46,8 @@ def test_api_rewrites_go_to_anthropic_with_their_own_key(tmp_path: Path) -> None
             "content": [{"type": "text", "text": "```\nKeep it short.\n```"}], "usage": {"input_tokens": 12, "output_tokens": 7},
         })  # fmt: skip
 
-    result = production_rewrite(tmp_path, api=lambda key: anthropic_model(key, transport=httpx.MockTransport(handle)))(REWRITE)
+    # The run puts the configured model in each rewrite request.
+    result = production_rewrite(tmp_path, api=lambda key: anthropic_model(key, transport=httpx.MockTransport(handle)))({**REWRITE, "model": "claude-sonnet-5-5"})
 
     assert result.output == "```\nKeep it short.\n```"
     [request] = sent
