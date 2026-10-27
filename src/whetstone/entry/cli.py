@@ -57,6 +57,7 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
     optimize.add_argument("--production", action="store_true", help="run on the production model, after showing a cost estimate")
     optimize.add_argument("--yes", action="store_true", help="start the production run the estimate was shown for")
     optimize.add_argument("--foreground", action="store_true", help="run here instead of in the background")
+    optimize.add_argument("--run-id", help=argparse.SUPPRESS)  # given to the background worker
     for command in (check, verify, source, disagree, settle, reasons, agree, baseline, optimize):
         command.add_argument("prompt")
     serve.add_argument("prompt", nargs="?")
@@ -87,12 +88,19 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
             return run_baseline(prompt, [m for m in args.models.split(",") if m], make_model, make_judge)
         if args.command == "run" and args.report:
             return refresh_run_report(prompt)
-        if args.command == "run" and args.production:
-            return start_production_run(prompt, args.budget, args.yes, make_model, make_judge, make_rewrite)
         if args.command == "run":
-            if args.model is None:
+            if args.production:
+                cap = production_cap(prompt, args.budget, args.yes)
+                if cap is None:
+                    return 0
+                model = prompt.model
+            elif args.model is None:
                 raise Stop("pass --model <a cheap model>, or --production")
-            return start_run(prompt, args.model, args.budget, make_model, make_judge, make_rewrite)
+            else:
+                model, cap = args.model, None
+            if not args.foreground:
+                return start_in_background(prompt, argv, make_model, make_judge, make_rewrite)
+            return start_run(prompt, model, args.budget, make_model, make_judge, make_rewrite, cap, args.run_id or new_deck_id())
         if args.command == "agreement":
             return show_agreement(prompt, make_judge)
         if args.command == "reasons":
@@ -201,7 +209,7 @@ def refresh_baseline_report(prompt: PromptSettings) -> int:
     return 0
 
 
-def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite, cap: float | None = None) -> int:
+def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite, cap: float | None, run_id: str) -> int:
     try:
         meter = Meter(prices(prompt.workspace))
     except PromptError as e:
@@ -217,10 +225,11 @@ def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeM
     if not allowed:
         raise Stop("\n".join(advice))
     print("".join(f"{line}\n" for line in advice), end="")
-    return run_optimize(suite, prompt, model, rewrite, budget, new_deck_id(), meter, cap)
+    return run_optimize(suite, prompt, model, rewrite, budget, run_id, meter, cap)
 
 
-def start_production_run(prompt: PromptSettings, budget: int, yes: bool, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite) -> int:
+def production_cap(prompt: PromptSettings, budget: int, yes: bool) -> float | None:
+    """Shows a production run's estimate; its cap, twice the estimate, once the user said yes, else None."""
     try:
         table = prices(prompt.workspace)
     except PromptError as e:
@@ -230,9 +239,26 @@ def start_production_run(prompt: PromptSettings, budget: int, yes: bool, make_mo
         raise Stop(f"[prices] in whetstone.toml has no price for {prompt.model}; a production run needs one to estimate its cost")
     expected = production_estimate(prompt, budget, price)
     print(f"a production run on {prompt.model}: about ${expected:.2f}; it stops at ${2 * expected:.2f}." + ("" if yes else " Rerun with --yes to start."), flush=True)
-    if not yes:
-        return 0
-    return start_run(prompt, prompt.model, budget, make_model, make_judge, make_rewrite, cap=2 * expected)
+    return 2 * expected if yes else None
+
+
+def start_in_background(prompt: PromptSettings, argv: list[str], make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite) -> int:
+    """Vets what needs no model call, then starts the run as a worker in a session of its own, so it outlives this
+    command and the Claude session; the worker vets again and does the rest, logging as it goes."""
+    prepare_suite(prompt, make_model, make_judge)
+    try:
+        make_rewrite(prompt.workspace)
+    except (PromptError, MissingKey) as e:
+        raise Stop(str(e)) from None
+    run_id = new_deck_id()
+    logs = private_dir(prompt.workspace) / "runs"
+    logs.mkdir(exist_ok=True)
+    log = logs / f"{prompt.dir.name}-{run_id}.log"
+    worker = [sys.executable, "-m", "whetstone.entry.cli", *argv, "--foreground", "--run-id", run_id, "--workspace", str(prompt.workspace)]
+    pid = start_detached(worker, "", log)
+    print(f"run {run_id} of {prompt.dir.name} started in the background (pid {pid})")
+    print(f"log: {log}")
+    return 0
 
 
 def refresh_run_report(prompt: PromptSettings) -> int:
@@ -463,3 +489,7 @@ def production_judge(workspace: Path) -> ModelCall:
 
 def main() -> None:
     sys.exit(run(sys.argv[1:], make_model=production_model, make_judge=production_judge))
+
+
+if __name__ == "__main__":
+    main()
