@@ -18,7 +18,7 @@ from whetstone.features.baseline.core import baseline_report, swipe_section
 from whetstone.features.baseline.store import card_models, latest_run, save_run
 from whetstone.features.cases.load import load_cases
 from whetstone.features.cases.sources import SourceError, add_source
-from whetstone.features.checks.core import CaseResult, Side, agreement, covered_reasons, judge_gate, report, uncovered_reasons
+from whetstone.features.checks.core import Agreement, CaseResult, Side, agreement, covered_reasons, judge_gate, optimize_gate, report, uncovered_reasons
 from whetstone.features.checks.load import CheckLoadError, code_check_reasons
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
@@ -192,6 +192,11 @@ def refresh_baseline_report(prompt: PromptSettings) -> int:
 
 def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite) -> int:
     meter = Meter()
+    gates = judge_gates(prompt, lambda workspace: meter.wrap("judge", make_judge(workspace))) or {}
+    allowed, advice = optimize_gate({name: (status, lines) for name, (_rows, status, lines) in gates.items()})
+    if not allowed:
+        raise Stop("\n".join(advice))
+    print("".join(f"{line}\n" for line in advice), end="")
     suite = prepare_suite(prompt, make_model, lambda workspace: meter.wrap("judge", make_judge(workspace)))
     assert prompt.editable is not None  # prepare_suite stops without one
     return run_optimize(suite, prompt.dir, prompt.editable, model, make_rewrite(prompt.workspace), budget, new_deck_id(), meter)
@@ -311,27 +316,37 @@ def show_link(url: str) -> None:
 
 
 def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
-    judges = judges_or_stop(prompt)
-    if not judges:
+    gates = judge_gates(prompt, make_judge)
+    if gates is None:
         print("no judges in checks/")
         return 0
-    labels = load_labels(prompt.dir)
-    providers = providers_or_stop(prompt)
-    ask = prepare_judge(prompt, providers, any(label["case_id"].startswith("private/") for label in labels), make_judge)
-    # Each swiped card is judged once, from the input and output its label kept, however many graders swiped it.
-    cards = {label["card_id"]: label for label in labels}
-    print(_count(len(cards) * len(judges), "judge call"), flush=True)
     code = 0
-    for name, rubric in judges.items():
-        verdicts = {card: not ask(name, rubric, label["case_id"], label["input"], label["output"]) for card, label in cards.items()}
-        rows = agreement(labels, verdicts, covered_reasons({}, {name: rubric}))
-        status, advice = judge_gate(rows)
+    for name, (rows, status, advice) in gates.items():
         print(f"{name}: {status}")
         for grader, row in rows.items():
             print(f"  {grader}: good {_side(row.good)}, bad {_side(row.bad)}")
         print("".join(f"  {line}\n" for line in advice), end="")
         code = 1 if status == "untrusted" else code
     return code
+
+
+def judge_gates(prompt: PromptSettings, make_judge: MakeJudge) -> dict[str, tuple[dict[str, Agreement], str, list[str]]] | None:
+    """Each judge's agreement with the swipes per grader, its gate and the advice; None without judges."""
+    judges = judges_or_stop(prompt)
+    if not judges:
+        return None
+    labels = load_labels(prompt.dir)
+    providers = providers_or_stop(prompt)
+    ask = prepare_judge(prompt, providers, any(label["case_id"].startswith("private/") for label in labels), make_judge)
+    # Each swiped card is judged once, from the input and output its label kept, however many graders swiped it.
+    cards = {label["card_id"]: label for label in labels}
+    print(_count(len(cards) * len(judges), "judge call"), flush=True)
+    gates: dict[str, tuple[dict[str, Agreement], str, list[str]]] = {}
+    for name, rubric in judges.items():
+        verdicts = {card: not ask(name, rubric, label["case_id"], label["input"], label["output"]) for card, label in cards.items()}
+        rows = agreement(labels, verdicts, covered_reasons({}, {name: rubric}))
+        gates[name] = (rows, *judge_gate(rows))
+    return gates
 
 
 def _calls(generation: int, judging: int) -> str:
