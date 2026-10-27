@@ -6,6 +6,8 @@ from typing import Any
 import pytest
 
 from tests.fakes import FakeModel
+from tests.test_agreement_cli import RUBRIC_TAIL, swipes, write_labels
+from tests.test_judges_cli import JUDGE_SETTINGS, judging
 from whetstone.entry.cli import run
 from whetstone.features.optimize.core import split_cases
 from whetstone.platform.model import ModelError
@@ -162,3 +164,36 @@ def test_a_rewrite_that_drops_a_placeholder_is_never_generated_and_never_wins(tm
 
     assert code == 1
     assert all(request["system"] == "Be brief, {{name}}." for request in model.requests)
+
+
+def judged_run_suite(workspace: Path, good_failed: int) -> Path:
+    """A run suite with the "assumes" judge, swiped so it fails `good_failed` of 10 good cards and all 5 bad ones."""
+    prompt = make_run_suite(workspace, settings=JUDGE_SETTINGS)
+    (prompt / "checks" / "assumes.judge.toml").write_text('reasons = ["assumes the outcome"]\n' + RUBRIC_TAIL)
+    write_labels(prompt / "labels.jsonl", swipes(good_failed))
+    return prompt
+
+
+@pytest.mark.parametrize("good_failed", [3])
+def test_an_untrusted_judge_stops_the_run_before_any_generation(
+    good_failed: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    judged_run_suite(tmp_path, good_failed)
+    model = writer()
+    monkeypatch.chdir(tmp_path)
+
+    code = start_run(model, rewriter(), judge=lambda _workspace: judging("yes"))
+
+    assert code == 2
+    assert "assumes: fails outputs Levon called good (70%); sharpen the rubric" in capsys.readouterr().err
+    assert model.requests == []
+
+
+def test_a_warned_judge_is_shown_and_the_run_goes_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    judged_run_suite(tmp_path, good_failed=2)
+    monkeypatch.chdir(tmp_path)
+
+    code = start_run(writer(), rewriter(), judge=lambda _workspace: judging("yes"))
+
+    assert code == 0
+    assert "assumes: agrees with Levon on 80% of good cards; below 90% is a warning" in capsys.readouterr().out
