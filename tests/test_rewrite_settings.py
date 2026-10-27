@@ -48,7 +48,8 @@ def test_api_rewrites_go_to_anthropic_with_their_own_key(tmp_path: Path) -> None
     assert result.output == "```\nKeep it short.\n```"
     [request] = sent
     assert str(request.url) == "https://api.anthropic.com/v1/messages"
-    assert request.headers["x-api-key"] == "rewrite-key"
+    # SDK 2.x sends a passed api_key as a bearer token; what matters is that it is the rewrite key.
+    assert [c for c in (request.headers.get("x-api-key"), request.headers.get("authorization")) if c] in (["rewrite-key"], ["Bearer rewrite-key"])
     assert json.loads(request.content) == {**REWRITE, "model": "claude-sonnet-5-5"}
 
 
