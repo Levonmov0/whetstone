@@ -69,7 +69,7 @@ def test_a_run_drives_gepa_to_a_better_prompt(tmp_path: Path, monkeypatch: pytes
     folder = run_folder(prompt)
     assert "short" in (folder / "candidate.txt").read_text()
     assert (folder / "report.md").is_file()
-    assert set(json.loads((folder / "cost.json").read_text())) == {"generation", "judge", "rewrite"}
+    assert set(json.loads((folder / "cost.json").read_text())) == {"generation", "judge", "rewrite", "gate"}
 
 
 def test_held_back_cases_never_reach_gepa(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -511,3 +511,15 @@ def test_an_empty_rewrite_is_rejected_without_a_call(tmp_path: Path, monkeypatch
     assert code == 1
     assert "GEPA produced no new version" in capsys.readouterr().out
     assert all(request["system"] == "Be brief." for request in model.requests)
+
+
+def test_the_judge_gate_is_counted_apart_from_the_runs_judging(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = judged_run_suite(tmp_path, good_failed=0)
+    model = writer()
+    monkeypatch.chdir(tmp_path)
+
+    start_run(model, rewriter(), judge=lambda _workspace: judging("yes"))
+
+    cost = json.loads((run_folder(prompt) / "cost.json").read_text())
+    assert cost["gate"]["calls"] == 15  # each swiped card once
+    assert cost["judge"]["calls"] == len(model.requests)  # one judge call per output
