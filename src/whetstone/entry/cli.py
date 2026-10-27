@@ -6,11 +6,11 @@ import random
 import secrets
 import socket
 import sys
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Any
 
-import httpx2 as httpx
 import qrcode
 
 from whetstone.entry.optimize import Meter, production_estimate, run_optimize
@@ -492,10 +492,10 @@ def production_model(settings: PromptSettings) -> ModelCall:
     return anthropic_model(load_key(settings.workspace, "GENERATION_API_KEY"))
 
 
-def production_rewrite(workspace: Path, transport: httpx.BaseTransport | None = None) -> ModelCall:
+def production_rewrite(workspace: Path, api: Callable[[str], ModelCall] = anthropic_model) -> ModelCall:
     """Rewrites through Claude Code's headless mode by default, else the Anthropic API with their own key."""
     via, model = rewrite_settings(workspace)
-    call = anthropic_model(load_key(workspace, "REWRITE_API_KEY"), transport) if via == "api" else claude_code_model()
+    call = api(load_key(workspace, "REWRITE_API_KEY")) if via == "api" else claude_code_model()
     return (lambda request: call({**request, "model": model})) if model else call
 
 
