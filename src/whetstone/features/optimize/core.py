@@ -76,3 +76,7 @@ def estimate(cheap: dict[str, RoleCost], price: tuple[float, float], planned_gen
             raise EstimateError(f"the last cheap run's {role} cost is unknown; add its model to [prices]")
         total += dollars * scale
     return total
+
+
+def stop_for_cap(spent: float, reserve: float, cap: float | None) -> bool:
+    raise NotImplementedError

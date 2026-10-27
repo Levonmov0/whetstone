@@ -1,6 +1,6 @@
 import pytest
 
-from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, length_factor, placeholder_problem, split_cases
+from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, stop_for_cap, length_factor, placeholder_problem, split_cases
 
 
 def test_split_cases_is_40_25_35_disjoint_and_stable() -> None:
@@ -69,3 +69,8 @@ def test_estimate_needs_the_cheap_runs_dollars() -> None:
 
     with pytest.raises(EstimateError, match=r"the last cheap run's judge cost is unknown; add its model to \[prices\]"):
         estimate(unknown, price=(3, 15), planned_generations=150)
+
+
+@pytest.mark.parametrize(("spent", "cap", "stop"), [(1.90, 2.00, True), (1.70, 2.00, False), (5.00, None, False)])
+def test_stop_for_cap_counts_the_held_back_reserve(spent: float, cap: float | None, stop: bool) -> None:
+    assert stop_for_cap(spent, reserve=0.20, cap=cap) is stop
