@@ -1,4 +1,6 @@
 import json
+import random
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -274,3 +276,24 @@ def test_the_report_compares_held_back_results_and_explains_a_stuck_check(tmp_pa
     assert "+Be brief. Keep it short." in lines
     assert "## Cost" in lines
     assert f"- stuck never passed on case {select[0]} in any version: this needs more input data or a different model" in lines
+
+
+def test_the_held_back_outputs_become_a_blind_deck(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_run_suite(tmp_path)
+    random.seed(3)
+    monkeypatch.chdir(tmp_path)
+
+    start_run(writer(), rewriter())
+
+    folder = run_folder(prompt)
+    deck = json.loads((tmp_path / ".whetstone" / "decks" / "daily.json").read_text())
+    assert folder.name == f"run-{deck['id']}"
+    held = json.loads((folder / "split.json").read_text())["held_back"]
+    ids = [card["card_id"] for card in deck["cards"]]
+    assert len(set(ids)) == 8
+    assert all(re.fullmatch(rf"{deck['id']}:case-\d:[0-9a-f]{{8}}", card_id) and card_id.split(":")[1] in held for card_id in ids)
+    versions = json.loads((folder / "cards.json").read_text())
+    assert versions == {card["card_id"].rsplit(":", 1)[1]: "original" if "LONG" in card["output"] else "candidate" for card in deck["cards"]}
+    assert "original" not in json.dumps(deck["cards"]) and "candidate" not in json.dumps(deck["cards"])
+    order = ["LONG" in card["output"] for card in deck["cards"]]
+    assert order not in ([True] * 4 + [False] * 4, [False] * 4 + [True] * 4)
