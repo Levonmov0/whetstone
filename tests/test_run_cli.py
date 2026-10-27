@@ -448,14 +448,14 @@ def test_a_production_estimate_needs_the_cheap_runs_dollars(tmp_path: Path, monk
 def test_a_production_run_stops_at_twice_the_estimate_and_keeps_the_best_so_far(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A generation costs $0.105 at these prices (10 input and 5 output tokens); a rewrite reports $2.
+    # A generation costs $0.105 at these prices (10 input and 5 output tokens); a rewrite reports $1.
     prompt = make_run_suite(tmp_path, settings='[prices]\n"prod-model" = [3000, 15000]\n')
     monkeypatch.chdir(tmp_path)
     cheap_run_with_known_cost(prompt)
     # 30 GEPA generations and 8 held-back ones, as many as the cheap run made, at no cost, and $2.50 of rewrites: $2.50 in all.
     free = {"calls": 38, "input_tokens": 0, "output_tokens": 0, "dollars": 0.0}
     (run_folder(prompt) / "cost.json").write_text(json.dumps({"generation": free, "judge": free | {"calls": 0}, "rewrite": free | {"calls": 1, "dollars": 2.5}}))
-    model, rewrite = writer(), FakeModel(lambda _r: "```\nBe brief. Keep it short.\n```", cost_usd=2.0)
+    model, rewrite = writer(), FakeModel(lambda _r: "```\nBe brief. Keep it short.\n```", cost_usd=1.0)
     capsys.readouterr()
 
     code = run(["run", "daily", "--production", "--yes", "--budget", "30", "--foreground"], make_model=lambda _s: model, make_rewrite=lambda _w: rewrite)
