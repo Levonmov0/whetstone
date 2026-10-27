@@ -7,8 +7,9 @@ from dataclasses import asdict
 from typing import Any
 
 from whetstone.entry.suite import Stop, Suite, card
+from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.grading.store import save_deck
-from whetstone.features.optimize.core import RoleCost, SplitError, case_score, length_factor, placeholder_problem, progress_line, run_report, split_cases, stuck_reasons, swap_editable
+from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, length_factor, placeholder_problem, progress_line, run_report, split_cases, stuck_reasons, swap_editable
 from whetstone.features.workspace.load import PromptSettings
 from whetstone.platform.gepa import optimize
 from whetstone.platform.model import ModelCall, ModelError, ModelResult
@@ -116,6 +117,7 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
     if any(case_id.startswith("private/") for case_id in requests):
         # Its report, split and deck name real-data cases, so the folder ignores itself, like a source folder.
         (folder / ".gitignore").write_text("*\n")
+    (folder / "run.json").write_text(json.dumps({"model": model}))
     (folder / "split.json").write_text(json.dumps({"training": train, "selection": select, "held_back": held}, indent=2))
     (folder / "candidate.txt").write_text(best)
     (folder / "cost.json").write_text(json.dumps({role: asdict(cost) for role, cost in meter.spent.items()}, indent=2))
@@ -123,3 +125,16 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
     (folder / "report.md").write_text(run_report(prompt_dir.name, editable, best, held_failures, average, meter.spent, stuck_reasons(records)))
     save_deck(prompt.workspace, prompt_dir.name, cards, run_id)
     return 0
+
+
+def production_estimate(prompt: PromptSettings, budget: int, price: tuple[float, float]) -> float:
+    """What a production run of `budget` GEPA generations should cost, scaled from the prompt's last cheap run."""
+    cheap = [folder for folder in sorted((prompt.dir / "runs").glob("run-*")) if json.loads((folder / "run.json").read_text())["model"] != prompt.model]
+    if not cheap:
+        raise Stop(f"run a cheap run first: whetstone run {prompt.dir.name} --model <a cheap model>")
+    spent = {role: RoleCost(**cost) for role, cost in json.loads((cheap[-1] / "cost.json").read_text()).items()}
+    try:
+        _train, _select, held = split_cases([case_id for case_id, _ in load_cases(prompt.dir)])
+        return estimate(spent, price, budget + 2 * len(held))
+    except (SplitError, EstimateError, CaseError) as e:
+        raise Stop(str(e)) from None

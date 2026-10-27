@@ -12,7 +12,7 @@ from typing import Any
 
 import qrcode
 
-from whetstone.entry.optimize import Meter, run_optimize
+from whetstone.entry.optimize import Meter, production_estimate, run_optimize
 from whetstone.entry.suite import MakeJudge, MakeModel, MakeRewrite, Stop, build, card, judges_or_stop, prepare_judge, prepare_suite, providers_or_stop
 from whetstone.features.baseline.core import baseline_report, swipe_section
 from whetstone.features.baseline.store import card_models, latest_run, save_run
@@ -52,6 +52,8 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
     optimize.add_argument("--model", help="the cheap model to generate on")
     optimize.add_argument("--report", action="store_true", help="add the blind swipes so far to the latest run's report")
     optimize.add_argument("--budget", type=int, default=150, help="the most generation calls GEPA may make")
+    optimize.add_argument("--production", action="store_true", help="run on the production model, after showing a cost estimate")
+    optimize.add_argument("--yes", action="store_true", help="start the production run the estimate was shown for")
     optimize.add_argument("--foreground", action="store_true", help="run here instead of in the background")
     for command in (check, verify, source, disagree, settle, reasons, agree, baseline, optimize):
         command.add_argument("prompt")
@@ -82,6 +84,8 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
             return run_baseline(prompt, [m for m in args.models.split(",") if m], make_model, make_judge)
         if args.command == "run" and args.report:
             return refresh_run_report(prompt)
+        if args.command == "run" and args.production:
+            return start_production_run(prompt, args.budget, args.yes)
         if args.command == "run":
             if args.model is None:
                 raise Stop("pass --model <a cheap model>, or --production")
@@ -208,6 +212,16 @@ def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeM
         raise Stop("\n".join(advice))
     print("".join(f"{line}\n" for line in advice), end="")
     return run_optimize(suite, prompt, model, make_rewrite(prompt.workspace), budget, new_deck_id(), meter)
+
+
+def start_production_run(prompt: PromptSettings, budget: int, yes: bool) -> int:
+    try:
+        price = prices(prompt.workspace)[prompt.model]
+    except PromptError as e:
+        raise Stop(str(e)) from None
+    expected = production_estimate(prompt, budget, price)
+    print(f"a production run on {prompt.model}: about ${expected:.2f}; it stops at ${2 * expected:.2f}. Rerun with --yes to start.")
+    return 0
 
 
 def refresh_run_report(prompt: PromptSettings) -> int:
