@@ -77,7 +77,7 @@ def test_stop_for_cap_counts_the_held_back_reserve(spent: float, cap: float | No
 
 
 def test_stuck_reasons_names_a_check_that_never_passed_and_two_that_never_pass_together() -> None:
-    records = [
+    records: list[tuple[int, str, dict[str, list[str]]]] = [
         (0, "A", {"length": ["too long"], "x": [], "y": []}),
         (1, "A", {"length": ["too long"], "x": [], "y": []}),
         (0, "B", {"length": [], "x": ["no"], "y": []}),
@@ -91,7 +91,7 @@ def test_stuck_reasons_names_a_check_that_never_passed_and_two_that_never_pass_t
 
 
 def test_stuck_reasons_is_empty_when_every_check_passed_somewhere_together() -> None:
-    records = [(0, "A", {"x": ["no"], "y": []}), (1, "A", {"x": [], "y": []})]
+    records: list[tuple[int, str, dict[str, list[str]]]] = [(0, "A", {"x": ["no"], "y": []}), (1, "A", {"x": [], "y": []})]
 
     assert stuck_reasons(records) == []
 
@@ -101,7 +101,7 @@ def test_progress_line() -> None:
     assert progress_line(version=4, passing=15, total=20, best=False) == "version 4: 15 of 20 checks passing on selection cases"
 
 
-HELD = {
+HELD: dict[str, dict[str, dict[str, list[str]]]] = {
     "original": {"a": {"length": ["too long"], "no_number": []}, "b": {"length": ["too long"], "no_number": ["has 3"]}},
     "candidate": {"a": {"length": [], "no_number": []}, "b": {"length": [], "no_number": ["has 3"]}},
 }
