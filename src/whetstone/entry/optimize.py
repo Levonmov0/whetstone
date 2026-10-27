@@ -55,7 +55,7 @@ class CapReached(Exception):
     pass
 
 
-def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: ModelCall, budget: int, run_id: str, meter: Meter, cap: float | None = None) -> int:
+def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: ModelCall, rewrite_model: str | None, budget: int, run_id: str, meter: Meter, cap: float | None = None) -> int:
     """`suite`'s model and judges are already metered by `meter`. With a `cap`, GEPA stops while the held-back
     scoring still fits under it, and the best version so far is kept."""
     prompt_dir, editable = prompt.dir, prompt.editable
@@ -104,7 +104,8 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
 
     def reflect(prompt: str) -> str:
         try:
-            return str(rewrite({"max_tokens": 8000, "messages": [{"role": "user", "content": prompt}]}).output)
+            request: dict[str, Any] = {"max_tokens": 8000, "messages": [{"role": "user", "content": prompt}]}
+            return str(rewrite(request | ({"model": rewrite_model} if rewrite_model else {})).output)
         except ModelError as e:
             rewrite_errors.append(str(e))  # GEPA logs a failed rewrite and goes on, so it is kept to say why
             raise

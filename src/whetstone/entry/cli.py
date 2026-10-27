@@ -221,6 +221,7 @@ def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeM
     suite = prepare_suite(prompt, make_model, lambda workspace: meter.wrap("judge", make_judge(workspace)))
     try:
         rewrite = make_rewrite(prompt.workspace)
+        _via, rewrite_model = rewrite_settings(prompt.workspace)
     except (PromptError, MissingKey) as e:
         raise Stop(str(e)) from None
     gates = judge_gates(prompt, lambda workspace: meter.wrap("judge", make_judge(workspace))) or {}
@@ -228,7 +229,7 @@ def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeM
     if not allowed:
         raise Stop("\n".join(advice))
     print("".join(f"{line}\n" for line in advice), end="")
-    return run_optimize(suite, prompt, model, rewrite, budget, run_id, meter, cap)
+    return run_optimize(suite, prompt, model, rewrite, rewrite_model, budget, run_id, meter, cap)
 
 
 def production_cap(prompt: PromptSettings, budget: int, yes: bool) -> float | None:
@@ -494,9 +495,8 @@ def production_model(settings: PromptSettings) -> ModelCall:
 
 def production_rewrite(workspace: Path, api: Callable[[str], ModelCall] = anthropic_model) -> ModelCall:
     """Rewrites through Claude Code's headless mode by default, else the Anthropic API with their own key."""
-    via, model = rewrite_settings(workspace)
-    call = api(load_key(workspace, "REWRITE_API_KEY")) if via == "api" else claude_code_model()
-    return (lambda request: call({**request, "model": model})) if model else call
+    via, _model = rewrite_settings(workspace)  # the run puts the model in each rewrite request, where the meter sees it
+    return api(load_key(workspace, "REWRITE_API_KEY")) if via == "api" else claude_code_model()
 
 
 def production_judge(workspace: Path) -> ModelCall:
