@@ -51,6 +51,12 @@ class Meter:
         return ((generation.dollars or 0.0) + (judge.dollars or 0.0)) / generation.calls if generation.calls else 0.0
 
 
+    def per_rewrite(self) -> float:
+        """What one rewrite has cost on average."""
+        rewrite = self.spent["rewrite"]
+        return (rewrite.dollars or 0.0) / rewrite.calls if rewrite.calls else 0.0
+
+
 class CapReached(Exception):
     pass
 
@@ -71,8 +77,9 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
     gepa_running = False
 
     def over_cap() -> bool:
-        # The held-back cases are scored twice (original and candidate), after one more output at most.
-        return gepa_running and stop_for_cap(meter.total(), (2 * len(held) + 1) * meter.per_generation(), cap)
+        # What may still come: one more output or one more rewrite, then the held-back cases scored twice.
+        reserve = (2 * len(held) + 1) * meter.per_generation() + meter.per_rewrite()
+        return gepa_running and stop_for_cap(meter.total(), reserve, cap)
 
     def score(text: str, case_id: str) -> tuple[float, str, Any, Any, dict[str, list[str]]]:
         if over_cap():
@@ -103,6 +110,8 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
     rewrite_errors: list[str] = []
 
     def reflect(prompt: str) -> str:
+        if over_cap():
+            raise CapReached()  # GEPA logs it and goes on to score, where the next output stops it
         try:
             request: dict[str, Any] = {"max_tokens": 8000, "messages": [{"role": "user", "content": prompt}]}
             return str(rewrite(request | ({"model": rewrite_model} if rewrite_model else {})).output)
