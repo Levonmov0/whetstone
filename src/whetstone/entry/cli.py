@@ -6,40 +6,29 @@ import random
 import secrets
 import socket
 import sys
-from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import qrcode
 
+from whetstone.entry.suite import MakeJudge, MakeModel, Stop, build, card, judges_or_stop, prepare_judge, prepare_suite, providers_or_stop
 from whetstone.features.baseline.core import baseline_report, swipe_section
 from whetstone.features.baseline.store import card_models, latest_run, save_run
-from whetstone.features.cases.core import provider_refusal
-from whetstone.features.cases.load import CaseError, load_cases
+from whetstone.features.cases.load import load_cases
 from whetstone.features.cases.sources import SourceError, add_source
-from whetstone.features.checks.core import CaseResult, JudgeAnswerError, Rubric, Side, agreement, covered_reasons, judge_failures, judge_gate, judge_request, report, uncovered_reasons
-from whetstone.features.checks.load import Check, CheckLoadError, code_check_reasons, load_checks, load_judges
+from whetstone.features.checks.core import CaseResult, Side, agreement, covered_reasons, judge_gate, report, uncovered_reasons
+from whetstone.features.checks.load import CheckLoadError, code_check_reasons
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
-from whetstone.features.workspace.core import request_differences, request_problem
-from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, judge_model, load_prompt, phone_access, prompt_names, repo_providers
+from whetstone.features.workspace.core import request_differences
+from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, phone_access, prompt_names
 from whetstone.platform.anthropic import anthropic_model
-from whetstone.platform.config import MissingKey, load_key
+from whetstone.platform.config import load_key
 from whetstone.platform.daemon import command_line, is_running, start_detached, stop, write_private
-from whetstone.platform.harness import HarnessError, build_request
 from whetstone.platform.model import ModelCall, ModelError
 from whetstone.platform.network import TailscaleError, TailscaleMissing, lan_address, tailscale_address
 from whetstone.platform.openai import openai_model
-
-MakeModel = Callable[[PromptSettings], ModelCall]
-MakeJudge = Callable[[Path], ModelCall]  # takes the workspace, whose .env holds the judge key
-Ask = Callable[[str, Rubric, str, Any, Any], list[str]]  # judge name, rubric, case id, input, output -> failures
-
-
-class Stop(Exception):
-    """A broken setup: the message is printed and the command exits 2."""
 
 
 def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = None) -> int:
@@ -123,90 +112,6 @@ def workspace_or_stop(explicit_workspace: Path | None) -> Path:
     if workspace is None:
         raise Stop("no Whetstone workspace found; run /whetstone:init or pass --workspace")
     return workspace
-
-
-def build(prompt: PromptSettings, case_id: str, case_json: str) -> Any:
-    try:
-        return build_request(prompt.harness, prompt.workspace, case_json)
-    except HarnessError as e:
-        raise Stop(f"case {case_id}: {e}") from None
-
-
-@dataclass(frozen=True)
-class Suite:
-    """A prompt's vetted requests and its checks, ready to run: everything that can stop a run is checked by then."""
-
-    requests: list[tuple[str, Any, Any]]  # case id, case input, the harness's request
-    checks: dict[str, Check]
-    judges: dict[str, Rubric]
-    ask: Ask | None
-    model: ModelCall
-
-    def check_names(self) -> list[str]:
-        return [*self.checks, *(f"{name} (judge)" for name in self.judges)]
-
-    def score(self, case_id: str, case_input: Any, output: Any) -> dict[str, list[str]]:
-        """Each check's failure messages on one output, empty when it passed; judges are named "<name> (judge)"."""
-        failures: dict[str, list[str]] = {}
-        for name, check in self.checks.items():
-            try:
-                messages = check(output)
-            except Exception as e:  # a check is the workspace's own code; any crash means the suite is broken
-                raise Stop(f"check {name} crashed on case {case_id}: {e}") from None
-            if not isinstance(messages, list) or not all(isinstance(m, str) for m in cast(list[Any], messages)):
-                raise Stop(f"check {name} returned {messages!r} on case {case_id}; a check returns a list of failure messages")
-            failures[name] = cast(list[str], messages)
-        for name, rubric in self.judges.items():
-            assert self.ask
-            failures[f"{name} (judge)"] = self.ask(name, rubric, case_id, case_input, output)
-        return failures
-
-
-def prepare_suite(prompt: PromptSettings, make_model: MakeModel, make_judge: MakeJudge) -> Suite:
-    if prompt.editable is None:
-        raise Stop(f'{prompt.dir / "prompt.toml"} has no "editable" part yet')
-    # Every request is built and vetted before the first model call, so a broken harness costs nothing.
-    try:
-        cases = load_cases(prompt.dir)
-    except CaseError as e:
-        raise Stop(str(e)) from None
-    if not cases:
-        raise Stop(f"no cases in {prompt.dir / 'cases'}")
-    has_private = any(case_id.startswith("private/") for case_id, _ in cases)
-    providers = providers_or_stop(prompt)
-    if refusal := provider_refusal(prompt.provider, providers, has_private):
-        raise Stop(refusal)
-    requests: list[tuple[str, Any, Any]] = []
-    for case_id, case_json in cases:
-        try:
-            case_input = json.loads(case_json)
-        except ValueError as e:
-            raise Stop(f"case {case_id} is not valid JSON: {e}") from None
-        request = build(prompt, case_id, case_json)
-        if problem := request_problem(request, case_id, prompt.model, prompt.editable):
-            raise Stop(problem)
-        requests.append((case_id, case_input, request))
-
-    try:
-        checks = load_checks(prompt.dir)
-    except CheckLoadError as e:
-        raise Stop(str(e)) from None
-    judges = judges_or_stop(prompt)
-    ask = prepare_judge(prompt, providers, has_private, make_judge) if judges else None
-    try:
-        model = make_model(prompt)
-    except MissingKey as e:
-        raise Stop(str(e)) from None
-    return Suite(requests, checks, judges, ask, model)
-
-
-def card(case_id: str, case_input: Any, output: Any, failures: dict[str, list[str]]) -> dict[str, Any]:
-    """An output as a card: the checks that caught it, and, when any are judges, which ones. A judge's catch is never
-    taken as the grader's reason, or agreement would count the judge as agreeing with itself."""
-    made: dict[str, Any] = {"case_id": case_id, "input": case_input, "output": output}
-    made["caught_by"] = [name.removesuffix(" (judge)") for name, messages in failures.items() if messages]
-    judges = [name.removesuffix(" (judge)") for name, messages in failures.items() if messages and name.endswith(" (judge)")]
-    return made | ({"judges": judges} if judges else {})
 
 
 def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: MakeJudge) -> int:
@@ -388,47 +293,6 @@ def show_link(url: str) -> None:
     qr.add_data(url)
     qr.print_ascii(out=sys.stdout, invert=True)
     print(url)
-
-
-def providers_or_stop(prompt: PromptSettings) -> list[str] | None:
-    try:
-        return repo_providers(prompt.workspace)
-    except PromptError as e:
-        raise Stop(str(e)) from None
-
-
-def judges_or_stop(prompt: PromptSettings) -> dict[str, Rubric]:
-    try:
-        return load_judges(prompt.dir)
-    except CheckLoadError as e:
-        raise Stop(str(e)) from None
-
-
-def prepare_judge(prompt: PromptSettings, providers: list[str] | None, has_private: bool, make_judge: MakeJudge) -> Ask:
-    """Asks one judge about one case's output, giving its failure messages. Everything that can stop it is checked here,
-    before any model call."""
-    try:
-        provider, judged_by = judge_model(prompt.workspace)
-    except PromptError as e:
-        raise Stop(str(e)) from None
-    # Judges see each case's input, so a real-data case goes to them only on a provider the repo already uses.
-    if refusal := provider_refusal(provider, providers, has_private):
-        raise Stop(refusal)
-    try:
-        judge = make_judge(prompt.workspace)
-    except MissingKey as e:
-        raise Stop(str(e)) from None
-
-    def ask(name: str, rubric: Rubric, case_id: str, case_input: Any, output: Any) -> list[str]:
-        try:
-            return judge_failures(rubric, judge(judge_request(rubric, judged_by, case_input, output)).output)
-        except ModelError as e:
-            raise Stop(f"judge {name} failed on case {case_id}: {e}") from None
-        except JudgeAnswerError as e:
-            choices = ", ".join([rubric.passing, *rubric.fail])
-            raise Stop(f"judge {name} answered {json.dumps(str(e))} on case {case_id}; expected one of: {choices}") from None
-
-    return ask
 
 
 def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
