@@ -11,7 +11,7 @@ from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.checks.core import JudgeAnswerError, Rubric, judge_failures, judge_request
 from whetstone.features.checks.load import Check, CheckLoadError, load_checks, load_judges
 from whetstone.features.workspace.core import request_problem
-from whetstone.features.workspace.load import PromptError, PromptSettings, judge_model, repo_providers
+from whetstone.features.workspace.load import PromptError, PromptSettings, judge_model, prices, repo_providers
 from whetstone.platform.config import MissingKey
 from whetstone.platform.harness import HarnessError, build_request
 from whetstone.platform.model import ModelCall, ModelError
@@ -113,6 +113,13 @@ def card(case_id: str, case_input: Any, output: Any, failures: dict[str, list[st
 def providers_or_stop(prompt: PromptSettings) -> list[str] | None:
     try:
         return repo_providers(prompt.workspace)
+    except PromptError as e:
+        raise Stop(str(e)) from None
+
+
+def prices_or_stop(prompt: PromptSettings) -> dict[str, tuple[float, float]]:
+    try:
+        return prices(prompt.workspace)
     except PromptError as e:
         raise Stop(str(e)) from None
 

@@ -14,7 +14,7 @@ from typing import IO, Any
 import qrcode
 
 from whetstone.entry.optimize import Meter, production_estimate, run_optimize
-from whetstone.entry.suite import MakeJudge, MakeModel, MakeRewrite, Stop, build, card, judges_or_stop, prepare_judge, prepare_suite, providers_or_stop
+from whetstone.entry.suite import MakeJudge, MakeModel, MakeRewrite, Stop, build, card, judges_or_stop, prepare_judge, prepare_suite, prices_or_stop, providers_or_stop
 from whetstone.features.baseline.core import baseline_report, swipe_section
 from whetstone.features.baseline.store import card_models, latest_run, save_run
 from whetstone.features.cases.load import load_cases
@@ -24,7 +24,7 @@ from whetstone.features.checks.load import CheckLoadError, code_check_reasons
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
 from whetstone.features.workspace.core import request_differences
-from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, phone_access, prices, prompt_names, rewrite_settings
+from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, judge_model, load_prompt, phone_access, prompt_names, rewrite_settings
 from whetstone.platform.anthropic import anthropic_model
 from whetstone.platform.claude_code import claude_code_model
 from whetstone.platform.config import MissingKey, load_key
@@ -213,10 +213,7 @@ def refresh_baseline_report(prompt: PromptSettings) -> int:
 
 
 def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite, cap: float | None, run_id: str) -> int:
-    try:
-        meter = Meter(prices(prompt.workspace))
-    except PromptError as e:
-        raise Stop(str(e)) from None
+    meter = Meter(prices_or_stop(prompt))
     # The suite first: it is vetted without a model call, and the judge gate then spends judge calls.
     suite = prepare_suite(prompt, make_model, lambda workspace: meter.wrap("judge", make_judge(workspace)))
     try:
@@ -234,13 +231,17 @@ def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeM
 
 def production_cap(prompt: PromptSettings, budget: int, yes: bool) -> float | None:
     """Shows a production run's estimate; its cap, twice the estimate, once the user said yes, else None."""
+    table = prices_or_stop(prompt)
+    # Every model paid by the token needs a price, or its spend would escape the cap; Claude Code reports its own cost.
     try:
-        table = prices(prompt.workspace)
+        via, rewrite_model = rewrite_settings(prompt.workspace)
+        judged = judge_model(prompt.workspace)[1] if judges_or_stop(prompt) else None
     except PromptError as e:
         raise Stop(str(e)) from None
-    price = table.get(prompt.model)
-    if price is None:
-        raise Stop(f"[prices] in whetstone.toml has no price for {prompt.model}; a production run needs one to estimate its cost")
+    for model in (prompt.model, judged, rewrite_model if via == "api" else None):
+        if model is not None and model not in table:
+            raise Stop(f"[prices] in whetstone.toml has no price for {model}; a production run needs one to estimate its cost")
+    price = table[prompt.model]
     expected = production_estimate(prompt, budget, price)
     print(f"a production run on {prompt.model}: about ${expected:.2f}; it stops at ${2 * expected:.2f}." + ("" if yes else " Rerun with --yes to start."), flush=True)
     return 2 * expected if yes else None
