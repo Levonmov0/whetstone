@@ -197,3 +197,15 @@ def test_a_warned_judge_is_shown_and_the_run_goes_on(tmp_path: Path, monkeypatch
 
     assert code == 0
     assert "assumes: agrees with Levon on 80% of good cards; below 90% is a warning" in capsys.readouterr().out
+
+
+def test_a_run_needs_three_cases(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_run_suite(tmp_path, cases=2)
+    model = writer()
+    monkeypatch.chdir(tmp_path)
+
+    code = start_run(model, rewriter())
+
+    assert code == 2
+    assert "a run needs at least 3 cases; this prompt has 2" in capsys.readouterr().err
+    assert model.requests == []
