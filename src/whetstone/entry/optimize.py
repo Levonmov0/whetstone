@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from whetstone.entry.suite import Stop, Suite
-from whetstone.features.optimize.core import RoleCost, SplitError, case_score, length_factor, placeholder_problem, run_report, split_cases, swap_editable
+from whetstone.features.optimize.core import RoleCost, SplitError, case_score, length_factor, placeholder_problem, progress_line, run_report, split_cases, swap_editable
 from whetstone.platform.gepa import optimize
 from whetstone.platform.model import ModelCall, ModelError, ModelResult
 
@@ -61,10 +61,14 @@ def run_optimize(suite: Suite, prompt_dir: Path, editable: str, model: str, rewr
         if problem := placeholder_problem(editable, text):
             # It could never be applied to the source, so it is scored 0 without spending a call on it.
             return [(0.0, f"Rejected: it {problem}. Keep every placeholder exactly as it is.", requests[case_id][0], None) for case_id in batch]
-        results = [score(text, case_id)[:4] for case_id in batch]
+        results = [score(text, case_id) for case_id in batch]
         if sorted(batch) == sorted(select):
-            versions.append((text, sum(r[0] for r in results) / len(results)))
-        return results
+            average = sum(r[0] for r in results) / len(results)
+            best = all(average > other for _, other in versions)
+            versions.append((text, average))
+            passing = sum(not messages for r in results for messages in r[4].values())
+            print(progress_line(len(versions), passing, sum(len(r[4]) for r in results), best), flush=True)
+        return [r[:4] for r in results]
 
     rewrite_errors: list[str] = []
 
