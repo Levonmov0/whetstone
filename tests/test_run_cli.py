@@ -407,3 +407,37 @@ def test_a_production_run_shows_its_estimate_and_waits_for_a_yes(tmp_path: Path,
     assert code == 0
     assert "a production run on prod-model: about $1.15; it stops at $2.30. Rerun with --yes to start." in capsys.readouterr().out
     assert model.requests == [] and rewrite.requests == []
+
+
+def test_a_production_run_needs_a_cheap_run_first(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_run_suite(tmp_path, settings=PROD_PRICES)
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["run", "daily", "--production"], make_model=unused_model)
+
+    assert code == 2
+    assert "run a cheap run first: whetstone run daily --model <a cheap model>" in capsys.readouterr().err
+
+
+def test_a_production_run_needs_the_production_price(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_run_suite(tmp_path, settings='[prices]\n"cheap-model" = [1, 5]\n')
+    monkeypatch.chdir(tmp_path)
+    cheap_run_with_known_cost(prompt)
+
+    code = run(["run", "daily", "--production"], make_model=unused_model)
+
+    assert code == 2
+    assert "[prices] in whetstone.toml has no price for prod-model; a production run needs one to estimate its cost" in capsys.readouterr().err
+
+
+def test_a_production_estimate_needs_the_cheap_runs_dollars(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_run_suite(tmp_path, settings=PROD_PRICES)
+    monkeypatch.chdir(tmp_path)
+    cheap_run_with_known_cost(prompt)
+    cost = json.loads((run_folder(prompt) / "cost.json").read_text())
+    (run_folder(prompt) / "cost.json").write_text(json.dumps(cost | {"rewrite": cost["rewrite"] | {"dollars": None}}))
+
+    code = run(["run", "daily", "--production"], make_model=unused_model)
+
+    assert code == 2
+    assert "the last cheap run's rewrite cost is unknown; add its model to [prices]" in capsys.readouterr().err
