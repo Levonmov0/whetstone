@@ -1,6 +1,6 @@
 import pytest
 
-from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, stop_for_cap, stuck_reasons, length_factor, placeholder_problem, split_cases
+from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, progress_line, stop_for_cap, stuck_reasons, length_factor, placeholder_problem, split_cases
 
 
 def test_split_cases_is_40_25_35_disjoint_and_stable() -> None:
@@ -94,3 +94,8 @@ def test_stuck_reasons_is_empty_when_every_check_passed_somewhere_together() -> 
     records = [(0, "A", {"x": ["no"], "y": []}), (1, "A", {"x": [], "y": []})]
 
     assert stuck_reasons(records) == []
+
+
+def test_progress_line() -> None:
+    assert progress_line(version=3, passing=17, total=20, best=True) == "version 3: 17 of 20 checks passing on selection cases (best so far)"
+    assert progress_line(version=4, passing=15, total=20, best=False) == "version 4: 15 of 20 checks passing on selection cases"

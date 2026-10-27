@@ -101,3 +101,7 @@ def stuck_reasons(records: list[tuple[int, str, dict[str, list[str]]]]) -> list[
                 if not any(not run[x] and not run[y] for run in runs):
                     reasons.append(f"{x} and {y} never passed together on case {case_id}: these two rules may conflict")
     return reasons
+
+
+def progress_line(version: int, passing: int, total: int, best: bool) -> str:
+    raise NotImplementedError
