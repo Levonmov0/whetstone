@@ -8,7 +8,7 @@ from typing import Any
 from whetstone.entry.suite import Stop, Suite
 from whetstone.features.optimize.core import RoleCost, SplitError, case_score, length_factor, run_report, split_cases, swap_editable
 from whetstone.platform.gepa import optimize
-from whetstone.platform.model import ModelCall, ModelResult
+from whetstone.platform.model import ModelCall, ModelError, ModelResult
 
 ROLES = ("generation", "judge", "rewrite")
 
@@ -55,10 +55,20 @@ def run_optimize(suite: Suite, prompt_dir: Path, editable: str, model: str, rewr
             versions.append((text, sum(r[0] for r in results) / len(results)))
         return results
 
+    rewrite_errors: list[str] = []
+
     def reflect(prompt: str) -> str:
-        return str(rewrite({"max_tokens": 8000, "messages": [{"role": "user", "content": prompt}]}).output)
+        try:
+            return str(rewrite({"max_tokens": 8000, "messages": [{"role": "user", "content": prompt}]}).output)
+        except ModelError as e:
+            rewrite_errors.append(str(e))  # GEPA logs a failed rewrite and goes on, so it is kept to say why
+            raise
 
     optimize(editable, train, select, evaluate, reflect, budget, stop=lambda: False)
+    if not any(text != editable for text, _ in versions):
+        why = f"; the last rewrite failed: {rewrite_errors[-1]}" if rewrite_errors else ""
+        print(f"GEPA produced no new version{why}")
+        return 1
     best = max(versions, key=lambda version: version[1])[0]
 
     held_failures: dict[str, dict[str, dict[str, list[str]]]] = {"original": {}, "candidate": {}}
