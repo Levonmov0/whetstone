@@ -116,14 +116,27 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
     except CapReached:
         capped = True
     gepa_running = False
-    if not any(text != editable for text, _ in versions):
-        why = f"; the last rewrite failed: {rewrite_errors[-1]}" if rewrite_errors else ""
-        print(f"GEPA produced no new version{why}")
+
+    folder = prompt_dir / "runs" / f"run-{run_id}"
+    folder.mkdir(parents=True)
+    if any(case_id.startswith("private/") for case_id in requests):
+        # Its report, split and deck name real-data cases, so the folder ignores itself, like a source folder.
+        (folder / ".gitignore").write_text("*\n")
+    (folder / "run.json").write_text(json.dumps({"model": model}))
+    (folder / "split.json").write_text(json.dumps({"training": train, "selection": select, "held_back": held}, indent=2))
+
+    def fail(message: str) -> int:
+        """A run with no winner: said loudly, and what it spent recorded all the same."""
+        print(message)
+        (folder / "cost.json").write_text(json.dumps({role: asdict(cost) for role, cost in meter.spent.items()}, indent=2))
+        (folder / "report.md").write_text(f"# Run: {prompt_dir.name}\n\n{message}\n")
         return 1
+
+    if not any(text != editable for text, _ in versions):
+        return fail("GEPA produced no new version" + (f"; the last rewrite failed: {rewrite_errors[-1]}" if rewrite_errors else ""))
     best = max(versions, key=lambda version: version[1])[0]  # the first, so the original, on a tie
     if best == editable:
-        print("no new version beat the original on the selection cases")
-        return 1
+        return fail("no new version beat the original on the selection cases")
 
     held_failures: dict[str, dict[str, dict[str, list[str]]]] = {"original": {}, "candidate": {}}
     totals = {"original": 0.0, "candidate": 0.0}
@@ -140,13 +153,6 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
     random.shuffle(cards)
     average = {version: total / len(held) for version, total in totals.items()}
 
-    folder = prompt_dir / "runs" / f"run-{run_id}"
-    folder.mkdir(parents=True)
-    if any(case_id.startswith("private/") for case_id in requests):
-        # Its report, split and deck name real-data cases, so the folder ignores itself, like a source folder.
-        (folder / ".gitignore").write_text("*\n")
-    (folder / "run.json").write_text(json.dumps({"model": model}))
-    (folder / "split.json").write_text(json.dumps({"training": train, "selection": select, "held_back": held}, indent=2))
     (folder / "candidate.txt").write_text(best)
     (folder / "cost.json").write_text(json.dumps({role: asdict(cost) for role, cost in meter.spent.items()}, indent=2))
     (folder / "cards.json").write_text(json.dumps(versions_by_tag, indent=2))

@@ -277,7 +277,8 @@ def start_in_background(prompt: PromptSettings, argv: list[str], make_model: Mak
 
 
 def refresh_run_report(prompt: PromptSettings) -> int:
-    runs = sorted((prompt.dir / "runs").glob("run-*"))  # run ids are timestamps, so the names sort by time
+    # Run ids are timestamps, so the names sort by time; only a run with a candidate has a blind deck.
+    runs = sorted(folder for folder in (prompt.dir / "runs").glob("run-*") if (folder / "cards.json").is_file())
     if not runs:
         raise Stop(f"no run of {prompt.dir.name} yet; run whetstone run {prompt.dir.name} --model …")
     report = runs[-1] / "report.md"
