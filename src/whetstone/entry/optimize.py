@@ -14,7 +14,7 @@ from whetstone.features.workspace.load import PromptSettings
 from whetstone.platform.gepa import optimize
 from whetstone.platform.model import ModelCall, ModelError, ModelResult
 
-ROLES = ("generation", "judge", "rewrite")
+ROLES = ("generation", "judge", "rewrite", "gate")  # gate: the one-off judge calls that check the judges first
 
 
 class Meter:

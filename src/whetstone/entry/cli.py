@@ -224,7 +224,7 @@ def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeM
         _via, rewrite_model = rewrite_settings(prompt.workspace)
     except (PromptError, MissingKey) as e:
         raise Stop(str(e)) from None
-    gates = judge_gates(prompt, lambda workspace: meter.wrap("judge", make_judge(workspace))) or {}
+    gates = judge_gates(prompt, lambda workspace: meter.wrap("gate", make_judge(workspace))) or {}
     allowed, advice = optimize_gate({name: (status, lines) for name, (_rows, status, lines) in gates.items()})
     if not allowed:
         raise Stop("\n".join(advice))
