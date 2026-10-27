@@ -3,12 +3,12 @@ import pytest
 from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, progress_line, run_report, stop_for_cap, stuck_reasons, length_factor, placeholder_problem, split_cases
 
 
-def test_split_cases_is_40_25_35_disjoint_and_stable() -> None:
-    ids = [f"case-{i}" for i in range(20)]
+def test_split_cases_is_about_40_25_35_disjoint_and_stable() -> None:
+    ids = [f"case-{i}" for i in range(200)]
 
     train, select, held = split_cases(ids)
 
-    assert (len(train), len(select), len(held)) == (8, 5, 7)
+    assert 60 <= len(train) <= 100 and 30 <= len(select) <= 70 and 50 <= len(held) <= 90
     assert sorted(train + select + held) == sorted(ids)
     assert split_cases(list(reversed(ids))) == (train, select, held)
 
@@ -17,6 +17,15 @@ def test_split_cases_gives_each_set_one_of_three() -> None:
     train, select, held = split_cases(["a", "b", "c"])
 
     assert (len(train), len(select), len(held)) == (1, 1, 1)
+
+
+def test_a_held_back_case_stays_held_back_when_cases_are_added() -> None:
+    ids = [f"case-{i}" for i in range(11)]
+    sets = split_cases(ids)
+
+    grown = split_cases([*ids, "case-11", "case-12", "case-13"])
+
+    assert all(set(before) <= set(after) for before, after in zip(sets, grown))
 
 
 def test_split_cases_needs_three() -> None:
