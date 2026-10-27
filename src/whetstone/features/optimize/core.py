@@ -1,5 +1,6 @@
 """Pure rules for an optimizing run: no I/O, environment or SDKs."""
 
+import difflib
 import hashlib
 import re
 from collections import Counter
@@ -108,6 +109,9 @@ def progress_line(version: int, passing: int, total: int, best: bool) -> str:
     return f"version {version}: {passing} of {total} checks passing on selection cases" + (" (best so far)" if best else "")
 
 
+NOISE = 0.03  # the same prompt scored 0.90 and 0.87 on two runs
+
+
 def run_report(
     prompt: str,
     original: str,
@@ -117,4 +121,32 @@ def run_report(
     cost: dict[str, RoleCost],
     stuck: list[str],
 ) -> str:
-    raise NotImplementedError
+    """The report's text: the original and the candidate on the held-back cases, the diff, the length change, the cost,
+    and, when checks still fail, why the run may be stuck. `held` maps each version to its failures per case."""
+    checks = list(next(iter(held["original"].values())))
+    header = ["version", "every check", "average score", *checks]
+    lines = [f"# Run: {prompt}", "", f"Held back: {len(held['original'])} cases GEPA never saw.", ""]
+    lines += ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
+    for version, cases in held.items():
+        clean = sum(not any(failures.values()) for failures in cases.values())
+        counts = [f"{sum(not failures[name] for failures in cases.values())}/{len(cases)}" for name in checks]
+        lines.append("| " + " | ".join([version, f"{clean}/{len(cases)}", f"{average[version]:.2f}", *counts]) + " |")
+    if round(abs(average["candidate"] - average["original"]), 6) <= NOISE:
+        lines += ["", f"The average scores differ by {NOISE} or less: within noise (±{NOISE}), as two runs of one prompt can."]
+    fixed = [
+        name
+        for name in checks
+        if any(f[name] for f in held["original"].values()) and not any(f[name] for f in held["candidate"].values())
+    ]
+    lines += ["", f"Rules now passing on every held-back case: {', '.join(fixed) or 'none'}"]
+    change = round(100 * (len(candidate) - len(original)) / len(original))
+    lines += ["", f"Length: {change:+d}% ({len(original)} → {len(candidate)} chars)"]
+    diff = difflib.unified_diff(original.splitlines(), candidate.splitlines(), "original", "candidate", lineterm="")
+    lines += ["", "## Diff", "", "```diff", *diff, "```", "", "## Cost", ""]
+    for role, spent in cost.items():
+        dollars = "$ unknown" if spent.dollars is None else f"${spent.dollars:.2f}"
+        lines.append(f"- {role}: {spent.calls} calls, {spent.input_tokens} input and {spent.output_tokens} output tokens, {dollars}")
+    if stuck:
+        lines += ["", "## Why it may be stuck", "", *(f"- {reason}" for reason in stuck)]
+    return "\n".join(lines) + "\n"
+
