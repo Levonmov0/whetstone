@@ -4,6 +4,7 @@ from pathlib import Path
 import httpx2 as httpx
 import pytest
 
+from tests.fakes import FakeModel
 from tests.test_claude_code import REPLY, fake_claude
 from tests.test_run_cli import make_run_suite, writer
 from whetstone.entry.cli import production_rewrite, run
@@ -75,3 +76,19 @@ def test_a_bad_rewrite_setting_stops_the_run_before_any_generation(
     assert code == 2
     assert error in capsys.readouterr().err
     assert model.requests == []
+
+
+def test_api_rewrites_are_priced_from_prices(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_run_suite(tmp_path, settings='[models]\nrewrite = { via = "api", model = "rewrite-model" }\n\n[prices]\n"rewrite-model" = [3, 15]\n')
+    (tmp_path / ".env").write_text("REWRITE_API_KEY=rewrite-key\n")
+    api = FakeModel(lambda _r: "```\nBe brief. Keep it short.\n```")  # the Anthropic API reports tokens, not dollars
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["run", "daily", "--model", "cheap-model", "--budget", "30", "--foreground"],
+               make_model=lambda _settings: writer(), make_rewrite=lambda workspace: production_rewrite(workspace, api=lambda _key: api))  # fmt: skip
+
+    assert code == 0
+    assert {request["model"] for request in api.requests} == {"rewrite-model"}
+    [folder] = (prompt / "runs").glob("run-*")
+    rewrite = json.loads((folder / "cost.json").read_text())["rewrite"]
+    assert rewrite["dollars"] == pytest.approx(rewrite["calls"] * (10 * 3 + 5 * 15) / 1e6)
