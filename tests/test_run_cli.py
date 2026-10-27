@@ -523,3 +523,26 @@ def test_the_judge_gate_is_counted_apart_from_the_runs_judging(tmp_path: Path, m
     cost = json.loads((run_folder(prompt) / "cost.json").read_text())
     assert cost["gate"]["calls"] == 15  # each swiped card once
     assert cost["judge"]["calls"] == len(model.requests)  # one judge call per output
+
+
+@pytest.mark.parametrize(
+    ("settings", "unpriced"),
+    [
+        ('[models]\nrewrite = { via = "api", model = "rewrite-model" }\n', "rewrite-model"),
+        ('[models]\njudge = { provider = "openai", model = "judge-model" }\n', "judge-model"),
+    ],
+)
+def test_a_production_run_needs_a_price_for_every_model_it_pays_by_the_token(
+    settings: str, unpriced: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    prompt = make_run_suite(tmp_path, settings=PROD_PRICES)
+    monkeypatch.chdir(tmp_path)
+    cheap_run_with_known_cost(prompt)
+    (tmp_path / "whetstone.toml").write_text(settings + PROD_PRICES)
+    if "judge" in settings:
+        (prompt / "checks" / "assumes.judge.toml").write_text(RUBRIC_TAIL)
+
+    code = run(["run", "daily", "--production"], make_model=unused_model)
+
+    assert code == 2
+    assert f"[prices] in whetstone.toml has no price for {unpriced}; a production run needs one to estimate its cost" in capsys.readouterr().err
