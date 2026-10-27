@@ -14,7 +14,7 @@ from typing import IO, Any
 import qrcode
 
 from whetstone.entry.optimize import Meter, production_estimate, run_optimize
-from whetstone.entry.suite import MakeJudge, MakeModel, MakeRewrite, Stop, build, card, judges_or_stop, prepare_judge, prepare_suite, prices_or_stop, providers_or_stop
+from whetstone.entry.suite import MakeJudge, MakeModel, MakeRewrite, Stop, Suite, build, card, judges_or_stop, prepare_judge, prepare_suite, prices_or_stop, providers_or_stop
 from whetstone.features.baseline.core import baseline_report, swipe_section
 from whetstone.features.baseline.store import card_models, latest_run, save_run
 from whetstone.features.cases.load import load_cases
@@ -23,6 +23,7 @@ from whetstone.features.checks.core import Agreement, CaseResult, Side, agreemen
 from whetstone.features.checks.load import CheckLoadError, code_check_reasons
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
+from whetstone.features.optimize.core import SplitError, split_cases
 from whetstone.features.workspace.core import request_differences
 from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, judge_model, load_prompt, phone_access, prompt_names, rewrite_settings
 from whetstone.platform.anthropic import anthropic_model
@@ -214,19 +215,27 @@ def refresh_baseline_report(prompt: PromptSettings) -> int:
 
 def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite, cap: float | None, run_id: str) -> int:
     meter = Meter(prices_or_stop(prompt))
+    suite, rewrite, rewrite_model = vet_run(prompt, meter, make_model, make_judge, make_rewrite)
+    return run_optimize(suite, prompt, model, rewrite, rewrite_model, budget, run_id, meter, cap)
+
+
+def vet_run(prompt: PromptSettings, meter: Meter, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite) -> tuple[Suite, ModelCall, str | None]:
+    """Everything that can stop a run before it optimizes: the suite, the split, the rewriter and the judge gate. The
+    starting command and the worker both run it, so a broken setup is said before "started"."""
     # The suite first: it is vetted without a model call, and the judge gate then spends judge calls.
     suite = prepare_suite(prompt, make_model, lambda workspace: meter.wrap("judge", make_judge(workspace)))
     try:
+        split_cases([case_id for case_id, _, _ in suite.requests])
         rewrite = make_rewrite(prompt.workspace)
         _via, rewrite_model = rewrite_settings(prompt.workspace)
-    except (PromptError, MissingKey) as e:
+    except (SplitError, PromptError, MissingKey) as e:
         raise Stop(str(e)) from None
     gates = judge_gates(prompt, lambda workspace: meter.wrap("gate", make_judge(workspace))) or {}
     allowed, advice = optimize_gate({name: (status, lines) for name, (_rows, status, lines) in gates.items()})
     if not allowed:
         raise Stop("\n".join(advice))
     print("".join(f"{line}\n" for line in advice), end="")
-    return run_optimize(suite, prompt, model, rewrite, rewrite_model, budget, run_id, meter, cap)
+    return suite, rewrite, rewrite_model
 
 
 def production_cap(prompt: PromptSettings, budget: int, yes: bool) -> float | None:
@@ -262,13 +271,9 @@ def run_lock(prompt: PromptSettings) -> IO[str]:
 
 
 def start_in_background(prompt: PromptSettings, argv: list[str], make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite) -> int:
-    """Vets what needs no model call, then starts the run as a worker in a session of its own, so it outlives this
-    command and the Claude session; the worker vets again and does the rest, logging as it goes."""
-    prepare_suite(prompt, make_model, make_judge)
-    try:
-        make_rewrite(prompt.workspace)
-    except (PromptError, MissingKey) as e:
-        raise Stop(str(e)) from None
+    """Vets the run, then starts it as a worker in a session of its own, so it outlives this command and the Claude
+    session; the worker vets again and does the rest, logging as it goes."""
+    vet_run(prompt, Meter(prices_or_stop(prompt)), make_model, make_judge, make_rewrite)
     run_id = new_deck_id()
     log = prompt.workspace / ".whetstone" / "runs" / f"{prompt.dir.name}-{run_id}.log"
     worker = [sys.executable, "-m", "whetstone.entry.cli", *argv, "--foreground", "--run-id", run_id, "--workspace", str(prompt.workspace)]
