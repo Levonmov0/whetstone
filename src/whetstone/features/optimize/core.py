@@ -3,6 +3,7 @@
 import hashlib
 import re
 from collections import Counter
+from dataclasses import dataclass
 
 
 class SplitError(Exception):
@@ -45,3 +46,21 @@ def case_score(failures: dict[str, list[str]], factor: float) -> tuple[float, st
     passed = sum(not messages for messages in failures.values())
     feedback = "Broke these rules:\n" + "\n".join(f"- {line}" for line in broken) if broken else "All checks passed."
     return factor * passed / len(failures), feedback
+
+
+@dataclass(frozen=True)
+class RoleCost:
+    """What one role (generation, judge or rewrite) spent in a run; dollars None when a model had no price."""
+
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    dollars: float | None
+
+
+class EstimateError(Exception):
+    pass
+
+
+def estimate(cheap: dict[str, RoleCost], price: tuple[float, float], planned_generations: int) -> float:
+    raise NotImplementedError

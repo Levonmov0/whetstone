@@ -1,6 +1,6 @@
 import pytest
 
-from whetstone.features.optimize.core import SplitError, case_score, length_factor, placeholder_problem, split_cases
+from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, length_factor, placeholder_problem, split_cases
 
 
 def test_split_cases_is_40_25_35_disjoint_and_stable() -> None:
@@ -51,3 +51,21 @@ def test_case_score_is_the_share_of_checks_passed_times_the_length_factor() -> N
 
     assert case_score(failures, factor=1.0) == (pytest.approx(2 / 3), "Broke these rules:\n- length: Over 76 characters.")
     assert case_score({"length": [], "no_number": []}, factor=0.5) == (0.5, "All checks passed.")
+
+
+CHEAP_RUN = {
+    "generation": RoleCost(calls=100, input_tokens=100_000, output_tokens=10_000, dollars=0.15),
+    "judge": RoleCost(calls=100, input_tokens=50_000, output_tokens=1_000, dollars=0.20),
+    "rewrite": RoleCost(calls=10, input_tokens=40_000, output_tokens=8_000, dollars=0.50),
+}
+
+
+def test_estimate_scales_the_cheap_run_to_the_production_price() -> None:
+    assert estimate(CHEAP_RUN, price=(3, 15), planned_generations=150) == pytest.approx(1.725)
+
+
+def test_estimate_needs_the_cheap_runs_dollars() -> None:
+    unknown = {**CHEAP_RUN, "judge": RoleCost(calls=100, input_tokens=50_000, output_tokens=1_000, dollars=None)}
+
+    with pytest.raises(EstimateError, match=r"the last cheap run's judge cost is unknown; add its model to \[prices\]"):
+        estimate(unknown, price=(3, 15), planned_generations=150)
