@@ -4,12 +4,12 @@ import json
 import shutil
 import subprocess
 import tempfile
-from typing import Any
+from typing import Any, cast
 
 from whetstone.platform.model import ModelCall, ModelError, ModelResult
 
 
-def claude_code_model() -> ModelCall:
+def claude_code_model(timeout: float = 600) -> ModelCall:
     def call(request: dict[str, Any]) -> ModelResult:
         claude = shutil.which("claude")
         if claude is None:
@@ -20,17 +20,27 @@ def claude_code_model() -> ModelCall:
             argv += ["--model", request["model"]]
         prompt = "\n\n".join(message["content"] for message in request["messages"])
         with tempfile.TemporaryDirectory() as empty:
-            result = subprocess.run(argv, input=prompt, capture_output=True, text=True, cwd=empty)
+            try:
+                result = subprocess.run(argv, input=prompt, capture_output=True, text=True, cwd=empty, timeout=timeout)
+            except subprocess.TimeoutExpired:
+                raise ModelError(f"claude took longer than {timeout:g}s") from None
+        try:
+            reply: Any = json.loads(result.stdout)
+        except ValueError:
+            reply = None
+        # A failed call still prints its JSON result, the reason, on stdout, and exits non-zero.
+        if isinstance(reply, dict) and cast(dict[str, Any], reply).get("is_error"):
+            raise ModelError(f"claude failed: {cast(dict[str, Any], reply).get('result')}")
         if result.returncode != 0:
             raise ModelError(f"claude exited {result.returncode}: {result.stderr.strip()}")
+        if reply is None:
+            raise ModelError("claude printed invalid JSON")
         try:
-            reply = json.loads(result.stdout)
-        except ValueError:
-            raise ModelError("claude printed invalid JSON") from None
-        if reply["is_error"]:
-            raise ModelError(f"claude failed: {reply['result']}")
-        usage = reply["usage"]
-        tokens_in = usage["input_tokens"] + usage["cache_creation_input_tokens"] + usage["cache_read_input_tokens"]
-        return ModelResult(output=reply["result"], input_tokens=tokens_in, output_tokens=usage["output_tokens"], cost_usd=reply["total_cost_usd"])
+            fields = cast(dict[str, Any], reply)
+            usage = cast(dict[str, int], fields["usage"])
+            tokens_in = usage["input_tokens"] + usage["cache_creation_input_tokens"] + usage["cache_read_input_tokens"]
+            return ModelResult(output=fields["result"], input_tokens=tokens_in, output_tokens=usage["output_tokens"], cost_usd=fields["total_cost_usd"])
+        except (KeyError, TypeError):
+            raise ModelError("claude printed an unexpected reply") from None
 
     return call
