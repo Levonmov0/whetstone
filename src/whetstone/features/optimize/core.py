@@ -85,4 +85,19 @@ def stop_for_cap(spent: float, reserve: float, cap: float | None) -> bool:
 
 
 def stuck_reasons(records: list[tuple[int, str, dict[str, list[str]]]]) -> list[str]:
-    raise NotImplementedError
+    """Why checks may still fail, from every (version, case id, failures) the run scored: a check no version passed on
+    a case needs more than a better prompt, and two checks that each passed a case but never together may conflict."""
+    by_case: dict[str, list[dict[str, list[str]]]] = {}
+    for _version, case_id, failures in records:
+        by_case.setdefault(case_id, []).append(failures)
+    reasons: list[str] = []
+    for case_id, runs in by_case.items():
+        checks = list(runs[0])
+        never = [name for name in checks if all(run[name] for run in runs)]
+        reasons += [f"{name} never passed on case {case_id} in any version: this needs more input data or a different model" for name in never]
+        passing = [name for name in checks if name not in never]
+        for i, x in enumerate(passing):
+            for y in passing[i + 1 :]:
+                if not any(not run[x] and not run[y] for run in runs):
+                    reasons.append(f"{x} and {y} never passed together on case {case_id}: these two rules may conflict")
+    return reasons
