@@ -483,3 +483,18 @@ def test_one_run_per_prompt_at_a_time(where: list[str], tmp_path: Path, monkeypa
     assert code == 2
     assert "a run of daily is already going; its log is in .whetstone/runs/" in capsys.readouterr().err
     assert model.requests == []
+
+
+def test_a_failed_run_still_records_what_it_cost(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_run_suite(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    start_run(writer(), rewriter())  # a run with a candidate
+    model = writer()
+
+    code = start_run(model, rewriter("Be brief."))
+
+    assert code == 1
+    [failed] = [f for f in (prompt / "runs").glob("run-*") if not (f / "candidate.txt").exists()]
+    assert json.loads((failed / "cost.json").read_text())["generation"]["calls"] == len(model.requests)
+    assert "GEPA produced no new version" in (failed / "report.md").read_text()
+    assert run(["run", "daily", "--report"], make_model=unused_model) == 0
