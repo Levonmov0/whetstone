@@ -254,3 +254,23 @@ def test_progress_is_shown_as_versions_are_scored(tmp_path: Path, monkeypatch: p
     out = capsys.readouterr().out.splitlines()
     assert "version 1: 0 of 2 checks passing on selection cases (best so far)" in out
     assert "version 2: 2 of 2 checks passing on selection cases (best so far)" in out
+
+
+def test_the_report_compares_held_back_results_and_explains_a_stuck_check(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_run_suite(tmp_path)
+    _train, select, _held = split_cases([f"case-{i}" for i in range(10)])
+    stuck = f"Line {select[0].removeprefix('case-')}."
+    (prompt / "checks" / "stuck.py").write_text(f"def check(output):\n    return ['Always wrong.'] if output.startswith({stuck!r}) else []\n")
+    monkeypatch.chdir(tmp_path)
+
+    start_run(writer(), rewriter())
+
+    lines = (run_folder(prompt) / "report.md").read_text().splitlines()
+    assert "| version | every check | average score | short | stuck |" in lines
+    assert any(line.startswith("| original | 0/4 |") for line in lines)
+    assert any(line.startswith("| candidate | 4/4 |") for line in lines)
+    assert "Rules now passing on every held-back case: short" in lines
+    assert "Length: +167% (9 → 24 chars)" in lines
+    assert "+Be brief. Keep it short." in lines
+    assert "## Cost" in lines
+    assert f"- stuck never passed on case {select[0]} in any version: this needs more input data or a different model" in lines
