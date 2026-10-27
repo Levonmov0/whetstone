@@ -2,6 +2,7 @@ import argparse
 import fcntl
 import ipaddress
 import json
+import os
 import random
 import secrets
 import socket
@@ -59,6 +60,7 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
     optimize.add_argument("--yes", action="store_true", help="start the production run the estimate was shown for")
     optimize.add_argument("--foreground", action="store_true", help="run here instead of in the background")
     optimize.add_argument("--run-id", help=argparse.SUPPRESS)  # given to the background worker
+    optimize.add_argument("--lock-fd", type=int, help=argparse.SUPPRESS)  # the run lock the worker inherits
     for command in (check, verify, source, disagree, settle, reasons, agree, baseline, optimize):
         command.add_argument("prompt")
     serve.add_argument("prompt", nargs="?")
@@ -100,10 +102,10 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
             else:
                 model, cap = args.model, None
             if not args.foreground:
-                # ponytail: checked, then let go for the worker to take; a run started in between makes the worker exit 2.
-                run_lock(prompt).close()
-                return start_in_background(prompt, argv, make_model, make_judge, make_rewrite)
-            with run_lock(prompt):
+                with run_lock(prompt) as lock:
+                    return start_in_background(prompt, argv, make_model, make_judge, make_rewrite, lock)
+            # A worker inherits the lock its starting command took, so no other run can start in between.
+            with os.fdopen(args.lock_fd, "w") if args.lock_fd is not None else run_lock(prompt):
                 return start_run(prompt, model, args.budget, make_model, make_judge, make_rewrite, cap, args.run_id or new_deck_id())
         if args.command == "agreement":
             return show_agreement(prompt, make_judge)
@@ -258,7 +260,7 @@ def production_cap(prompt: PromptSettings, budget: int, yes: bool) -> float | No
 
 def run_lock(prompt: PromptSettings) -> IO[str]:
     """Held for a run's life, so two runs of one prompt never spend at once or replace each other's deck. The starting
-    command only checks it, and the worker takes it."""
+    command takes it and hands it to the worker it starts."""
     logs = private_dir(prompt.workspace) / "runs"
     logs.mkdir(exist_ok=True)
     lock = (logs / f"{prompt.dir.name}.lock").open("w")
@@ -270,14 +272,14 @@ def run_lock(prompt: PromptSettings) -> IO[str]:
     return lock
 
 
-def start_in_background(prompt: PromptSettings, argv: list[str], make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite) -> int:
+def start_in_background(prompt: PromptSettings, argv: list[str], make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite, lock: IO[str]) -> int:
     """Vets the run, then starts it as a worker in a session of its own, so it outlives this command and the Claude
     session; the worker vets again and does the rest, logging as it goes."""
     vet_run(prompt, Meter(prices_or_stop(prompt)), make_model, make_judge, make_rewrite)
     run_id = new_deck_id()
     log = prompt.workspace / ".whetstone" / "runs" / f"{prompt.dir.name}-{run_id}.log"
-    worker = [sys.executable, "-m", "whetstone.entry.cli", *argv, "--foreground", "--run-id", run_id, "--workspace", str(prompt.workspace)]
-    pid = start_detached(worker, "", log)
+    worker = [sys.executable, "-m", "whetstone.entry.cli", *argv, "--foreground", "--run-id", run_id, "--lock-fd", str(lock.fileno()), "--workspace", str(prompt.workspace)]
+    pid = start_detached(worker, "", log, pass_fds=(lock.fileno(),))
     print(f"run {run_id} of {prompt.dir.name} started in the background (pid {pid})")
     print(f"log: {log}")
     return 0
