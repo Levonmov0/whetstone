@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from whetstone.entry.suite import Stop, Suite
-from whetstone.features.optimize.core import RoleCost, SplitError, case_score, length_factor, run_report, split_cases, swap_editable
+from whetstone.features.optimize.core import RoleCost, SplitError, case_score, length_factor, placeholder_problem, run_report, split_cases, swap_editable
 from whetstone.platform.gepa import optimize
 from whetstone.platform.model import ModelCall, ModelError, ModelResult
 
@@ -50,6 +50,9 @@ def run_optimize(suite: Suite, prompt_dir: Path, editable: str, model: str, rewr
     versions: list[tuple[str, float]] = []  # each version scored on every selection case, and its average there
 
     def evaluate(text: str, batch: list[str]) -> list[tuple[float, str, Any, Any]]:
+        if problem := placeholder_problem(editable, text):
+            # It could never be applied to the source, so it is scored 0 without spending a call on it.
+            return [(0.0, f"Rejected: it {problem}. Keep every placeholder exactly as it is.", requests[case_id][0], None) for case_id in batch]
         results = [score(text, case_id)[:4] for case_id in batch]
         if sorted(batch) == sorted(select):
             versions.append((text, sum(r[0] for r in results) / len(results)))
