@@ -79,4 +79,6 @@ def estimate(cheap: dict[str, RoleCost], price: tuple[float, float], planned_gen
 
 
 def stop_for_cap(spent: float, reserve: float, cap: float | None) -> bool:
-    raise NotImplementedError
+    """Whether GEPA must stop so the run stays under its cap: `reserve` is what scoring the held-back cases will
+    still cost. A run without a cap never stops for one."""
+    return cap is not None and spent + reserve >= cap
