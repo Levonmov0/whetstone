@@ -7,6 +7,7 @@ import pytest
 from tests.test_claude_code import REPLY, fake_claude
 from tests.test_run_cli import make_run_suite, writer
 from whetstone.entry.cli import production_rewrite, run
+from whetstone.platform.anthropic import anthropic_model
 
 REWRITE = {"max_tokens": 8000, "messages": [{"role": "user", "content": "Improve this prompt."}]}
 
@@ -43,7 +44,7 @@ def test_api_rewrites_go_to_anthropic_with_their_own_key(tmp_path: Path) -> None
             "content": [{"type": "text", "text": "```\nKeep it short.\n```"}], "usage": {"input_tokens": 12, "output_tokens": 7},
         })  # fmt: skip
 
-    result = production_rewrite(tmp_path, transport=httpx.MockTransport(handle))(REWRITE)
+    result = production_rewrite(tmp_path, api=lambda key: anthropic_model(key, transport=httpx.MockTransport(handle)))(REWRITE)
 
     assert result.output == "```\nKeep it short.\n```"
     [request] = sent
