@@ -63,4 +63,16 @@ class EstimateError(Exception):
 
 
 def estimate(cheap: dict[str, RoleCost], price: tuple[float, float], planned_generations: int) -> float:
-    raise NotImplementedError
+    """A production run's dollars, scaled from the prompt's last cheap run: its tokens per generation at the
+    production price, and its judge and rewrite dollars, for as many generations as planned. `price` is dollars per
+    million input and output tokens."""
+    generation = cheap["generation"]
+    scale = planned_generations / generation.calls
+    per_call = (generation.input_tokens * price[0] + generation.output_tokens * price[1]) / generation.calls / 1e6
+    total = planned_generations * per_call
+    for role in ("judge", "rewrite"):
+        dollars = cheap[role].dollars
+        if dollars is None:
+            raise EstimateError(f"the last cheap run's {role} cost is unknown; add its model to [prices]")
+        total += dollars * scale
+    return total
