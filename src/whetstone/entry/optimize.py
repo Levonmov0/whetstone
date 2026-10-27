@@ -72,6 +72,7 @@ def run_optimize(suite: Suite, prompt_dir: Path, editable: str, model: str, rewr
 
     folder = prompt_dir / "runs" / f"run-{run_id}"
     folder.mkdir(parents=True)
+    (folder / "split.json").write_text(json.dumps({"training": train, "selection": select, "held_back": held}, indent=2))
     (folder / "candidate.txt").write_text(best)
     (folder / "cost.json").write_text(json.dumps({role: asdict(cost) for role, cost in meter.spent.items()}, indent=2))
     (folder / "report.md").write_text(run_report(prompt_dir.name, editable, best, held_failures, average, meter.spent, []))
