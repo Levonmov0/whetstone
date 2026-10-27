@@ -499,3 +499,15 @@ def test_a_failed_run_still_records_what_it_cost(tmp_path: Path, monkeypatch: py
     assert json.loads((failed / "cost.json").read_text())["generation"]["calls"] == len(model.requests)
     assert "GEPA produced no new version" in (failed / "report.md").read_text()
     assert run(["run", "daily", "--report"], make_model=unused_model) == 0
+
+
+def test_an_empty_rewrite_is_rejected_without_a_call(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_run_suite(tmp_path)
+    model = writer()
+    monkeypatch.chdir(tmp_path)
+
+    code = start_run(model, FakeModel(lambda _r: "```\n\n```"))
+
+    assert code == 1
+    assert "no new version beat the original on the selection cases" in capsys.readouterr().out
+    assert all(request["system"] == "Be brief." for request in model.requests)
