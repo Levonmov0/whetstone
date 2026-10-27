@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from tests.fakes import FakeModel
+from tests.fakes import FakeModel, unused_model
 from tests.test_agreement_cli import RUBRIC_TAIL, swipes, write_labels
 from tests.test_judges_cli import JUDGE_SETTINGS, judging
 from whetstone.entry.cli import run
@@ -297,3 +297,49 @@ def test_the_held_back_outputs_become_a_blind_deck(tmp_path: Path, monkeypatch: 
     assert "original" not in json.dumps(deck["cards"]) and "candidate" not in json.dumps(deck["cards"])
     order = ["LONG" in card["output"] for card in deck["cards"]]
     assert order not in ([True] * 4 + [False] * 4, [False] * 4 + [True] * 4)
+
+
+def test_the_report_adds_the_blind_swipes_per_version(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_run_suite(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    start_run(writer(), rewriter())
+    deck = json.loads((tmp_path / ".whetstone" / "decks" / "daily.json").read_text())
+    labels = [
+        {"card_id": card["card_id"], "case_id": card["case_id"], "grader": "Levon", "at": f"2026-10-27T10:00:0{i}",
+         "verdict": "bad" if "LONG" in card["output"] else "good", "reasons": [], "note": ""}
+        for i, card in enumerate(deck["cards"])
+    ]  # fmt: skip
+    labels[0] = {**labels[0], "verdict": "skip"}
+    (prompt / "labels.jsonl").write_text("".join(json.dumps(label) + "\n" for label in labels))
+    skipped = "original" if "LONG" in deck["cards"][0]["output"] else "candidate"
+
+    code = run(["run", "daily", "--report"], make_model=unused_model)
+
+    assert code == 0
+    lines = (run_folder(prompt) / "report.md").read_text().splitlines()
+    assert lines[lines.index("## Swipes") :] == [
+        "## Swipes",
+        "",
+        "- original: good 0, bad " + ("3, skip 1" if skipped == "original" else "4, skip 0"),
+        "- candidate: good " + ("3, bad 0, skip 1" if skipped == "candidate" else "4, bad 0, skip 0"),
+    ]
+
+
+def test_the_report_needs_a_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_run_suite(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["run", "daily", "--report"], make_model=unused_model)
+
+    assert code == 2
+    assert "no run of daily yet; run whetstone run daily --model …" in capsys.readouterr().err
+
+
+def test_a_run_needs_a_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_run_suite(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["run", "daily"], make_model=unused_model)
+
+    assert code == 2
+    assert "pass --model <a cheap model>, or --production" in capsys.readouterr().err
