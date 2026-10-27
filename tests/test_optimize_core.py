@@ -1,6 +1,6 @@
 import pytest
 
-from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, stop_for_cap, length_factor, placeholder_problem, split_cases
+from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, stop_for_cap, stuck_reasons, length_factor, placeholder_problem, split_cases
 
 
 def test_split_cases_is_40_25_35_disjoint_and_stable() -> None:
@@ -74,3 +74,23 @@ def test_estimate_needs_the_cheap_runs_dollars() -> None:
 @pytest.mark.parametrize(("spent", "cap", "stop"), [(1.90, 2.00, True), (1.70, 2.00, False), (5.00, None, False)])
 def test_stop_for_cap_counts_the_held_back_reserve(spent: float, cap: float | None, stop: bool) -> None:
     assert stop_for_cap(spent, reserve=0.20, cap=cap) is stop
+
+
+def test_stuck_reasons_names_a_check_that_never_passed_and_two_that_never_pass_together() -> None:
+    records = [
+        (0, "A", {"length": ["too long"], "x": [], "y": []}),
+        (1, "A", {"length": ["too long"], "x": [], "y": []}),
+        (0, "B", {"length": [], "x": ["no"], "y": []}),
+        (1, "B", {"length": [], "x": [], "y": ["no"]}),
+    ]
+
+    assert stuck_reasons(records) == [
+        "length never passed on case A in any version: this needs more input data or a different model",
+        "x and y never passed together on case B: these two rules may conflict",
+    ]
+
+
+def test_stuck_reasons_is_empty_when_every_check_passed_somewhere_together() -> None:
+    records = [(0, "A", {"x": ["no"], "y": []}), (1, "A", {"x": [], "y": []})]
+
+    assert stuck_reasons(records) == []
