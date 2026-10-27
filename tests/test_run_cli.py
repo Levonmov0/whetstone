@@ -7,6 +7,7 @@ import pytest
 
 from tests.fakes import FakeModel
 from whetstone.entry.cli import run
+from whetstone.platform.model import ModelError
 
 HARNESS = (
     "import json, sys\n"
@@ -104,3 +105,28 @@ def test_each_generation_is_the_production_request_with_only_model_and_editable_
         expected = {"model": "cheap-model", "max_tokens": 50, "tools": [{"name": "t"}], "messages": [{"role": "user", "content": [instruction, line]}]}
         assert request == expected
     assert {r["messages"][0]["content"][0]["text"] for r in model.requests} == texts
+
+
+def test_a_run_with_no_new_version_fails_loudly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_run_suite(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    code = start_run(writer(), rewriter("Be brief."))
+
+    assert code == 1
+    assert "GEPA produced no new version" in capsys.readouterr().out
+    assert not list((prompt / "runs").glob("run-*/candidate.txt"))
+
+
+def test_a_run_whose_rewrites_all_fail_says_why(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_run_suite(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    def broken(_request: dict[str, Any]) -> str:
+        raise ModelError("claude failed: Not logged in")
+
+    code = start_run(writer(), FakeModel(broken))
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "GEPA produced no new version" in out and "claude failed: Not logged in" in out
