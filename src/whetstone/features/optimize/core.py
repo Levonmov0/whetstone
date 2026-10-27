@@ -17,5 +17,10 @@ def split_cases(case_ids: list[str]) -> tuple[list[str], list[str], list[str]]:
     return ordered[:train], ordered[train : train + select], ordered[train + select :]
 
 
+MAX_GROWTH = 1.5
+
+
 def length_factor(original: int, length: int) -> float:
-    raise NotImplementedError
+    """What a version's score is multiplied by: 1 up to 1.5 times the original's length, then less the longer it gets,
+    so a version three times as long scores half."""
+    return min(1.0, MAX_GROWTH * original / length)
