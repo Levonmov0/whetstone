@@ -37,3 +37,7 @@ def placeholder_problem(original: str, candidate: str) -> str | None:
     before, after = Counter(PLACEHOLDER.findall(original)), Counter(PLACEHOLDER.findall(candidate))
     problems = [f"drops placeholder {p}" for p in before - after] + [f"adds placeholder {p}" for p in after - before]
     return "; ".join(problems) or None
+
+
+def case_score(failures: dict[str, list[str]], factor: float) -> tuple[float, str]:
+    raise NotImplementedError

@@ -1,6 +1,6 @@
 import pytest
 
-from whetstone.features.optimize.core import SplitError, length_factor, placeholder_problem, split_cases
+from whetstone.features.optimize.core import SplitError, case_score, length_factor, placeholder_problem, split_cases
 
 
 def test_split_cases_is_40_25_35_disjoint_and_stable() -> None:
@@ -44,3 +44,10 @@ ORIGINAL = "Hi {{name}}, see you ${day}."
 )
 def test_placeholder_problem(original: str, candidate: str, problem: str | None) -> None:
     assert placeholder_problem(original, candidate) == problem
+
+
+def test_case_score_is_the_share_of_checks_passed_times_the_length_factor() -> None:
+    failures = {"length": ["Over 76 characters."], "no_number": [], "assumes (judge)": []}
+
+    assert case_score(failures, factor=1.0) == (pytest.approx(2 / 3), "Broke these rules:\n- length: Over 76 characters.")
+    assert case_score({"length": [], "no_number": []}, factor=0.5) == (0.5, "All checks passed.")
