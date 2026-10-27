@@ -15,3 +15,7 @@ def split_cases(case_ids: list[str]) -> tuple[list[str], list[str], list[str]]:
     ordered = sorted(case_ids, key=lambda case_id: hashlib.sha256(case_id.encode()).hexdigest())
     train, select = round(0.4 * len(ordered)), round(0.25 * len(ordered))
     return ordered[:train], ordered[train : train + select], ordered[train + select :]
+
+
+def length_factor(original: int, length: int) -> float:
+    raise NotImplementedError

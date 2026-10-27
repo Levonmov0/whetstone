@@ -1,6 +1,6 @@
 import pytest
 
-from whetstone.features.optimize.core import SplitError, split_cases
+from whetstone.features.optimize.core import SplitError, length_factor, split_cases
 
 
 def test_split_cases_is_40_25_35_disjoint_and_stable() -> None:
@@ -22,3 +22,8 @@ def test_split_cases_gives_each_set_one_of_three() -> None:
 def test_split_cases_needs_three() -> None:
     with pytest.raises(SplitError, match="a run needs at least 3 cases; this prompt has 2"):
         split_cases(["a", "b"])
+
+
+@pytest.mark.parametrize(("length", "factor"), [(100, 1.0), (150, 1.0), (225, 2 / 3), (300, 0.5)])
+def test_length_factor_scores_down_versions_over_one_and_a_half_times_the_original(length: int, factor: float) -> None:
+    assert length_factor(original=100, length=length) == pytest.approx(factor)
