@@ -148,3 +148,17 @@ def test_new_versions_that_never_beat_the_original_on_selection_fail_loudly(
     assert code == 1
     assert "no new version beat the original on the selection cases" in capsys.readouterr().out
     assert not list((prompt / "runs").glob("run-*/candidate.txt"))
+
+
+def test_a_rewrite_that_drops_a_placeholder_is_never_generated_and_never_wins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_run_suite(tmp_path)
+    (prompt / "harness.py").write_text(HARNESS.replace("Be brief.", "Be brief, {{name}}."))
+    toml = (prompt / "prompt.toml").read_text().replace('"Be brief."', '"Be brief, {{name}}."')
+    (prompt / "prompt.toml").write_text(toml)
+    model = writer()
+    monkeypatch.chdir(tmp_path)
+
+    code = start_run(model, rewriter("Be brief. Keep it short."))
+
+    assert code == 1
+    assert all(request["system"] == "Be brief, {{name}}." for request in model.requests)
