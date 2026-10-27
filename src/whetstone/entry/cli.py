@@ -216,9 +216,12 @@ def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeM
 
 def start_production_run(prompt: PromptSettings, budget: int, yes: bool) -> int:
     try:
-        price = prices(prompt.workspace)[prompt.model]
+        table = prices(prompt.workspace)
     except PromptError as e:
         raise Stop(str(e)) from None
+    price = table.get(prompt.model)
+    if price is None:
+        raise Stop(f"[prices] in whetstone.toml has no price for {prompt.model}; a production run needs one to estimate its cost")
     expected = production_estimate(prompt, budget, price)
     print(f"a production run on {prompt.model}: about ${expected:.2f}; it stops at ${2 * expected:.2f}. Rerun with --yes to start.")
     return 0
