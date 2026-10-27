@@ -209,3 +209,37 @@ def test_a_run_needs_three_cases(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert code == 2
     assert "a run needs at least 3 cases; this prompt has 2" in capsys.readouterr().err
     assert model.requests == []
+
+
+def test_the_cost_record_prices_each_role(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_run_suite(tmp_path, settings='[prices]\n"cheap-model" = [1, 5]\n')
+    model, rewrite = writer(), FakeModel(lambda _r: "```\nBe brief. Keep it short.\n```", cost_usd=0.05)
+    monkeypatch.chdir(tmp_path)
+
+    start_run(model, rewrite)
+
+    cost = json.loads((run_folder(prompt) / "cost.json").read_text())
+    calls = len(model.requests)
+    assert cost["generation"] == {"calls": calls, "input_tokens": 10 * calls, "output_tokens": 5 * calls, "dollars": pytest.approx(calls * 35e-6)}
+    assert cost["rewrite"]["calls"] == len(rewrite.requests) and cost["rewrite"]["dollars"] == pytest.approx(0.05 * len(rewrite.requests))
+    assert cost["judge"] == {"calls": 0, "input_tokens": 0, "output_tokens": 0, "dollars": 0.0}
+
+
+def test_a_model_without_a_price_costs_unknown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_run_suite(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    start_run(writer(), rewriter())
+
+    assert json.loads((run_folder(prompt) / "cost.json").read_text())["generation"]["dollars"] is None
+    assert "$ unknown" in (run_folder(prompt) / "report.md").read_text()
+
+
+def test_a_bad_prices_table_exits_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_run_suite(tmp_path, settings='[prices]\n"cheap-model" = "cheap"\n')
+    monkeypatch.chdir(tmp_path)
+
+    code = start_run(writer(), rewriter())
+
+    assert code == 2
+    assert "[prices] maps each model to [input, output] dollars per million tokens" in capsys.readouterr().err
