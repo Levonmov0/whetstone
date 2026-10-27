@@ -243,3 +243,14 @@ def test_a_bad_prices_table_exits_2(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
     assert code == 2
     assert "[prices] maps each model to [input, output] dollars per million tokens" in capsys.readouterr().err
+
+
+def test_progress_is_shown_as_versions_are_scored(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_run_suite(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    start_run(writer(), rewriter())
+
+    out = capsys.readouterr().out.splitlines()
+    assert "version 1: 0 of 2 checks passing on selection cases (best so far)" in out
+    assert "version 2: 2 of 2 checks passing on selection cases (best so far)" in out
