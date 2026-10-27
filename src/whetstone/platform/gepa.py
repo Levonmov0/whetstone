@@ -40,8 +40,7 @@ def optimize(seed: str, train: list[str], select: list[str], evaluate: Evaluate,
         valset=select,
         adapter=_Adapter(evaluate),
         reflection_lm=lambda prompt: reflect(prompt if isinstance(prompt, str) else "\n\n".join(str(m["content"]) for m in prompt)),
-        reflection_minibatch_size=3,
         max_metric_calls=budget,
         stop_callbacks=[stopper],
-        raise_on_exception=True,
+        raise_on_exception=True,  # GEPA's default, relied on: a Stop or CapReached in evaluate must end the run
     )
