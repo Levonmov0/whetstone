@@ -69,7 +69,10 @@ def run_optimize(suite: Suite, prompt_dir: Path, editable: str, model: str, rewr
         why = f"; the last rewrite failed: {rewrite_errors[-1]}" if rewrite_errors else ""
         print(f"GEPA produced no new version{why}")
         return 1
-    best = max(versions, key=lambda version: version[1])[0]
+    best = max(versions, key=lambda version: version[1])[0]  # the first, so the original, on a tie
+    if best == editable:
+        print("no new version beat the original on the selection cases")
+        return 1
 
     held_failures: dict[str, dict[str, dict[str, list[str]]]] = {"original": {}, "candidate": {}}
     totals = {"original": 0.0, "candidate": 0.0}
