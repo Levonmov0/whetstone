@@ -83,3 +83,28 @@ def test_no_claude_on_path_is_a_model_error(tmp_path: Path, monkeypatch: pytest.
 
     with pytest.raises(ModelError, match="Claude Code's claude command was not found; install it, or set rewrite.via = \"api\""):
         claude_code_model()(REQUEST)
+
+
+def test_a_failed_claude_call_says_why(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Claude Code prints its error as the JSON result on stdout and exits 1; stderr says little.
+    fake_claude(tmp_path, monkeypatch, json.dumps({"type": "result", "is_error": True, "result": "Not logged in · Please run /login"}), code=1)
+
+    with pytest.raises(ModelError, match="claude failed: Not logged in"):
+        claude_code_model()(REQUEST)
+
+
+@pytest.mark.parametrize("reply", [json.dumps({"type": "result", "is_error": False, "result": "x"}), json.dumps(["not", "an", "object"])])
+def test_an_unexpected_claude_reply_is_a_model_error(reply: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_claude(tmp_path, monkeypatch, reply)
+
+    with pytest.raises(ModelError, match="claude printed an unexpected reply"):
+        claude_code_model()(REQUEST)
+
+
+def test_a_hung_claude_call_times_out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_claude(tmp_path, monkeypatch, REPLY)
+    script = tmp_path / "bin" / "claude"
+    script.write_text(script.read_text().replace("import json, os, sys\n", "import json, os, sys, time\ntime.sleep(5)\n"))
+
+    with pytest.raises(ModelError, match="claude took longer than 0.5s"):
+        claude_code_model(timeout=0.5)(REQUEST)
