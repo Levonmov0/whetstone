@@ -79,3 +79,28 @@ def test_held_back_cases_never_reach_gepa(tmp_path: Path, monkeypatch: pytest.Mo
     is_held = [request["messages"][0]["content"] in held for request in model.requests]
     assert True in is_held
     assert is_held.index(True) > max(i for i, h in enumerate(is_held) if not h)
+
+
+BLOCKS_HARNESS = (
+    "import json, sys\n"
+    "case = json.load(sys.stdin)\n"
+    'print(json.dumps({"model": "prod-model", "max_tokens": 50, "tools": [{"name": "t"}], '
+    '"messages": [{"role": "user", "content": [{"type": "text", "text": "Be brief."}, {"type": "text", "text": case["text"]}]}]}))\n'
+)
+
+
+def test_each_generation_is_the_production_request_with_only_model_and_editable_swapped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_run_suite(tmp_path)
+    (prompt / "harness.py").write_text(BLOCKS_HARNESS)
+    model = FakeModel(lambda request: request["messages"][0]["content"][1]["text"] + ("" if "short" in json.dumps(request) else " LONG"))
+    monkeypatch.chdir(tmp_path)
+
+    start_run(model, rewriter())
+
+    texts = {"Be brief.", "Be brief. Keep it short."}
+    for request in model.requests:
+        [instruction, line] = request["messages"][0]["content"]
+        assert instruction["text"] in texts
+        expected = {"model": "cheap-model", "max_tokens": 50, "tools": [{"name": "t"}], "messages": [{"role": "user", "content": [instruction, line]}]}
+        assert request == expected
+    assert {r["messages"][0]["content"][0]["text"] for r in model.requests} == texts
