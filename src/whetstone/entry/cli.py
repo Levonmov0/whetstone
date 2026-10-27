@@ -201,8 +201,7 @@ def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeM
         raise Stop("\n".join(advice))
     print("".join(f"{line}\n" for line in advice), end="")
     suite = prepare_suite(prompt, make_model, lambda workspace: meter.wrap("judge", make_judge(workspace)))
-    assert prompt.editable is not None  # prepare_suite stops without one
-    return run_optimize(suite, prompt.dir, prompt.editable, model, make_rewrite(prompt.workspace), budget, new_deck_id(), meter)
+    return run_optimize(suite, prompt, model, make_rewrite(prompt.workspace), budget, new_deck_id(), meter)
 
 
 def verify_harness(prompt: PromptSettings, case_id: str, expected_file: Path) -> int:

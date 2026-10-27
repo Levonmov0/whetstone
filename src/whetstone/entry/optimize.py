@@ -1,12 +1,15 @@
 """An optimizing run: GEPA rewrites the editable part against the suite, and the winner is tried on held-back cases."""
 
 import json
+import random
+import secrets
 from dataclasses import asdict
-from pathlib import Path
 from typing import Any
 
-from whetstone.entry.suite import Stop, Suite
+from whetstone.entry.suite import Stop, Suite, card
+from whetstone.features.grading.store import save_deck
 from whetstone.features.optimize.core import RoleCost, SplitError, case_score, length_factor, placeholder_problem, progress_line, run_report, split_cases, stuck_reasons, swap_editable
+from whetstone.features.workspace.load import PromptSettings
 from whetstone.platform.gepa import optimize
 from whetstone.platform.model import ModelCall, ModelError, ModelResult
 
@@ -38,8 +41,10 @@ class Meter:
         return metered
 
 
-def run_optimize(suite: Suite, prompt_dir: Path, editable: str, model: str, rewrite: ModelCall, budget: int, run_id: str, meter: Meter) -> int:
+def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: ModelCall, budget: int, run_id: str, meter: Meter) -> int:
     """`suite`'s model and judges are already metered by `meter`."""
+    prompt_dir, editable = prompt.dir, prompt.editable
+    assert editable is not None  # the suite was prepared, which needs it
     try:
         train, select, held = split_cases([case_id for case_id, _, _ in suite.requests])
     except SplitError as e:
@@ -93,11 +98,17 @@ def run_optimize(suite: Suite, prompt_dir: Path, editable: str, model: str, rewr
 
     held_failures: dict[str, dict[str, dict[str, list[str]]]] = {"original": {}, "candidate": {}}
     totals = {"original": 0.0, "candidate": 0.0}
+    cards: list[dict[str, Any]] = []
+    versions_by_tag: dict[str, str] = {}  # each card's tag -> the version that wrote it; tags name no case
     for version, text in (("original", editable), ("candidate", best)):
         for case_id in held:
-            value, _, _, _, failures = score(text, case_id)
+            value, _, case_input, output, failures = score(text, case_id)
             held_failures[version][case_id] = failures
             totals[version] += value
+            tag = secrets.token_hex(4)
+            cards.append(card(case_id, case_input, output, failures) | {"tag": tag})
+            versions_by_tag[tag] = version
+    random.shuffle(cards)
     average = {version: total / len(held) for version, total in totals.items()}
 
     folder = prompt_dir / "runs" / f"run-{run_id}"
@@ -105,5 +116,7 @@ def run_optimize(suite: Suite, prompt_dir: Path, editable: str, model: str, rewr
     (folder / "split.json").write_text(json.dumps({"training": train, "selection": select, "held_back": held}, indent=2))
     (folder / "candidate.txt").write_text(best)
     (folder / "cost.json").write_text(json.dumps({role: asdict(cost) for role, cost in meter.spent.items()}, indent=2))
+    (folder / "cards.json").write_text(json.dumps(versions_by_tag, indent=2))
     (folder / "report.md").write_text(run_report(prompt_dir.name, editable, best, held_failures, average, meter.spent, stuck_reasons(records)))
+    save_deck(prompt.workspace, prompt_dir.name, cards, run_id)
     return 0
