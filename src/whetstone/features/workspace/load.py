@@ -104,3 +104,20 @@ def prices(workspace: Path) -> dict[str, tuple[float, float]]:
     if entries is None or not valid:
         raise PromptError(f"{workspace / 'whetstone.toml'}: [prices] maps each model to [input, output] dollars per million tokens")
     return {model: (float(v[0]), float(v[1])) for model, v in entries.items()}
+
+
+def rewrite_settings(workspace: Path) -> tuple[str, str | None]:
+    """How rewrites run, from `[models] rewrite` in whetstone.toml: "claude-code" (the default) or "api", and the
+    model to ask for, when one is named. The API needs one."""
+    settings_file = workspace / "whetstone.toml"
+    models = _workspace_settings(workspace).get("models")
+    rewrite: Any = cast(dict[str, Any], models).get("rewrite", {}) if isinstance(models, dict) else {}
+    settings = cast(dict[str, Any], rewrite) if isinstance(rewrite, dict) else {}
+    via, model = settings.get("via", "claude-code"), settings.get("model")
+    if via not in ("claude-code", "api"):
+        raise PromptError(f'{settings_file}: [models] rewrite.via must be "claude-code" or "api"')
+    if model is not None and not isinstance(model, str):
+        raise PromptError(f"{settings_file}: [models] rewrite.model must be a model name")
+    if via == "api" and model is None:
+        raise PromptError(f'{settings_file}: [models] rewrite.via = "api" needs a model')
+    return cast(str, via), model

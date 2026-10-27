@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx2 as httpx
 import qrcode
 
 from whetstone.entry.optimize import Meter, production_estimate, run_optimize
@@ -23,9 +24,10 @@ from whetstone.features.checks.load import CheckLoadError, code_check_reasons
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
 from whetstone.features.workspace.core import request_differences
-from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, phone_access, prices, prompt_names
+from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, load_prompt, phone_access, prices, prompt_names, rewrite_settings
 from whetstone.platform.anthropic import anthropic_model
-from whetstone.platform.config import load_key
+from whetstone.platform.claude_code import claude_code_model
+from whetstone.platform.config import MissingKey, load_key
 from whetstone.platform.daemon import command_line, is_running, start_detached, stop, write_private
 from whetstone.platform.model import ModelCall, ModelError
 from whetstone.platform.network import TailscaleError, TailscaleMissing, lan_address, tailscale_address
@@ -71,6 +73,7 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
     source.add_argument("--consented-on", required=True, help="the date they consented, such as 2026-10-26")
     args = parser.parse_args(argv)
     make_judge = make_judge or production_judge
+    make_rewrite = make_rewrite or production_rewrite
 
     try:
         if args.command == "serve" and args.stop:
@@ -89,7 +92,6 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
         if args.command == "run":
             if args.model is None:
                 raise Stop("pass --model <a cheap model>, or --production")
-            assert make_rewrite
             return start_run(prompt, args.model, args.budget, make_model, make_judge, make_rewrite)
         if args.command == "agreement":
             return show_agreement(prompt, make_judge)
@@ -206,15 +208,19 @@ def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeM
         raise Stop(str(e)) from None
     # The suite first: it is vetted without a model call, and the judge gate then spends judge calls.
     suite = prepare_suite(prompt, make_model, lambda workspace: meter.wrap("judge", make_judge(workspace)))
+    try:
+        rewrite = make_rewrite(prompt.workspace)
+    except (PromptError, MissingKey) as e:
+        raise Stop(str(e)) from None
     gates = judge_gates(prompt, lambda workspace: meter.wrap("judge", make_judge(workspace))) or {}
     allowed, advice = optimize_gate({name: (status, lines) for name, (_rows, status, lines) in gates.items()})
     if not allowed:
         raise Stop("\n".join(advice))
     print("".join(f"{line}\n" for line in advice), end="")
-    return run_optimize(suite, prompt, model, make_rewrite(prompt.workspace), budget, new_deck_id(), meter, cap)
+    return run_optimize(suite, prompt, model, rewrite, budget, new_deck_id(), meter, cap)
 
 
-def start_production_run(prompt: PromptSettings, budget: int, yes: bool, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite | None) -> int:
+def start_production_run(prompt: PromptSettings, budget: int, yes: bool, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite) -> int:
     try:
         table = prices(prompt.workspace)
     except PromptError as e:
@@ -226,7 +232,6 @@ def start_production_run(prompt: PromptSettings, budget: int, yes: bool, make_mo
     print(f"a production run on {prompt.model}: about ${expected:.2f}; it stops at ${2 * expected:.2f}." + ("" if yes else " Rerun with --yes to start."), flush=True)
     if not yes:
         return 0
-    assert make_rewrite
     return start_run(prompt, prompt.model, budget, make_model, make_judge, make_rewrite, cap=2 * expected)
 
 
@@ -443,6 +448,13 @@ def _verdict(label: dict[str, Any]) -> str:
 
 def production_model(settings: PromptSettings) -> ModelCall:
     return anthropic_model(load_key(settings.workspace, "GENERATION_API_KEY"))
+
+
+def production_rewrite(workspace: Path, transport: httpx.BaseTransport | None = None) -> ModelCall:
+    """Rewrites through Claude Code's headless mode by default, else the Anthropic API with their own key."""
+    via, model = rewrite_settings(workspace)
+    call = anthropic_model(load_key(workspace, "REWRITE_API_KEY"), transport) if via == "api" else claude_code_model()
+    return (lambda request: call({**request, "model": model})) if model else call
 
 
 def production_judge(workspace: Path) -> ModelCall:
