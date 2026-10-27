@@ -200,12 +200,13 @@ def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeM
         meter = Meter(prices(prompt.workspace))
     except PromptError as e:
         raise Stop(str(e)) from None
+    # The suite first: it is vetted without a model call, and the judge gate then spends judge calls.
+    suite = prepare_suite(prompt, make_model, lambda workspace: meter.wrap("judge", make_judge(workspace)))
     gates = judge_gates(prompt, lambda workspace: meter.wrap("judge", make_judge(workspace))) or {}
     allowed, advice = optimize_gate({name: (status, lines) for name, (_rows, status, lines) in gates.items()})
     if not allowed:
         raise Stop("\n".join(advice))
     print("".join(f"{line}\n" for line in advice), end="")
-    suite = prepare_suite(prompt, make_model, lambda workspace: meter.wrap("judge", make_judge(workspace)))
     return run_optimize(suite, prompt, model, make_rewrite(prompt.workspace), budget, new_deck_id(), meter)
 
 
