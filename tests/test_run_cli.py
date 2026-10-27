@@ -62,3 +62,20 @@ def test_a_run_drives_gepa_to_a_better_prompt(tmp_path: Path, monkeypatch: pytes
     assert "short" in (folder / "candidate.txt").read_text()
     assert (folder / "report.md").is_file()
     assert set(json.loads((folder / "cost.json").read_text())) == {"generation", "judge", "rewrite"}
+
+
+def test_held_back_cases_never_reach_gepa(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_run_suite(tmp_path)
+    model, rewrite = writer(), rewriter()
+    monkeypatch.chdir(tmp_path)
+
+    start_run(model, rewrite)
+
+    split = json.loads((run_folder(prompt) / "split.json").read_text())
+    assert sorted(split) == ["held_back", "selection", "training"]
+    assert sorted(split["training"] + split["selection"] + split["held_back"]) == sorted(f"case-{i}" for i in range(10))
+    held = {f"Line {case_id.removeprefix('case-')}." for case_id in split["held_back"]}
+    assert not any(text in json.dumps(request) for request in rewrite.requests for text in held)
+    is_held = [request["messages"][0]["content"] in held for request in model.requests]
+    assert True in is_held
+    assert is_held.index(True) > max(i for i, h in enumerate(is_held) if not h)
