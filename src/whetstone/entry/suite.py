@@ -18,6 +18,7 @@ from whetstone.platform.model import ModelCall, ModelError
 
 MakeModel = Callable[[PromptSettings], ModelCall]
 MakeJudge = Callable[[Path], ModelCall]  # takes the workspace, whose .env holds the judge key
+MakeRewrite = Callable[[Path], ModelCall]  # takes the workspace, whose whetstone.toml says how rewrites run
 Ask = Callable[[str, Rubric, str, Any, Any], list[str]]  # judge name, rubric, case id, input, output -> failures
 
 

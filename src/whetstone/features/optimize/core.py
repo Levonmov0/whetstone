@@ -5,6 +5,7 @@ import hashlib
 import re
 from collections import Counter
 from dataclasses import dataclass
+from typing import Any, cast
 
 
 class SplitError(Exception):
@@ -150,3 +151,12 @@ def run_report(
         lines += ["", "## Why it may be stuck", "", *(f"- {reason}" for reason in stuck)]
     return "\n".join(lines) + "\n"
 
+
+
+def swap_editable(request: dict[str, Any], editable: str, text: str) -> dict[str, Any]:
+    """The request with its editable part replaced by `text`: in the system prompt and each message's text."""
+
+    def swap(content: Any) -> Any:
+        return cast(str, content).replace(editable, text)
+
+    return {**request, "system": swap(request["system"]), "messages": [{**message, "content": swap(message["content"])} for message in request["messages"]]}

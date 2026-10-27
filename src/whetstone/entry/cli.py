@@ -12,7 +12,8 @@ from typing import Any
 
 import qrcode
 
-from whetstone.entry.suite import MakeJudge, MakeModel, Stop, build, card, judges_or_stop, prepare_judge, prepare_suite, providers_or_stop
+from whetstone.entry.optimize import Meter, run_optimize
+from whetstone.entry.suite import MakeJudge, MakeModel, MakeRewrite, Stop, build, card, judges_or_stop, prepare_judge, prepare_suite, providers_or_stop
 from whetstone.features.baseline.core import baseline_report, swipe_section
 from whetstone.features.baseline.store import card_models, latest_run, save_run
 from whetstone.features.cases.load import load_cases
@@ -31,7 +32,7 @@ from whetstone.platform.network import TailscaleError, TailscaleMissing, lan_add
 from whetstone.platform.openai import openai_model
 
 
-def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = None) -> int:
+def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = None, make_rewrite: MakeRewrite | None = None) -> int:
     parser = argparse.ArgumentParser(prog="whetstone")
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("check", help="run every case through the prompt and its checks")
@@ -47,11 +48,15 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
     settle = commands.add_parser("settle", help="record your call on a card graders disagree on")
     serve = commands.add_parser("serve", help="start the swipe server in the background and show its QR code")
     source = commands.add_parser("add-source", help="make a private folder for one real-data source and record its consent")
-    for command in (check, verify, source, disagree, settle, reasons, agree, baseline):
+    optimize = commands.add_parser("run", help="optimize the prompt's editable part with GEPA, and test the winner on held-back cases")
+    optimize.add_argument("--model", required=True, help="the cheap model to generate on")
+    optimize.add_argument("--budget", type=int, default=150, help="the most generation calls GEPA may make")
+    optimize.add_argument("--foreground", action="store_true", help="run here instead of in the background")
+    for command in (check, verify, source, disagree, settle, reasons, agree, baseline, optimize):
         command.add_argument("prompt")
     serve.add_argument("prompt", nargs="?")
     serve.add_argument("--stop", action="store_true", help="stop the running swipe server")
-    for command in (check, verify, source, disagree, settle, serve, reasons, agree, baseline):
+    for command in (check, verify, source, disagree, settle, serve, reasons, agree, baseline, optimize):
         command.add_argument("--workspace", type=Path, help="the workspace folder, when it is not ./ or ./whetstone/")
     serve.add_argument("--host", help="the address to listen on")
     settle.add_argument("card", help="the card id, as disagreements prints it")
@@ -74,6 +79,9 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
             return refresh_baseline_report(prompt)
         if args.command == "baseline":
             return run_baseline(prompt, [m for m in args.models.split(",") if m], make_model, make_judge)
+        if args.command == "run":
+            assert make_rewrite
+            return start_run(prompt, args.model, args.budget, make_model, make_judge, make_rewrite)
         if args.command == "agreement":
             return show_agreement(prompt, make_judge)
         if args.command == "reasons":
@@ -180,6 +188,13 @@ def refresh_baseline_report(prompt: PromptSettings) -> int:
     deck_id = folder.name.removeprefix("baseline-")
     report.write_text(swipe_section(report.read_text(), load_labels(prompt.dir), deck_id, card_models(folder)))
     return 0
+
+
+def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite) -> int:
+    meter = Meter()
+    suite = prepare_suite(prompt, make_model, lambda workspace: meter.wrap("judge", make_judge(workspace)))
+    assert prompt.editable is not None  # prepare_suite stops without one
+    return run_optimize(suite, prompt.dir, prompt.editable, model, make_rewrite(prompt.workspace), budget, new_deck_id(), meter)
 
 
 def verify_harness(prompt: PromptSettings, case_id: str, expected_file: Path) -> int:
