@@ -41,4 +41,4 @@ whetstone settle <prompt> <card-id> good|bad --grader "<user's name>" --note "<t
 
 A disagreement usually means an unwritten rule. Ask the user to say it in one sentence, and put that in `--note`.
 
-Done when `whetstone disagreements <prompt>` prints `nothing to settle`. Then tell the user how many cards were graded, by whom, and that the next step is turning the left-swipe reasons into checks.
+Done when `whetstone disagreements <prompt>` prints `nothing to settle`. Then tell the user how many cards were graded and by whom, and that `/whetstone:checks` turns the left-swipe reasons into checks next.

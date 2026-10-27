@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "anthropic",
     "httpx2>=2.16.0",
+    "openai>=3.39.0",
     "python-dotenv",
     "qrcode>=8.2",
     "starlette>=1.10.0",

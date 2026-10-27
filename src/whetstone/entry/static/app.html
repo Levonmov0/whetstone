@@ -23,7 +23,17 @@
     transition: transform 0.2s ease, opacity 0.2s ease; position: relative;
   }
   .card.dragging { transition: none; }
-  .stamp { position: absolute; top: 12px; right: 12px; font-weight: 700; font-size: 14px; letter-spacing: 0.08em; opacity: 0; text-transform: uppercase; }
+  .stamp {
+    position: absolute; top: 12px; right: 12px; font-weight: 800; font-size: 22px; letter-spacing: 0.08em; opacity: 0;
+    text-transform: uppercase; border: 3px solid currentColor; border-radius: 8px; padding: 2px 10px; transform: rotate(-8deg);
+  }
+  .toast {
+    position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+    padding: 10px 18px; border-radius: 999px; color: var(--ws-surface); font-weight: 700; font-size: 16px;
+    opacity: 0; transition: opacity 0.2s ease; pointer-events: none; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .card, .toast { transition: none; } }
   .output { font-size: 18px; line-height: 1.45; }
   .input { font-size: 15px; line-height: 1.45; margin-top: 8px; }
   .text { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -77,6 +87,7 @@
 <header><span id="progress"></span><button id="rename" type="button" hidden>Not you?</button></header>
 <main id="main"></main>
 <p class="sr-only" aria-live="polite" id="status"></p>
+<div class="toast" id="toast" aria-hidden="true"></div>
 <script>
 "use strict";
 // The token arrives after the # so it is never sent in a URL. Keep it for this tab, then drop it from the address bar and history.
@@ -239,9 +250,10 @@ function enableSwipe(node, stamp) {
     window.removeEventListener("pointerup", end);
     window.removeEventListener("pointercancel", end);
     node.classList.remove("dragging");
+    // A swipe that counts keeps the card where it was let go, stamped, until the save lands and it flies off.
+    if (verdict) return decide(verdict);
     node.style.transform = "";
     stamp.style.opacity = 0;
-    if (verdict) decide(verdict);
   };
   node.addEventListener("pointerdown", (event) => {
     if (start || event.target.closest("summary")) return;
@@ -263,8 +275,10 @@ function direction(dx, dy, threshold) {
 function decide(verdict) {
   if (busy) return;
   const card = cards[0];
-  // A problem a check already catches needs no words from the grader.
-  if (verdict === "bad" && !card.caught_by.length) return askWhy(card);
+  // A problem a code check already catches needs no words from the grader. A judge's catch still asks: the
+  // grader's own reason is what the judge is measured against.
+  const byCode = card.caught_by.filter((name) => !(card.judges || []).includes(name));
+  if (verdict === "bad" && !byCode.length) return askWhy(card);
   send(card, { verdict, reasons: [], note: "" });
 }
 
@@ -281,7 +295,7 @@ function askWhy(card) {
   const note = el("textarea", { id: "note", rows: "7", autocapitalize: "sentences", spellcheck: "true", maxlength: "10000",
     placeholder: "What's wrong with it? Type, or tap the mic on your keyboard and talk it through." });
   const error = el("p", { class: "error", role: "alert" });
-  const close = () => { backdrop.remove(); document.removeEventListener("keydown", onKey); };
+  const close = () => { backdrop.remove(); document.removeEventListener("keydown", onKey); restore(); };
   const onKey = (event) => { if (event.key === "Escape") close(); };
   const save = el("button", { type: "button", class: "save" }, "Save as bad");
   save.addEventListener("click", async () => {
@@ -302,11 +316,48 @@ function askWhy(card) {
   (chips[0] || note).focus();
 }
 
+const LOOK = {
+  good: { stamp: "Good", color: "var(--ws-good)", off: "translateX(130vw) rotate(18deg)", toast: "✓ Saved as good" },
+  bad: { stamp: "Bad", color: "var(--ws-bad)", off: "translateX(-130vw) rotate(-18deg)", toast: "✕ Saved as bad" },
+  skip: { stamp: "Skip", color: "var(--ws-muted)", off: "translateY(-130vh)", toast: "Skipped" },
+};
+
+// The saved card leaves the way it was swiped, so a swipe (or a button) is seen to have counted.
+function flyOff(verdict) {
+  const node = document.querySelector(".card"), stamp = node?.querySelector(".stamp");
+  if (!node || !stamp) return Promise.resolve();
+  const look = LOOK[verdict];
+  stamp.textContent = look.stamp;
+  stamp.style.color = look.color;
+  stamp.style.opacity = 1;
+  node.style.transform = look.off;
+  node.style.opacity = 0;
+  return new Promise((done) => setTimeout(done, 220));
+}
+
+// A swipe that didn't save, or a reason sheet that was cancelled, puts the card back.
+function restore() {
+  const node = document.querySelector(".card"), stamp = node?.querySelector(".stamp");
+  if (node) node.style.transform = "";
+  if (stamp) stamp.style.opacity = 0;
+}
+
+let toastTimer;
+function showToast(verdict) {
+  const toast = document.getElementById("toast");
+  toast.textContent = LOOK[verdict].toast;
+  toast.style.background = LOOK[verdict].color;
+  toast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove("show"), 1400);
+}
+
 async function send(card, swipe, errorNode) {
   busy = true;
   try {
     const result = await api("/api/swipes", { method: "POST", body: JSON.stringify({ card_id: card.card_id, grader, ...swipe }) });
     if (result.status === 401) { tokenProblem(); return false; }
+    if (!result.ok) restore();
     // A newer check replaced the deck: these cards are gone, so fetch the new ones.
     if (result.status === 409 || (result.status === 400 && /in the current deck/.test(result.body.error || ""))) {
       document.querySelector(".sheet-backdrop")?.remove();
@@ -320,10 +371,13 @@ async function send(card, swipe, errorNode) {
       return false;
     }
     status.textContent = `Saved as ${swipe.verdict}.`;
+    await flyOff(swipe.verdict);
+    showToast(swipe.verdict);
     cards.shift();
     render();
     return true;
   } catch {
+    restore();
     (errorNode || document.getElementById("card-error")).textContent = "Couldn't reach the server. Try again.";
     return false;
   } finally {

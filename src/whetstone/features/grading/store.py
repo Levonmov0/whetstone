@@ -14,16 +14,26 @@ def private_dir(workspace: Path) -> Path:
     return folder
 
 
-def save_deck(workspace: Path, prompt: str, cards: list[dict[str, Any]]) -> None:
-    """Replace the prompt's deck. Each card is case_id, input, output and caught_by; card ids are added here."""
-    deck_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+def new_deck_id() -> str:
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+
+
+def save_deck(workspace: Path, prompt: str, cards: list[dict[str, Any]], deck_id: str | None = None) -> str:
+    """Replace the prompt's deck, and give its id. Each card is case_id, input, output and caught_by, plus a tag when one
+    case has several cards; card ids, `<deck-id>:<case-id>[:<tag>]`, are added here."""
+    deck_id = deck_id or new_deck_id()
     decks = private_dir(workspace) / "decks"
     decks.mkdir(exist_ok=True)
-    deck = {"id": deck_id, "cards": [{"card_id": f"{deck_id}:{c['case_id']}", **c} for c in cards]}
+    deck = {"id": deck_id, "cards": [{"card_id": _card_id(deck_id, c), **{k: v for k, v in c.items() if k != "tag"}} for c in cards]}
     # Written aside, then swapped in: the server reads the deck on every request, and must never see half of one.
     partial = decks / f".{prompt}.json.partial"
     partial.write_text(json.dumps(deck, indent=2))
     partial.replace(decks / f"{prompt}.json")
+    return deck_id
+
+
+def _card_id(deck_id: str, card: dict[str, Any]) -> str:
+    return f"{deck_id}:{card['case_id']}" + (f":{card['tag']}" if "tag" in card else "")
 
 
 def load_deck(workspace: Path, prompt: str) -> dict[str, Any] | None:

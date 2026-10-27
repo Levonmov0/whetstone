@@ -81,3 +81,14 @@ def repo_providers(workspace: Path) -> list[str] | None:
     if providers is not None and not (isinstance(providers, list) and all(isinstance(p, str) for p in cast(list[Any], providers))):
         raise PromptError(f"{settings_file}: repo_providers must be a list of provider names")
     return cast(list[str] | None, providers)
+
+
+def judge_model(workspace: Path) -> tuple[str, str]:
+    """The provider and model judges run on, from `[models] judge` in whetstone.toml. OpenAI is the only provider so far;
+    another backend (a cheap classifier) adds its name here."""
+    models = _workspace_settings(workspace).get("models")
+    judge = cast(dict[str, Any], models).get("judge") if isinstance(models, dict) else None
+    settings = cast(dict[str, Any], judge) if isinstance(judge, dict) else {}
+    if not (settings.get("provider") == "openai" and isinstance(settings.get("model"), str)):
+        raise PromptError(f'{workspace / "whetstone.toml"}: [models] judge needs provider = "openai" and a model')
+    return cast(str, settings["provider"]), cast(str, settings["model"])

@@ -20,6 +20,9 @@ The workspace is the one place Whetstone keeps a repo's settings, keys, theme an
       labels.jsonl      swipes on this source's cases
       .gitignore        "*": the folder ignores itself in git
     checks/<name>.py    code checks
+    checks/<name>.judge.toml   judge rubrics, one rule each
+    checks/proposed/    checks Claude proposed and the user hasn't approved; never run
+    runs/baseline-<id>/ one baseline run: cards.json (card id → model) and report.md
     labels.jsonl        swipes on the invented cases
 ```
 
@@ -29,7 +32,7 @@ The workspace is the one place Whetstone keeps a repo's settings, keys, theme an
 repo_providers = ["anthropic"]   # every model provider the repo already calls; real-data cases go only to these
 
 [models]
-judge = { provider = "openai", model = "<model>" }   # another family from the generator
+judge = { provider = "openai", model = "gpt-5.5" }   # another family from the generator; needed once a prompt has a judge
 rewrite = { via = "claude-code" }                    # or { via = "api", model = "<model>" }
 
 [phone]
@@ -82,7 +85,54 @@ It calls the repo's real prompt builder, so a change to the builder shows up in 
 
 ## Code checks
 
-`checks/<name>.py` defines `check(output) -> list[str]`, returning one message per broken rule. An empty list means the check passed. `output` is the tool input dict for a forced tool call, or the reply text otherwise.
+`checks/<name>.py` defines `check(output) -> list[str]`, returning one message per broken rule. An empty list means the check passed. A module-level `REASONS = ["too long"]` (a literal list of text, read without running the check) names the swipe reasons it stands for, for `whetstone reasons`. `output` is the tool input dict for a forced tool call, or the reply text otherwise.
+
+## Judges
+
+A judge is one rule that code can't decide, asked of the judge model as one question. `checks/<name>.judge.toml`:
+
+```toml
+question = "Does the line assume whether the athlete did what Kin advised?"
+guide = '''Optional: what counts and what doesn't, with examples.'''
+pass = "no"
+reasons = ["assumes the outcome"]   # optional: the swipe reasons this judge stands for
+[fail]                              # each failing answer, and the reason it shows
+yes = "assumes whether they did Kin's advice"
+```
+
+- Put `reasons` above `[fail]`: in TOML, every key after `[fail]` belongs to it.
+- The judge must answer with `pass` or one of the `[fail]` names (the request's JSON schema allows only those). A failing answer fails the case, with its text as the message.
+- It sees the case input and the output. It runs on `[models] judge` in `whetstone.toml`, which must be `provider = "openai"`, with `JUDGE_API_KEY`. That's one call per case per judge.
+- A judge and a code check can't share a name.
+- Real-data cases go to a judge only when `repo_providers` lists `openai`; otherwise `check` exits 2 before any call.
+
+`whetstone check` reports judges among the code checks, marked `(judge)`. A card's `caught_by` names them without the mark, and its `judges` lists which of them are judges. A bad swipe with no reasons inherits only the code checks' names: on a card only judges caught, the app asks why, because a judge's own catch must never count as a grader agreeing with it.
+
+## Reasons and agreement
+
+- `whetstone reasons <prompt>` lists every left-swipe reason, and every note given without one, that no check stands for: a code check's name, or a judge's name, failing answer or `reasons`. With none, it prints `every reason has a check`.
+- `whetstone agreement <prompt>` judges each swiped card once, from the input and output its label kept. Then it shows, per judge and grader:
+  - **good:** of the cards the grader's latest swipe called good, how many the judge passed;
+  - **bad:** of the cards called bad for this judge's rule (a reason that is its name, a failing answer or one of its `reasons`), how many it failed.
+
+  Other bad swipes and skips don't count. Each judge is then:
+  - **trusted:** at least 90% on both sides;
+  - **warn:** 80% to 90%;
+  - **untrusted:** below 80% on either side, or with no grader at 5 swipes on a side.
+
+  Every grader with 5 or more swipes on a side must clear that side. It exits 1 when any judge is untrusted. The optimizer (#4) will refuse to run against one.
+
+## Baseline
+
+`whetstone baseline <prompt> --models <a>,<b>` runs every case on the production model and each listed model, all on the production provider, through every check and judge.
+- It vets the suite as `check` does, and prints the call count first.
+- It replaces the prompt's deck with all the outputs, shuffled. Card ids are `<deck-id>:<case-id>:<tag>`, and nothing on a card names its model.
+- `runs/baseline-<deck-id>/cards.json` maps each card's tag to its model. It holds no outputs and no case ids, so it can be committed even when some cases are real data. It is written before the deck is replaced; if it can't be written, the run exits 2 and the old deck stays.
+- Models listed twice run once, and the run goes case by case across the models, so a model that rejects the request fails on the first case.
+- `report.md` says whether a model change alone fixes most of the production model's failures, then gives each model's pass counts and tokens.
+- A model call that fails exits 2 and leaves the previous deck.
+
+`whetstone baseline <prompt> --report` rewrites the latest run's report with each model's good, bad and skip swipes, from each grader's latest swipe on that run's cards.
 
 ## Real-data cases
 
@@ -116,7 +166,7 @@ Each line of `labels.jsonl` is one swipe, self-contained so it outlives the deck
  "grader": "Levon", "verdict": "bad", "reasons": ["too long"], "note": "…", "at": "2026-10-26T08:00:00+00:00"}
 ```
 
-`verdict` is `good`, `bad` or `skip`. A bad swipe with no reasons on a card a check caught takes the check names as reasons. `whetstone settle` adds a line with `"settled": true`.
+`verdict` is `good`, `bad` or `skip`. A bad swipe with no reasons on a card a code check caught takes those checks' names as reasons. `whetstone settle` adds a line with `"settled": true`, carrying the reasons of the latest swipe it sides with.
 
 `whetstone disagreements <prompt>` lists cards where one grader's latest swipe is good and another's is bad, until `whetstone settle <prompt> <card> good|bad --grader <name> [--note <rule>]` records the call.
 
@@ -126,4 +176,4 @@ Each line of `labels.jsonl` is one swipe, self-contained so it outlives the deck
 |---|---|
 | 0 | every case passes every check |
 | 1 | some check failed |
-| 2 | the setup is broken: workspace, whetstone.toml, prompt.toml, no cases, a real-data case without consent or for a provider the repo doesn't use, harness (failing, invalid or over 120s), key, a failed model call, or a check that won't load, crashes or returns something other than a list of messages |
+| 2 | the setup is broken: workspace, whetstone.toml (including `[models] judge` once there's a judge), prompt.toml, no cases, a real-data case without consent or for a provider the repo doesn't use (the judge's included), harness (failing, invalid or over 120s), key, a failed model or judge call, a judge answer that isn't one of its choices, a judge rubric that won't load, or a check that won't load, crashes or returns something other than a list of messages |

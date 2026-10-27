@@ -24,6 +24,7 @@ source_modules =
 forbidden_modules =
     whetstone.platform
     anthropic
+    openai
     dotenv
     httpx2
     os
@@ -39,6 +40,7 @@ source_modules =
     whetstone.features
 forbidden_modules =
     anthropic
+    openai
     dotenv
     httpx2
 allow_indirect_imports = True
