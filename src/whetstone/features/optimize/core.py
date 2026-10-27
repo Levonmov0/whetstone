@@ -157,6 +157,11 @@ def swap_editable(request: dict[str, Any], editable: str, text: str) -> dict[str
     """The request with its editable part replaced by `text`: in the system prompt and each message's text."""
 
     def swap(content: Any) -> Any:
-        return cast(str, content).replace(editable, text)
+        # Content is a string or a list of blocks, of which only text blocks carry prompt text.
+        if isinstance(content, str):
+            return content.replace(editable, text)
+        blocks = cast(list[dict[str, Any]], content)
+        return [{**block, "text": block["text"].replace(editable, text)} if block.get("type") == "text" else block for block in blocks]
 
-    return {**request, "system": swap(request["system"]), "messages": [{**message, "content": swap(message["content"])} for message in request["messages"]]}
+    swapped = {**request, "messages": [{**message, "content": swap(message["content"])} for message in request["messages"]]}
+    return swapped | ({"system": swap(request["system"])} if "system" in request else {})
