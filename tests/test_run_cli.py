@@ -7,6 +7,7 @@ import pytest
 
 from tests.fakes import FakeModel
 from whetstone.entry.cli import run
+from whetstone.features.optimize.core import split_cases
 from whetstone.platform.model import ModelError
 
 HARNESS = (
@@ -130,3 +131,20 @@ def test_a_run_whose_rewrites_all_fail_says_why(tmp_path: Path, monkeypatch: pyt
     out = capsys.readouterr().out
     assert code == 1
     assert "GEPA produced no new version" in out and "claude failed: Not logged in" in out
+
+
+def test_new_versions_that_never_beat_the_original_on_selection_fail_loudly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    prompt = make_run_suite(tmp_path)
+    train, _select, _held = split_cases([f"case-{i}" for i in range(10)])
+    trained = {f"Line {case_id.removeprefix('case-')}." for case_id in train}
+    # Short lines only on training cases: GEPA keeps the rewrite, but it does no better on the selection cases.
+    model = FakeModel(lambda r: r["messages"][0]["content"] + ("" if "short" in r["system"] and r["messages"][0]["content"] in trained else " LONG"))
+    monkeypatch.chdir(tmp_path)
+
+    code = start_run(model, rewriter())
+
+    assert code == 1
+    assert "no new version beat the original on the selection cases" in capsys.readouterr().out
+    assert not list((prompt / "runs").glob("run-*/candidate.txt"))
