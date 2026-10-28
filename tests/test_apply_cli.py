@@ -494,3 +494,14 @@ def test_the_printed_verify_command_names_the_run_and_the_folder(tmp_path: Path,
     assert apply(prompt, "--run", LATER, "--folder", str(out)) == 0
 
     assert f"whetstone apply daily --run {LATER} --folder {out} --verify" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(("line", "message"), [("", 'has no "source"'), ("source = 5\n", "source must be a path")])
+def test_apply_needs_a_source_path(line: str, message: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_repo(tmp_path)
+    toml = prompt / "prompt.toml"
+    toml.write_text(toml.read_text().replace('source = "../src/prompt.txt"\n', line))
+    swiped_run(prompt)
+
+    assert apply(prompt) == 2
+    assert message in capsys.readouterr().err
