@@ -34,3 +34,19 @@ def test_apply_is_exact_or_code_edit(method: str, tmp_path: Path, monkeypatch: p
 
     assert run(["check", "daily"], make_model=unused_model) == 2
     assert 'apply must be "exact" or "code-edit"' in capsys.readouterr().err
+
+
+def voice_prompt(workspace: Path) -> Path:
+    """Editable `Be brief. ${VOICE}`, whose ${VOICE} is built as `Speak plainly.`"""
+    prompt = make_prompt(make_workspace(workspace), harness_building("Be brief. Speak plainly."), {"first-day": {}})
+    (prompt / "editable.txt").write_text("Be brief. ${VOICE}")
+    with (prompt / "prompt.toml").open("a") as toml:
+        toml.write('[placeholders]\n"${VOICE}" = "Speak plainly."\n')
+    return prompt
+
+
+def test_placeholders_are_expanded_before_the_editable_part_is_found(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    voice_prompt(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    assert run(["check", "daily"], make_model=lambda _settings: FakeModel(lambda _request: "ok")) == 0
