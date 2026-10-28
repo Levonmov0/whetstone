@@ -27,8 +27,11 @@ class PromptSettings:
     harness: str
     provider: str
     model: str
-    editable: str | None  # None until init marks it; check needs it, verify-harness does not
+    editable: str | None  # editable.txt, byte for byte; None until init writes it. check needs it, verify-harness does not
     reasons: list[str]  # the swipe app's reason chips
+    placeholders: dict[str, str]  # each placeholder in the editable part -> the text it is built as
+    source: str | None  # the file the editable part lives in, relative to the workspace
+    apply: str  # how a candidate reaches the source: "exact" or "code-edit"
 
 
 def load_prompt(workspace: Path, name: str) -> PromptSettings:
@@ -44,6 +47,19 @@ def load_prompt(workspace: Path, name: str) -> PromptSettings:
     reasons = raw.get("reasons", [])
     if not (isinstance(reasons, list) and all(isinstance(r, str) for r in cast(list[Any], reasons))):
         raise PromptError(f"{settings_file}: reasons must be a list of text")
+    placeholders = raw.get("placeholders", {})
+    if not (isinstance(placeholders, dict) and all(isinstance(v, str) for v in cast(dict[str, Any], placeholders).values())):
+        raise PromptError(f"{settings_file}: [placeholders] must map each placeholder to its text")
+    if not isinstance(raw.get("source", ""), str):
+        raise PromptError(f"{settings_file}: source must be a path, the file the editable part lives in")
+    if raw.get("apply", "exact") not in ("exact", "code-edit"):
+        raise PromptError(f'{settings_file}: apply must be "exact" or "code-edit"')
+    editable_file = prompt_dir / "editable.txt"
+    try:
+        # Bytes, decoded as they are: text mode would turn \r\n into \n, and the text must match the request exactly.
+        editable = editable_file.read_bytes().decode() if editable_file.is_file() else None
+    except (OSError, UnicodeDecodeError) as e:
+        raise PromptError(f"{editable_file}: can't read it as UTF-8 text: {e}") from None
     if raw["provider"] != "anthropic":
         raise PromptError(f'{settings_file}: provider "{raw["provider"]}" is not supported yet; Whetstone calls anthropic only')
     return PromptSettings(
@@ -52,8 +68,11 @@ def load_prompt(workspace: Path, name: str) -> PromptSettings:
         harness=raw["harness"],
         provider=raw["provider"],
         model=raw["model"],
-        editable=raw.get("editable"),
+        editable=editable,
         reasons=cast(list[str], reasons),
+        placeholders=cast(dict[str, str], placeholders),
+        source=raw.get("source"),
+        apply=raw.get("apply", "exact"),
     )
 
 

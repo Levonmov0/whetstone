@@ -14,8 +14,10 @@ from typing import IO, Any
 
 import qrcode
 
+from whetstone.entry.apply import apply_candidate
 from whetstone.entry.optimize import Meter, production_estimate, run_optimize
-from whetstone.entry.suite import MakeJudge, MakeModel, MakeRewrite, Stop, Suite, build, card, judges_or_stop, prepare_judge, prepare_suite, prices_or_stop, providers_or_stop
+from whetstone.entry.suite import editable_or_stop, source_or_stop, MakeJudge, MakeModel, MakeRewrite, Stop, Suite, build, card, judges_or_stop, prepare_judge, prepare_suite, prices_or_stop, providers_or_stop
+from whetstone.features.apply.core import apply_method
 from whetstone.features.baseline.core import baseline_report, swipe_section
 from whetstone.features.baseline.store import card_models, latest_run, save_run
 from whetstone.features.cases.load import load_cases
@@ -40,6 +42,7 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
     parser = argparse.ArgumentParser(prog="whetstone")
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("check", help="run every case through the prompt and its checks")
+    check.add_argument("--case", help="run only this case and show its output; the deck is left as it is")
     verify = commands.add_parser("verify-harness", help="compare the harness's request with a real production request")
     verify.add_argument("--case", required=True, help="the case id to build the request from")
     verify.add_argument("--expected", type=Path, required=True, help="a JSON file holding the request production sent")
@@ -61,11 +64,17 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
     optimize.add_argument("--foreground", action="store_true", help="run here instead of in the background")
     optimize.add_argument("--run-id", help=argparse.SUPPRESS)  # given to the background worker
     optimize.add_argument("--lock-fd", type=int, help=argparse.SUPPRESS)  # the run lock the worker inherits
-    for command in (check, verify, source, disagree, settle, reasons, agree, baseline, optimize):
+    applying = commands.add_parser("apply", help="put a run's candidate into the source, on a new branch")
+    applying.add_argument("--verify", action="store_true", help="commit a code edit once the request its harness builds holds the candidate")
+    applying.add_argument("--folder", nargs="?", const="", help="write the change to this folder instead of leaving a branch; .whetstone/applied/ by default")
+    applying.add_argument("--yes", action="store_true", help="apply even after warnings")
+    applying.add_argument("--run", help="the run to apply, by id; the latest run with a candidate by default")
+    method = commands.add_parser("apply-method", help="say whether the editable part is one fixed string in its source file")
+    for command in (check, verify, source, disagree, settle, reasons, agree, baseline, optimize, method, applying):
         command.add_argument("prompt")
     serve.add_argument("prompt", nargs="?")
     serve.add_argument("--stop", action="store_true", help="stop the running swipe server")
-    for command in (check, verify, source, disagree, settle, serve, reasons, agree, baseline, optimize):
+    for command in (check, verify, source, disagree, settle, serve, reasons, agree, baseline, optimize, method, applying):
         command.add_argument("--workspace", type=Path, help="the workspace folder, when it is not ./ or ./whetstone/")
     serve.add_argument("--host", help="the address to listen on")
     settle.add_argument("card", help="the card id, as disagreements prints it")
@@ -107,6 +116,11 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
             # A worker inherits the lock its starting command took, so no other run can start in between.
             with os.fdopen(args.lock_fd, "w") if args.lock_fd is not None else run_lock(prompt):
                 return start_run(prompt, model, args.budget, make_model, make_judge, make_rewrite, cap, args.run_id or new_deck_id())
+        if args.command == "apply":
+            folder = None if args.folder is None else Path(args.folder) if args.folder else private_dir(prompt.workspace) / "applied"
+            return apply_candidate(prompt, args.run, args.yes, args.verify, folder)
+        if args.command == "apply-method":
+            return show_apply_method(prompt)
         if args.command == "agreement":
             return show_agreement(prompt, make_judge)
         if args.command == "reasons":
@@ -123,7 +137,7 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
             except SourceError as e:
                 raise Stop(str(e)) from None
             return 0
-        return check_prompt(prompt, make_model, make_judge)
+        return check_prompt(prompt, make_model, make_judge, args.case)
     except Stop as e:
         print(e, file=sys.stderr)
         return 2
@@ -147,8 +161,8 @@ def workspace_or_stop(explicit_workspace: Path | None) -> Path:
     return workspace
 
 
-def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: MakeJudge) -> int:
-    suite = prepare_suite(prompt, make_model, make_judge)
+def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: MakeJudge, case: str | None = None) -> int:
+    suite = prepare_suite(prompt, make_model, make_judge, case)
     print(_calls(len(suite.requests), len(suite.requests) * len(suite.judges)), flush=True)
     results: list[CaseResult] = []
     cards: list[dict[str, Any]] = []
@@ -160,10 +174,23 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
         failures = suite.score(case_id, case_input, output)
         results.append(CaseResult(case_id, failures))
         cards.append(card(case_id, case_input, output, failures))
-    save_deck(prompt.workspace, prompt.dir.name, cards)
+        if case is not None:
+            print(output if isinstance(output, str) else json.dumps(output, indent=2, ensure_ascii=False))
+    # One case is a look at its output, not a round of swipes: a one-card deck would replace a blind swipe's.
+    if case is None:
+        save_deck(prompt.workspace, prompt.dir.name, cards)
     lines, code = report(results, suite.check_names())
     print("\n".join(lines))
     return code
+
+
+def show_apply_method(prompt: PromptSettings) -> int:
+    editable = editable_or_stop(prompt)
+    method, why = apply_method(source_or_stop(prompt), editable, str(prompt.source))
+    print(method)
+    if why:
+        print(why)
+    return 0
 
 
 def run_baseline(prompt: PromptSettings, others: list[str], make_model: MakeModel, make_judge: MakeJudge) -> int:

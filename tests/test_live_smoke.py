@@ -43,8 +43,9 @@ def test_a_live_run_on_cheap_models(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     (prompt / "harness.py").write_text(HARNESS)
     (prompt / "checks" / "short.py").write_text(CHECK)
     settings = {"harness": f"{sys.executable} prompts/smoke/harness.py", "provider": "anthropic", "model": "claude-haiku-5-5"}
-    toml = "".join(f"{k} = {json.dumps(v)}\n" for k, v in settings.items()) + 'editable = "Write a friendly line about the topic."\n'
+    toml = "".join(f"{k} = {json.dumps(v)}\n" for k, v in settings.items())
     (prompt / "prompt.toml").write_text(toml)
+    (prompt / "editable.txt").write_text("Write a friendly line about the topic.")
     for i, topic in enumerate(["The year 2026 in running", "Ten tips for sleeping well", "A 5k race on Sunday", "Drinking 3 litres of water"]):
         (prompt / "cases" / f"case-{i}.json").write_text(json.dumps({"topic": topic}))
     monkeypatch.chdir(tmp_path)

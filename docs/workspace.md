@@ -11,6 +11,8 @@ The workspace is the one place Whetstone keeps a repo's settings, keys, theme an
   .whetstone/           the engine's own files: decks, server state and log; ignores itself in git
   prompts/<name>/
     prompt.toml         the prompt's settings
+    editable.txt        the text Whetstone may rewrite, exactly as the source writes it
+    brief.md            what the prompt is for, when it runs, its inputs and output shape (from /whetstone:new)
     harness.*           builds the production request (any language)
     cases/<id>.json     one case per file; any JSON
     cases/proposed/     cases Claude proposed and the user hasn't approved; never run
@@ -24,6 +26,7 @@ The workspace is the one place Whetstone keeps a repo's settings, keys, theme an
     checks/proposed/    checks Claude proposed and the user hasn't approved; never run
     runs/baseline-<id>/ one baseline run: cards.json (card id → model) and report.md
     runs/run-<id>/      one optimizing run: report.md, candidate.txt, cost.json, cards.json, split.json, run.json
+    calibration/        the realistic cases the user approved, and their answers about real input sizes (from /whetstone:cases)
     labels.jsonl        swipes on the invented cases
 ```
 
@@ -44,7 +47,10 @@ access = "lan"        # or "tailscale"; never a public tunnel
 
 [apply]
 target = "branch"     # or "folder"
+skill = "build-kin"   # optional: the repo's own build skill; code edits and new builders are handed to it
 ```
+
+Only the skills read `[apply]`; the engine takes `--folder` instead.
 
 ## .env
 
@@ -64,20 +70,31 @@ The engine reads these from this file only, never from the shell. A key exported
 harness = "pnpm tsx whetstone/prompts/morning-follow-up/harness.ts"  # run from the workspace folder
 provider = "anthropic"  # the only provider the engine calls today
 model = "<production model>"
-editable = '''<the exact text Whetstone may rewrite>'''
-apply = "exact"       # exact | placeholders | code-edit
+source = "../apps/backend/src/domain/ai/prompts/followUpPrompt.ts"  # the file the editable text lives in, from the workspace folder
+apply = "exact"       # exact | code-edit; `whetstone apply-method` says which
 reasons = ["too long", "sounds like a robot"]  # the swipe app's reason chips; optional
+
+[placeholders]        # each placeholder in editable.txt, and the text it is built as
+"${VOICE_EASY_READ}" = "Use short sentences. One idea per sentence."
 ```
 
-- `harness`, `provider` and `model` are required. `editable` and `apply` are added once the harness is verified; `whetstone check` needs `editable`, `verify-harness` does not.
+- `harness`, `provider` and `model` are required. `source`, `apply`, `[placeholders]` and `editable.txt` are added once the harness is verified; `whetstone check` needs `editable.txt`, `verify-harness` does not.
 - The production parameters (`max_tokens`, `temperature`, tools) are not repeated here: they are in the request the harness builds, which is the production request.
 
-- `editable` must appear exactly once in the request the harness builds, counting the system prompt and every message's text.
 - `model` must equal the `model` in the harness's request. A mismatch means the harness has drifted from production.
 - `apply` records how a winning version reaches the source:
-  - `exact`: the editable text is one fixed string in one source file;
-  - `placeholders`: it contains variables that must survive the swap;
-  - `code-edit`: it is assembled from several parts, so Claude edits the code on a branch.
+  - `exact`: the editable text is one fixed string in `source`, so the engine replaces it;
+  - `code-edit`: it is assembled from parts, or written differently in the source (escapes), so Claude edits the code on a branch.
+
+  `whetstone apply-method <prompt>` looks for `editable.txt`'s text in `source` and prints `exact` (found exactly once) or `code-edit` and why. It writes nothing.
+
+## editable.txt and placeholders
+
+`editable.txt` is the part Whetstone may rewrite, byte for byte, nothing escaped: a trailing newline is part of it. It is stored the way the source writes it, with each interpolated constant kept as its placeholder (`${VOICE_EASY_READ}`, `{{name}}`), so shared rules stay in the code that owns them.
+
+- The engine expands each placeholder from `[placeholders]` before every model call and before the "appears exactly once in the request" check: the expanded text must appear exactly once in the request the harness builds, counting the system prompt and every message's text.
+- GEPA sees the placeholders and rewrites the text around them. A version that drops, changes or adds one scores 0. Moving one is allowed.
+- A per-case value can't be in `editable.txt`: the text must be the same in every case's request.
 
 ## The harness contract
 
@@ -159,6 +176,22 @@ yes = "assumes whether they did Kin's advice"
 
 `make smoke` runs a live run on Haiku 5.5 (about $0.10), with `SMOKE_GENERATION_API_KEY` from the repo's `.env` and Claude Code for rewrites. `make check` skips it.
 
+## Applying
+
+`whetstone apply <prompt>` puts a run's candidate into `source`. It never promotes a prompt, never pushes and never touches `main`.
+
+1. It takes the latest run with a candidate, or `--run <id>`, and names it first: `run-<id>, production model, 18/20 held-back passing vs 12/20 original`. It reads `run.json`, which a run with a winner writes with `model`, `original` (the editable text it optimized), `held_back` (`cases`, and how many passed every check on the `original` and the `candidate`) and `within_noise`. A run made before these fields existed must be run again.
+2. It warns when nobody has swiped the run's blind deck, when the held-back result is within noise, or when the original's cards got more good swipes than the candidate's (each grader's latest swipe). With a warning and no `--yes`, it exits 1 and changes nothing.
+3. It makes branch `whetstone/<prompt>-<run-id>` from the commit you are on, in a worktree of its own beside the repo, `<repo>.worktrees/whetstone-<prompt>-<run-id>`. Your checkout, branch and uncommitted work are never touched; uncommitted work is not on the new branch. It refuses a branch name that exists, and `editable.txt` must be committed, as the branch starts from your last commit.
+4. **`exact`:** it replaces the run's original text in `source` (it must appear there exactly once), writes the candidate to `editable.txt`, and builds every case's request with the harness from the branch. When each one holds the candidate exactly once, it makes one local commit of only the source and `editable.txt`, naming the run's report, and removes the worktree; the branch stays. When one doesn't, the harness builds the request from somewhere else: apply removes the branch and worktree, exits 2, and says to set `apply = "code-edit"`. A harness that fails there (a fresh worktree has no `node_modules`) leaves the worktree uncommitted: set it up, then run `whetstone apply <prompt> --verify`.
+5. **`code-edit`:** it makes the branch and worktree, changes nothing, and prints the worktree's path, the old text and the new text. Edit the code there, and run the repo's tests for the changed files. `whetstone apply <prompt> --verify` then builds every case's request from the branch: it exits 1 while one doesn't hold the candidate exactly once, and otherwise commits every change in the worktree with the new `editable.txt`, and lists the files it committed. Apply prints the exact `--verify` command, with `--run` and any `--folder`.
+
+`--folder [<dir>]` runs the same flow, then writes `<dir>/<prompt>-<run-id>/change.patch` (it applies with `git apply`) and each changed file at its repo path, and deletes the branch. The folder defaults to `<workspace>/.whetstone/applied/`; one that exists is refused. Pass `--folder` to `--verify` too.
+
+A workspace outside the repo can't build from the branch: `exact` commits only the source change, and says to rerun init's editable step after merging; `code-edit` is refused.
+
+Commits refuse `main` and the remote's default branch.
+
 ## Real-data cases
 
 A real-data source is one person's or group's data, used with their consent. `whetstone add-source <prompt> <source> --consented-by <who> --consented-on <YYYY-MM-DD>` makes its folder and writes `consent.toml`:
@@ -171,6 +204,10 @@ consented_on = 2026-10-26
 - A real-data case must sit directly in a source folder whose `consent.toml` names who consented and when. One loose in `cases/private/`, nested deeper, or under a missing or incomplete consent record stops `whetstone check` before any harness or model call.
 - Real-data cases are sent only to providers in `repo_providers`. With no `repo_providers`, or a production provider not on it, `check` exits 2 before any call.
 - Their labels stay in the source folder.
+
+## One case
+
+`whetstone check <prompt> --case <id>` runs one case and prints its output and its check results. The id is the case's path under `cases/` without `.json`, so a proposed case is `proposed/<id>`. It leaves the deck alone.
 
 ## Grading
 
@@ -201,4 +238,4 @@ Each line of `labels.jsonl` is one swipe, self-contained so it outlives the deck
 |---|---|
 | 0 | every case passes every check |
 | 1 | some check failed |
-| 2 | the setup is broken: workspace, whetstone.toml (including `[models] judge` once there's a judge), prompt.toml, no cases, a real-data case without consent or for a provider the repo doesn't use (the judge's included), harness (failing, invalid or over 120s), key, a failed model or judge call, a judge answer that isn't one of its choices, a judge rubric that won't load, or a check that won't load, crashes or returns something other than a list of messages |
+| 2 | the setup is broken: workspace, whetstone.toml (including `[models] judge` once there's a judge), prompt.toml, no `editable.txt`, an unknown `--case`, no cases, a real-data case without consent or for a provider the repo doesn't use (the judge's included), harness (failing, invalid or over 120s), key, a failed model or judge call, a judge answer that isn't one of its choices, a judge rubric that won't load, or a check that won't load, crashes or returns something other than a list of messages |

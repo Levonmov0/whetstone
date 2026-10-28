@@ -45,7 +45,7 @@ The run replaced the prompt's deck with the original's and the candidate's outpu
 whetstone run <prompt> --report
 ```
 
-It adds each version's good, bad and skip counts to the report. "Better" means the user prefers it, not only that the score rose.
+It adds each version's good, bad and skip counts to the report. "Better" means the user prefers it, not only that the score rose. When the user wants the candidate in the code, go on with `/whetstone:apply`.
 
 ## 5. The production run (only if the user wants it)
 

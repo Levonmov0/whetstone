@@ -32,8 +32,9 @@ def make_run_suite(workspace: Path, cases: int = 10, settings: str = "") -> Path
     (prompt / "checks").mkdir()
     (prompt / "harness.py").write_text(HARNESS)
     (prompt / "checks" / "short.py").write_text(SHORT_CHECK)
-    toml = {"harness": f"{sys.executable} prompts/daily/harness.py", "provider": "anthropic", "model": "prod-model", "editable": "Be brief."}
+    toml = {"harness": f"{sys.executable} prompts/daily/harness.py", "provider": "anthropic", "model": "prod-model"}
     (prompt / "prompt.toml").write_text("".join(f"{k} = {json.dumps(v)}\n" for k, v in toml.items()))
+    (prompt / "editable.txt").write_text("Be brief.")
     for i in range(cases):
         (prompt / "cases" / f"case-{i}.json").write_text(json.dumps({"text": f"Line {i}."}))
     return prompt
@@ -159,8 +160,7 @@ def test_new_versions_that_never_beat_the_original_on_selection_fail_loudly(
 def test_a_rewrite_that_drops_a_placeholder_is_never_generated_and_never_wins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     prompt = make_run_suite(tmp_path)
     (prompt / "harness.py").write_text(HARNESS.replace("Be brief.", "Be brief, {{name}}."))
-    toml = (prompt / "prompt.toml").read_text().replace('"Be brief."', '"Be brief, {{name}}."')
-    (prompt / "prompt.toml").write_text(toml)
+    (prompt / "editable.txt").write_text("Be brief, {{name}}.")
     model = writer()
     monkeypatch.chdir(tmp_path)
 
@@ -608,3 +608,16 @@ def test_a_background_start_vets_the_run_before_detaching(setup: str, tmp_path: 
     assert code == 2
     assert "started in the background" not in capsys.readouterr().out
     assert not list((tmp_path / ".whetstone" / "runs").glob("*.log"))
+
+
+def test_a_run_with_a_winner_records_its_result_for_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_run_suite(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    assert start_run(writer(), rewriter()) == 0
+
+    folder = run_folder(prompt)
+    held = len(json.loads((folder / "split.json").read_text())["held_back"])
+    recorded = json.loads((folder / "run.json").read_text())
+    expected = {"model": "cheap-model", "original": "Be brief.", "held_back": {"cases": held, "original": 0, "candidate": held}, "within_noise": False}
+    assert recorded == expected

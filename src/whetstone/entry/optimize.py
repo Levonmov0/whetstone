@@ -12,7 +12,8 @@ from typing import Any
 from whetstone.entry.suite import Stop, Suite, card
 from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.grading.store import save_deck
-from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, length_factor, placeholder_problem, progress_line, run_report, split_cases, stop_for_cap, stuck_reasons, swap_editable
+from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, length_factor, placeholder_problem, progress_line, run_report, split_cases, stop_for_cap, stuck_reasons, swap_editable, within_noise
+from whetstone.features.workspace.core import expand
 from whetstone.features.workspace.load import PromptSettings
 from whetstone.platform.gepa import optimize
 from whetstone.platform.model import ModelCall, ModelError, ModelResult
@@ -112,7 +113,7 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
             raise CapReached()
         case_input, request = requests[case_id]
         try:
-            output = generate({**swap_editable(request, editable, text), "model": model}).output
+            output = generate({**swap_editable(request, expand(editable, prompt.placeholders), expand(text, prompt.placeholders)), "model": model}).output
         except ModelError as e:
             raise Stop(f"{model} failed on case {case_id}: {e}") from None
         failures = suite.score(case_id, case_input, output)
@@ -127,7 +128,7 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
     records: list[tuple[int, str, dict[str, list[str]]]] = []  # each such version's failures per selection case
 
     def evaluate(text: str, batch: list[str]) -> list[tuple[float, str, Any, Any]]:
-        if problem := (placeholder_problem(editable, text) if text.strip() else "is empty"):
+        if problem := (placeholder_problem(editable, text, list(prompt.placeholders)) if text.strip() else "is empty"):
             # It could never be applied to the source (or says nothing), so it is scored 0 without spending a call on it.
             return [(0.0, f"Rejected: it {problem}. Keep every placeholder exactly as it is.", requests[case_id][0], None) for case_id in batch]
         results = score_all(text, batch)
@@ -182,6 +183,9 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
         average = {version: total / len(held) for version, total in totals.items()}
 
         (folder / "candidate.txt").write_text(best)
+        clean = {version: sum(not any(f.values()) for f in cases.values()) for version, cases in held_failures.items()}
+        result = {"original": editable, "held_back": {"cases": len(held), **clean}, "within_noise": within_noise(average["original"], average["candidate"])}
+        (folder / "run.json").write_text(json.dumps({"model": model, **result}))
         save_cost()
         (folder / "cards.json").write_text(json.dumps(versions_by_tag, indent=2))
         report = run_report(prompt_dir.name, editable, best, held_failures, average, meter.spent, stuck_reasons(records))

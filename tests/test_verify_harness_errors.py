@@ -39,12 +39,13 @@ def test_verify_harness_works_before_the_editable_part_is_marked(
 ) -> None:
     # Init verifies the harness first and marks the editable part from a built request after.
     prompt = make_prompt(make_workspace(tmp_path), ECHO_HARNESS, {"a": {"text": "Rest today."}})
-    toml = prompt / "prompt.toml"
-    toml.write_text("\n".join(line for line in toml.read_text().splitlines() if not line.startswith("editable")))
+    (prompt / "editable.txt").unlink()
     built = {"model": "fake-model", "max_tokens": 50, "system": "Be brief.", "messages": [{"role": "user", "content": "Rest today."}]}
     (tmp_path / "expected.json").write_text(json.dumps(built))
     monkeypatch.chdir(tmp_path)
 
     assert run(["verify-harness", "daily", "--case", "a", "--expected", "expected.json"], make_model=unused_model) == 0
     assert run(["check", "daily"], make_model=unused_model) == 2
-    assert 'has no "editable" part yet' in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "has no editable part yet" in err
+    assert "editable.txt" in err
