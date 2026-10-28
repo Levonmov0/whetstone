@@ -99,3 +99,12 @@ def test_apply_needs_a_run_with_a_candidate(extra: tuple[str, ...], message: str
 
     assert apply(prompt, *extra) == 2
     assert message in capsys.readouterr().err
+
+
+def test_a_run_made_before_apply_must_be_rerun(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_repo(tmp_path)
+    folder = write_run(prompt, LATER)
+    (folder / "run.json").write_text(json.dumps({"model": "prod-model"}))
+
+    assert apply(prompt) == 2
+    assert f"run-{LATER} was made before apply existed and has no recorded result; run it again" in capsys.readouterr().err
