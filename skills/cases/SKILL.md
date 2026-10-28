@@ -6,25 +6,38 @@ disable-model-invocation: true
 
 Build a prompt's case suite with the user. The workspace layout and the case format are in `${CLAUDE_PLUGIN_ROOT}/docs/workspace.md`. Read it first.
 
-The engine is `whetstone` on the Bash tool's PATH. Every case is invented unless the user brings a real-data source (step 4).
+The engine is `whetstone` on the Bash tool's PATH. Every case is invented unless the user brings a real-data source (step 5).
 
 ## 1. Read before proposing
 
 Find the prompt's harness (`prompts/<name>/prompt.toml`), the data it builds from, and the repo's contracts for that data: types, schemas, fixtures, seed data, fake backends. Read the existing cases in `cases/`. Note what a case's JSON must hold for the harness to build a request.
 
+Also read `prompts/<name>/brief.md` when it exists, and how the repo collects each input (sync jobs, seed data, upstream prompts).
+
 Done when you can name every field a case carries, each with the file that defines it.
 
-## 2. Propose
+## 2. Calibrate
 
-Write 20 to 30 cases into `cases/proposed/<id>.json`, ids in kebab-case that say what the case is (`first-day-no-wearable`). The engine never runs anything in `proposed/`.
+Invented cases come out unrealistically small: a few lines and one night of sleep, where a real input carries 500 to 1,000+ characters and weeks of wearable data. Calibrate the size before proposing anything. When `prompts/<name>/calibration/` already holds approved examples and answers, read them and go to step 3.
+
+1. Ask only what the repo couldn't settle: how many days of data a typical input holds, how long journal entries run, how long an upstream insight feeding this prompt is.
+2. Write 2 to 3 full-size typical cases in `cases/proposed/`. Write any input that is another prompt's output the way that prompt writes it.
+3. Show each one **in full**, with the output the current prompt gives for it (`whetstone check <name> --case proposed/<id>`).
+4. Ask whether they are realistic. On "no, because…", fix them and show them again.
+
+Done when the user calls every one realistic. Save the approved examples and the user's answers in `prompts/<name>/calibration/` (`examples/<id>.json` and `answers.md`), so later rounds and `/whetstone:fix` reuse them without asking again.
+
+## 3. Propose
+
+Write 20 to 30 cases into `cases/proposed/<id>.json`, in the calibrated shape and size, ids in kebab-case that say what the case is (`first-day-no-wearable`). The engine never runs anything in `proposed/`.
 - About two thirds realistic: the common days, spread across the real range of each field.
-- About one third edge cases: missing or empty data, first and last days, extreme values, conflicting signals, long text, whatever the contracts allow that the prompt might handle badly.
+- About one third edge cases: missing or empty data, first and last days, extreme values, conflicting signals, long text, whatever the contracts allow that the prompt might handle badly. Name each one as an edge case in its id and in the review list, never as a typical day.
 - Invented data only. Never copy a real person's data from the repo, logs or a database.
 - Skip any case already in `cases/`.
 
 Run each through the harness once to prove it builds (`whetstone check` would also call the model, so instead pipe one file into the harness command from `prompt.toml`, from the workspace folder). Fix any case it rejects.
 
-## 3. Review with the user
+## 4. Review with the user
 
 Show the proposals as a numbered list, one line each: the id and what it tests. Then ask the user to keep, edit or delete each one, and whether to add their own. Accept answers like "keep all but 4 and 9" or "make 12 a rest day".
 - **Keep:** move the file from `cases/proposed/` to `cases/`.
@@ -36,7 +49,7 @@ Nothing enters `cases/` without the user's yes. When the review ends, delete wha
 
 Done when `proposed/` is empty and you have told the user how many cases the suite now has.
 
-## 4. Real-data cases (only when the user asks)
+## 5. Real-data cases (only when the user asks)
 
 Real data comes from an opt-in source: the user's own diary, a teammate's, consenting users. For each source, ask who consented and on what date, then run:
 
