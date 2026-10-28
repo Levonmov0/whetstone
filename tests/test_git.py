@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from tests.test_apply_cli import git
-from whetstone.platform.git import GitError, commit_all
+from whetstone.platform.git import GitError, commit
 
 
 pytestmark = pytest.mark.usefixtures("plain_git")
@@ -30,5 +30,5 @@ def test_a_commit_to_main_or_the_default_branch_is_refused(branch: str, tmp_path
     clone = repo_on(tmp_path, branch)
 
     with pytest.raises(GitError, match=f"refusing to commit to {branch}"):
-        commit_all(clone, "change")
+        commit(clone, "change", None)
     assert git(clone, "rev-list", "--count", "HEAD") == "1"

@@ -54,8 +54,9 @@ def add_worktree(repo: Path, path: Path, branch: str, commit: str) -> None:
     _git(repo, "worktree", "add", "-q", "-b", branch, str(path), commit)
 
 
-def commit_all(worktree: Path, message: str) -> None:
-    """One commit of every change in the worktree; never on main or the remote's default branch."""
+def commit(worktree: Path, message: str, paths: list[Path] | None) -> list[str]:
+    """One commit of `paths`, or of every change in the worktree when None, and the files it holds; never on main or
+    the remote's default branch."""
     branch = _git(worktree, "branch", "--show-current")
     try:
         default = _git(worktree, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").removeprefix("origin/")
@@ -63,8 +64,9 @@ def commit_all(worktree: Path, message: str) -> None:
         default = None  # no remote, or one whose default branch was never fetched
     if branch in ("main", default):
         raise GitError(f"refusing to commit to {branch}")
-    _git(worktree, "add", "-A")
+    _git(worktree, "add", *(["--", *map(str, paths)] if paths is not None else ["-A"]))
     _git(worktree, "commit", "-q", "-m", message)
+    return _git(worktree, "show", "--name-only", "--format=", "HEAD").splitlines()
 
 
 def remove_worktree(repo: Path, path: Path) -> None:

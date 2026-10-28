@@ -12,7 +12,7 @@ from whetstone.features.cases.load import load_cases
 from whetstone.features.grading.store import load_labels
 from whetstone.features.workspace.core import expand, rendered_texts
 from whetstone.features.workspace.load import PromptSettings
-from whetstone.platform.git import GitError, add_worktree, branch_exists, changed_files, commit_all, delete_branch, diff, has_file, head, remove_worktree, show, toplevel
+from whetstone.platform.git import GitError, add_worktree, branch_exists, changed_files, commit, delete_branch, diff, has_file, head, remove_worktree, show, toplevel
 from whetstone.platform.harness import HarnessError, build_request
 
 
@@ -51,7 +51,9 @@ def _apply(prompt: PromptSettings, run_id: str | None, yes: bool, verify: bool, 
     inside = prompt.dir.resolve().is_relative_to(repo)
     editable = prompt.dir.resolve().relative_to(repo) / "editable.txt" if inside else None
     verify_command = f"whetstone apply {prompt.dir.name} --run {run_id}" + (f" --folder {out}" if out else "") + " --verify"
-    branched = Branch(repo, branch, worktree, editable, folder, out / f"{prompt.dir.name}-{run_id}" if out else None, verify_command)
+    start, source_rel = head(repo), source.relative_to(repo)
+    staged = None if prompt.apply == "code-edit" else [source_rel, *([editable] if editable else [])]
+    branched = Branch(repo, branch, worktree, editable, folder, out / f"{prompt.dir.name}-{run_id}" if out else None, verify_command, staged)
     if branched.export and branched.export.exists():
         raise Stop(f"{branched.export} already exists; move it or choose another folder")
     if verify:
@@ -60,7 +62,6 @@ def _apply(prompt: PromptSettings, run_id: str | None, yes: bool, verify: bool, 
         return commit_verified(prompt, branched, candidate)
     if branch_exists(repo, branch):
         raise Stop(f"branch {branch} already exists; delete it or apply another run")
-    start, source_rel = head(repo), source.relative_to(repo)
     if editable and not has_file(repo, start, editable):
         raise Stop(f"{editable} isn't committed; commit the workspace first, as the branch starts from your last commit")
     if prompt.apply == "code-edit":
@@ -90,6 +91,7 @@ class Branch:
     run: Path  # the run's folder
     export: Path | None  # the folder target: the change is written here, and the branch deleted
     verify_command: str  # what finishes this apply once the worktree is set up or edited
+    staged: list[Path] | None  # what the commit takes: the files an exact apply wrote, or None for every change
 
 
 def commit_verified(prompt: PromptSettings, branch: Branch, candidate: str) -> int:
@@ -101,7 +103,9 @@ def commit_verified(prompt: PromptSettings, branch: Branch, candidate: str) -> i
             return 1
         (branch.worktree / branch.editable).write_text(candidate, newline="")
     report = branch.editable.parent / "runs" / branch.run.name / "report.md" if branch.editable else branch.run / "report.md"
-    commit_all(branch.worktree, f"whetstone: apply {branch.run.name} to {prompt.dir.name}\n\nReport: {report}")
+    # A code edit's commit takes every change, its tests' too, and says which; an exact one takes only what it wrote.
+    files = commit(branch.worktree, f"whetstone: apply {branch.run.name} to {prompt.dir.name}\n\nReport: {report}", branch.staged)
+    print(f"committed {', '.join(files)}")
     remove_worktree(branch.repo, branch.worktree)
     if branch.export:
         base = f"{branch.name}~1"
