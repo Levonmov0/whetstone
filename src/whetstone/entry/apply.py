@@ -18,7 +18,7 @@ def apply_candidate(prompt: PromptSettings, run_id: str | None, yes: bool) -> in
         raise Stop(str(e)) from None
     print(run_line(folder.name, record.model, prompt.model, record.cases, record.original_clean, record.candidate_clean))
     tally = swipe_tally(load_labels(prompt.dir), folder.name.removeprefix("run-"), json.loads((folder / "cards.json").read_text()))
-    found = warnings(tally)
+    found = warnings(tally, record.within_noise)
     print("".join(f"warning: {line}\n" for line in found), end="")
     if found and not yes:
         print("rerun with --yes to apply it anyway")
