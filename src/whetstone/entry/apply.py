@@ -50,7 +50,8 @@ def _apply(prompt: PromptSettings, run_id: str | None, yes: bool, verify: bool, 
     # A workspace in the repo moves with the branch: its editable.txt is updated there, and its harness builds from it.
     inside = prompt.dir.resolve().is_relative_to(repo)
     editable = prompt.dir.resolve().relative_to(repo) / "editable.txt" if inside else None
-    branched = Branch(repo, branch, worktree, editable, folder, out / f"{prompt.dir.name}-{run_id}" if out else None)
+    verify_command = f"whetstone apply {prompt.dir.name} --run {run_id}" + (f" --folder {out}" if out else "") + " --verify"
+    branched = Branch(repo, branch, worktree, editable, folder, out / f"{prompt.dir.name}-{run_id}" if out else None, verify_command)
     if branched.export and branched.export.exists():
         raise Stop(f"{branched.export} already exists; move it or choose another folder")
     if verify:
@@ -68,7 +69,7 @@ def _apply(prompt: PromptSettings, run_id: str | None, yes: bool, verify: bool, 
         add_worktree(repo, worktree, branch, start)
         print(f"made branch {branch} at {worktree}; edit the code there so the prompt it builds holds the new text")
         print(f"\nold text:\n{record.original}\n\nnew text:\n{candidate}\n")
-        print(f"then run whetstone apply {prompt.dir.name} --verify")
+        print(f"then run {verify_command}")
         return 0
     applied = replace_once(show(repo, start, source_rel).decode(), record.original, candidate)
     if applied is None:
@@ -88,13 +89,14 @@ class Branch:
     editable: Path | None  # the prompt's editable.txt, relative to the repo; None when the workspace is outside it
     run: Path  # the run's folder
     export: Path | None  # the folder target: the change is written here, and the branch deleted
+    verify_command: str  # what finishes this apply once the worktree is set up or edited
 
 
 def commit_verified(prompt: PromptSettings, branch: Branch, candidate: str) -> int:
     """Commits the branch once the request its harness builds holds the candidate; a workspace outside the repo can't
     build from the branch, so its exact replacement is the proof."""
     if branch.editable:
-        if problem := verify_branch(prompt, branch.repo, branch.worktree, candidate):
+        if problem := verify_branch(prompt, branch, candidate):
             print(problem)
             return 1
         (branch.worktree / branch.editable).write_text(candidate, newline="")
@@ -114,17 +116,17 @@ def commit_verified(prompt: PromptSettings, branch: Branch, candidate: str) -> i
     return 0
 
 
-def verify_branch(prompt: PromptSettings, repo: Path, worktree: Path, candidate: str) -> str | None:
+def verify_branch(prompt: PromptSettings, branch: Branch, candidate: str) -> str | None:
     """Builds every case's request with the harness from the branch, so it is the branch's code that is checked; why
     the candidate isn't in one of them exactly once, or None."""
-    workspace = worktree / prompt.workspace.resolve().relative_to(repo)
+    workspace = branch.worktree / prompt.workspace.resolve().relative_to(branch.repo)
     expanded = expand(candidate, prompt.placeholders)
     for case_id, case_json in load_cases(prompt.dir):
         try:
             request = build_request(prompt.harness, workspace, case_json)
         except HarnessError as e:
-            raise Stop(f"case {case_id}: on the branch, {e}\nSet up the worktree at {worktree} (install its dependencies), then run whetstone apply {prompt.dir.name} --verify") from None
+            raise Stop(f"case {case_id}: on the branch, {e}\nSet up the worktree at {branch.worktree} (install its dependencies), then run {branch.verify_command}") from None
         times = sum(text.count(expanded) for text in rendered_texts(request))
         if times != 1:
-            return f"candidate found {times} times in the request for case {case_id}; edit the code in {worktree} until it is there once"
+            return f"candidate found {times} times in the request for case {case_id}; edit the code in {branch.worktree} until it is there once"
     return None
