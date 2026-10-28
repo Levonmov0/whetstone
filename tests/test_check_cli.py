@@ -378,3 +378,21 @@ def test_editable_txt_is_the_editable_part_byte_for_byte(tmp_path: Path, monkeyp
     monkeypatch.chdir(tmp_path)
 
     assert run(["check", "daily"], make_model=lambda _settings: FakeModel(lambda _request: "ok")) == 0
+
+
+def test_a_crlf_editable_part_is_read_byte_for_byte(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    body = {"model": "fake-model", "system": "Be brief.\r\nEnd here.", "messages": [{"role": "user", "content": "Day 1."}]}
+    prompt = make_prompt(make_workspace(tmp_path), f"import json; print(json.dumps({body!r}))", {"first-day": {}})
+    (prompt / "editable.txt").write_bytes(b"Be brief.\r\nEnd here.")
+    monkeypatch.chdir(tmp_path)
+
+    assert run(["check", "daily"], make_model=lambda _settings: FakeModel(lambda _request: "ok")) == 0
+
+
+def test_an_editable_part_that_is_not_utf8_exits_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_prompt(make_workspace(tmp_path), "", {"first-day": {}})
+    (prompt / "editable.txt").write_bytes(b"\xff\xfe")
+    monkeypatch.chdir(tmp_path)
+
+    assert run(["check", "daily"], make_model=unused_model) == 2
+    assert "editable.txt" in capsys.readouterr().err
