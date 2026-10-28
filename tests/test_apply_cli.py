@@ -265,7 +265,7 @@ def test_a_harness_that_fails_on_the_branch_keeps_the_worktree_for_verify(tmp_pa
     assert apply(prompt) == 2
 
     err = capsys.readouterr().err
-    assert "harness exited 1" in err and "then run whetstone apply daily --verify" in err
+    assert "harness exited 1" in err and f"then run whetstone apply daily --run {LATER} --verify" in err
     assert len(git(repo, "worktree", "list").splitlines()) == 2
     assert git(repo, "rev-parse", BRANCH) == git(repo, "rev-parse", "main")
 
