@@ -63,3 +63,12 @@ def test_a_proposed_case_runs_by_its_path(tmp_path: Path, monkeypatch: pytest.Mo
     out = capsys.readouterr().out
     assert "A proposed day." in out and "PASS proposed/new-one" in out
 
+
+
+@pytest.mark.parametrize("case", ["nope", "proposed/nope"])
+def test_an_unknown_case_is_named(case: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    case_prompt(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    assert run(["check", "daily", "--case", case], make_model=lambda _settings: FakeModel(lambda _r: "x")) == 2
+    assert f"no case named {case}" in capsys.readouterr().err
