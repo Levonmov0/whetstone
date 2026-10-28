@@ -484,3 +484,13 @@ def test_a_changed_binary_file_is_exported_as_it_is(tmp_path: Path) -> None:
     assert apply(prompt, "--verify", "--folder", str(out)) == 0
 
     assert (out / f"daily-{LATER}" / "src" / "logo.png").read_bytes() == b"\x89PNG\r\n\x1a\n\x00\xff"
+
+
+def test_the_printed_verify_command_names_the_run_and_the_folder(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = code_edit_repo(tmp_path)
+    write_run(prompt, NEWEST)
+    out = tmp_path / "out"
+
+    assert apply(prompt, "--run", LATER, "--folder", str(out)) == 0
+
+    assert f"whetstone apply daily --run {LATER} --folder {out} --verify" in capsys.readouterr().out
