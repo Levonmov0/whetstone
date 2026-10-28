@@ -69,7 +69,7 @@ class Suite:
 
 def prepare_suite(prompt: PromptSettings, make_model: MakeModel, make_judge: MakeJudge) -> Suite:
     if prompt.editable is None:
-        raise Stop(f'{prompt.dir / "prompt.toml"} has no "editable" part yet')
+        raise Stop(f"{prompt.dir.name} has no editable part yet: {prompt.dir / 'editable.txt'} doesn't exist")
     # Every request is built and vetted before the first model call, so a broken harness costs nothing.
     try:
         cases = load_cases(prompt.dir)

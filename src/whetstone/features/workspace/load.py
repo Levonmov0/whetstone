@@ -27,7 +27,7 @@ class PromptSettings:
     harness: str
     provider: str
     model: str
-    editable: str | None  # None until init marks it; check needs it, verify-harness does not
+    editable: str | None  # editable.txt, byte for byte; None until init writes it. check needs it, verify-harness does not
     reasons: list[str]  # the swipe app's reason chips
 
 
@@ -52,7 +52,7 @@ def load_prompt(workspace: Path, name: str) -> PromptSettings:
         harness=raw["harness"],
         provider=raw["provider"],
         model=raw["model"],
-        editable=raw.get("editable"),
+        editable=(prompt_dir / "editable.txt").read_text() if (prompt_dir / "editable.txt").is_file() else None,
         reasons=cast(list[str], reasons),
     )
 
