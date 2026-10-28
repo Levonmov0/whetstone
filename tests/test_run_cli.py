@@ -160,8 +160,7 @@ def test_new_versions_that_never_beat_the_original_on_selection_fail_loudly(
 def test_a_rewrite_that_drops_a_placeholder_is_never_generated_and_never_wins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     prompt = make_run_suite(tmp_path)
     (prompt / "harness.py").write_text(HARNESS.replace("Be brief.", "Be brief, {{name}}."))
-    toml = (prompt / "prompt.toml").read_text().replace('"Be brief."', '"Be brief, {{name}}."')
-    (prompt / "prompt.toml").write_text(toml)
+    (prompt / "editable.txt").write_text("Be brief, {{name}}.")
     model = writer()
     monkeypatch.chdir(tmp_path)
 
