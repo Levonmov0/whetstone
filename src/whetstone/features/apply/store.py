@@ -16,7 +16,8 @@ def candidate_run(prompt_dir: Path, run_id: str | None) -> Path:
         if not (folder / "candidate.txt").is_file():
             raise RunError(f"{folder.name} has no candidate")
         return folder
-    runs = sorted(folder for folder in (prompt_dir / "runs").glob("run-*") if (folder / "candidate.txt").is_file())
+    # cards.json is a winner's last file, so a run still writing its files is passed over.
+    runs = sorted(folder for folder in (prompt_dir / "runs").glob("run-*") if (folder / "candidate.txt").is_file() and (folder / "cards.json").is_file())
     if not runs:
         raise RunError(f"no run of {prompt_dir.name} has a candidate; run whetstone run {prompt_dir.name} first")
     return runs[-1]
