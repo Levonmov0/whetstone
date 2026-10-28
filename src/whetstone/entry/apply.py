@@ -8,7 +8,7 @@ from whetstone.features.apply.store import RunError, candidate_run, run_record
 from whetstone.features.baseline.core import swipe_tally
 from whetstone.features.grading.store import load_labels
 from whetstone.features.workspace.load import PromptSettings
-from whetstone.platform.git import add_worktree, commit_all, head, remove_worktree, toplevel
+from whetstone.platform.git import add_worktree, branch_exists, commit_all, head, remove_worktree, toplevel
 
 
 def apply_candidate(prompt: PromptSettings, run_id: str | None, yes: bool) -> int:
@@ -29,6 +29,8 @@ def apply_candidate(prompt: PromptSettings, run_id: str | None, yes: bool) -> in
     repo = toplevel(source.parent)
     run_id = folder.name.removeprefix("run-")
     branch = f"whetstone/{prompt.dir.name}-{run_id}"
+    if branch_exists(repo, branch):
+        raise Stop(f"branch {branch} already exists; delete it or apply another run")
     # Beside the repo, not in it: test runners and compilers at the repo's root would find a nested copy.
     worktree = repo.parent / f"{repo.name}.worktrees" / f"whetstone-{prompt.dir.name}-{run_id}"
     add_worktree(repo, worktree, branch, head(repo))
