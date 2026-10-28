@@ -29,21 +29,17 @@ Done when apply has exited 0 or 2, or the user chose not to apply.
 
 Apply replaces the text, checks the branch and commits. Tell the user the branch name and that nothing was pushed.
 
-When it stops because the harness failed on the branch, set up the worktree it names the way the repo sets up a checkout (for a pnpm repo, `pnpm install` there), then run `whetstone apply <prompt> --verify`.
+When it stops because the harness failed on the branch, set up the worktree it names the way the repo sets up a checkout (for a pnpm repo, `pnpm install` there), then run the `--verify` command it prints.
 
 Done when the output says the candidate was committed.
 
 ## 3. `code-edit`
 
-Apply prints the worktree, the old text and the new text. The edit is code work in that worktree:
-- **With `[apply] skill` set**, hand the edit to that skill with this brief: the worktree path and branch, the old text and the new text, that the prompt the code builds must hold the new text exactly once, that the repo's tests for each changed file must pass (some pin a prompt's wording), and that the work is done when `whetstone apply <prompt> --verify` exits 0.
+Apply prints the worktree, the old text, the new text and the `--verify` command that finishes it (it names the run, and the folder when there is one). The edit is code work in that worktree:
+- **With `[apply] skill` set**, hand the edit to that skill with this brief: the worktree path and branch, the old text and the new text, that the prompt the code builds must hold the new text exactly once, that the repo's tests for each changed file must pass (some pin a prompt's wording), and that the work is done when that `--verify` command exits 0.
 - **Otherwise**, make the edit yourself in the worktree: change the code that builds the prompt so its output holds the new text, keeping every placeholder's code as it is. Then run the repo's tests for each changed file, and update any test that pins the old wording.
 
-```bash
-whetstone apply <prompt> --verify
-```
-
-On exit 1 it names a case whose request doesn't hold the candidate exactly once. Fix the edit and verify again.
+Then run the `--verify` command. On exit 1 it names a case whose request doesn't hold the candidate exactly once. Fix the edit and verify again.
 
 Done when `--verify` exits 0 and the repo's tests for the changed files pass.
 
