@@ -45,9 +45,14 @@ def length_factor(original: int, length: int) -> float:
 PLACEHOLDER = re.compile(r"\{\{[^{}]+\}\}|\$\{[^{}]+\}")
 
 
-def placeholder_problem(original: str, candidate: str) -> str | None:
-    """Why a version can't be applied to the source because it dropped or changed a placeholder, or None."""
-    before, after = Counter(PLACEHOLDER.findall(original)), Counter(PLACEHOLDER.findall(candidate))
+def placeholder_problem(original: str, candidate: str, named: list[str] | None = None) -> str | None:
+    """Why a version can't be applied to the source because it dropped or changed a placeholder, or None. `named` are
+    the prompt's own placeholders, from its table, whatever form they take."""
+
+    def found(text: str) -> Counter[str]:
+        return Counter(PLACEHOLDER.findall(text)) + Counter({name: text.count(name) for name in named or [] if not PLACEHOLDER.fullmatch(name)})
+
+    before, after = found(original), found(candidate)
     problems = [f"drops placeholder {p}" for p in before - after] + [f"adds placeholder {p}" for p in after - before]
     return "; ".join(problems) or None
 
