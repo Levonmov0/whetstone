@@ -232,3 +232,14 @@ def test_an_existing_branch_name_is_refused(tmp_path: Path, capsys: pytest.Captu
     assert f"branch {BRANCH} already exists" in capsys.readouterr().err
     assert git(repo, "rev-parse", BRANCH) == git(repo, "rev-parse", "main")
     assert len(git(repo, "worktree", "list").splitlines()) == 1
+
+
+@pytest.mark.parametrize("source", ["PROMPT = `Be short.`\n", "A = `Be brief.`\nB = `Be brief.`\n"])
+def test_a_source_that_no_longer_holds_the_original_once_is_refused(source: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_repo(tmp_path, source=source)
+    swiped_run(prompt)
+
+    assert apply(prompt) == 2
+    assert "src/prompt.txt no longer holds the text this run optimized exactly once" in capsys.readouterr().err
+    assert apply_branches(prompt) == ""
+    assert len(git(tmp_path / "repo", "worktree", "list").splitlines()) == 1
