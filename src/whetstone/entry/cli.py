@@ -14,6 +14,7 @@ from typing import IO, Any
 
 import qrcode
 
+from whetstone.entry.apply import apply_candidate
 from whetstone.entry.optimize import Meter, production_estimate, run_optimize
 from whetstone.entry.suite import editable_or_stop, source_or_stop, MakeJudge, MakeModel, MakeRewrite, Stop, Suite, build, card, judges_or_stop, prepare_judge, prepare_suite, prices_or_stop, providers_or_stop
 from whetstone.features.apply.core import apply_method
@@ -112,6 +113,8 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
             # A worker inherits the lock its starting command took, so no other run can start in between.
             with os.fdopen(args.lock_fd, "w") if args.lock_fd is not None else run_lock(prompt):
                 return start_run(prompt, model, args.budget, make_model, make_judge, make_rewrite, cap, args.run_id or new_deck_id())
+        if args.command == "apply":
+            return apply_candidate(prompt, args.run)
         if args.command == "apply-method":
             return show_apply_method(prompt)
         if args.command == "agreement":
