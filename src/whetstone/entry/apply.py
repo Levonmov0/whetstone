@@ -18,6 +18,13 @@ from whetstone.platform.harness import HarnessError, build_request
 
 def apply_candidate(prompt: PromptSettings, run_id: str | None, yes: bool, verify: bool, out: Path | None) -> int:
     try:
+        return _apply(prompt, run_id, yes, verify, out)
+    except GitError as e:  # a hook that refused the commit, a worktree folder in the way, another apply racing this one
+        raise Stop(str(e)) from None
+
+
+def _apply(prompt: PromptSettings, run_id: str | None, yes: bool, verify: bool, out: Path | None) -> int:
+    try:
         folder = candidate_run(prompt.dir, run_id)
         record = run_record(folder)
     except RunError as e:
