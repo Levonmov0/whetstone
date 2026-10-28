@@ -608,3 +608,16 @@ def test_a_background_start_vets_the_run_before_detaching(setup: str, tmp_path: 
     assert code == 2
     assert "started in the background" not in capsys.readouterr().out
     assert not list((tmp_path / ".whetstone" / "runs").glob("*.log"))
+
+
+def test_a_run_with_a_winner_records_its_result_for_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_run_suite(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    assert start_run(writer(), rewriter()) == 0
+
+    folder = run_folder(prompt)
+    held = len(json.loads((folder / "split.json").read_text())["held_back"])
+    recorded = json.loads((folder / "run.json").read_text())
+    expected = {"model": "cheap-model", "original": "Be brief.", "held_back": {"cases": held, "original": 0, "candidate": held}, "within_noise": False}
+    assert recorded == expected
