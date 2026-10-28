@@ -540,3 +540,13 @@ def test_a_broken_private_case_stops_apply_with_exit_2(tmp_path: Path, capsys: p
 
     assert apply(prompt) == 2
     assert "has no consent record" in capsys.readouterr().err
+
+
+def test_a_run_still_writing_its_files_is_passed_over(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_repo(tmp_path)
+    write_run(prompt, LATER)
+    (write_run(prompt, NEWEST) / "cards.json").unlink()  # candidate.txt is written, cards.json not yet
+
+    apply(prompt)
+
+    assert capsys.readouterr().out.startswith(f"run-{LATER},")
