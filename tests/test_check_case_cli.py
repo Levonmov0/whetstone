@@ -49,3 +49,17 @@ def test_a_tool_call_output_prints_as_json(tmp_path: Path, monkeypatch: pytest.M
     run(["check", "daily", "--case", "case-0"], make_model=lambda _settings: FakeModel(lambda _request: {"line": "Rest."}))
 
     assert '{\n  "line": "Rest."\n}' in capsys.readouterr().out
+
+
+def test_a_proposed_case_runs_by_its_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = case_prompt(tmp_path)
+    (prompt / "cases" / "proposed").mkdir()
+    (prompt / "cases" / "proposed" / "new-one.json").write_text(json.dumps({"text": "A proposed day."}))
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily", "--case", "proposed/new-one"], make_model=lambda _settings: FakeModel(lambda r: r["messages"][0]["content"]))
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "A proposed day." in out and "PASS proposed/new-one" in out
+
