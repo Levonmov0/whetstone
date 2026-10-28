@@ -40,6 +40,7 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
     parser = argparse.ArgumentParser(prog="whetstone")
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("check", help="run every case through the prompt and its checks")
+    check.add_argument("--case", help="run only this case and show its output; the deck is left as it is")
     verify = commands.add_parser("verify-harness", help="compare the harness's request with a real production request")
     verify.add_argument("--case", required=True, help="the case id to build the request from")
     verify.add_argument("--expected", type=Path, required=True, help="a JSON file holding the request production sent")
@@ -123,7 +124,7 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
             except SourceError as e:
                 raise Stop(str(e)) from None
             return 0
-        return check_prompt(prompt, make_model, make_judge)
+        return check_prompt(prompt, make_model, make_judge, args.case)
     except Stop as e:
         print(e, file=sys.stderr)
         return 2
@@ -147,8 +148,8 @@ def workspace_or_stop(explicit_workspace: Path | None) -> Path:
     return workspace
 
 
-def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: MakeJudge) -> int:
-    suite = prepare_suite(prompt, make_model, make_judge)
+def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: MakeJudge, case: str | None = None) -> int:
+    suite = prepare_suite(prompt, make_model, make_judge, case)
     print(_calls(len(suite.requests), len(suite.requests) * len(suite.judges)), flush=True)
     results: list[CaseResult] = []
     cards: list[dict[str, Any]] = []
@@ -160,7 +161,11 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
         failures = suite.score(case_id, case_input, output)
         results.append(CaseResult(case_id, failures))
         cards.append(card(case_id, case_input, output, failures))
-    save_deck(prompt.workspace, prompt.dir.name, cards)
+    if case is None:
+        save_deck(prompt.workspace, prompt.dir.name, cards)
+    else:
+        # One case is a look at its output, not a round of swipes: a one-card deck would replace a blind swipe's.
+        print(output)
     lines, code = report(results, suite.check_names())
     print("\n".join(lines))
     return code
