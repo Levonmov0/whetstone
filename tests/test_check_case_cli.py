@@ -87,3 +87,12 @@ def test_a_proposed_id_cannot_climb_out_of_proposed(tmp_path: Path, monkeypatch:
 
     assert code == 2
     assert model.requests == []
+
+
+def test_one_case_runs_past_an_unrelated_broken_private_case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = case_prompt(tmp_path)
+    (prompt / "cases" / "private" / "diary").mkdir(parents=True)
+    (prompt / "cases" / "private" / "diary" / "x.json").write_text("{}")  # no consent.toml
+    monkeypatch.chdir(tmp_path)
+
+    assert run(["check", "daily", "--case", "case-0"], make_model=lambda _settings: FakeModel(lambda r: r["messages"][0]["content"])) == 0
