@@ -505,3 +505,28 @@ def test_apply_needs_a_source_path(line: str, message: str, tmp_path: Path, caps
 
     assert apply(prompt) == 2
     assert message in capsys.readouterr().err
+
+
+def test_an_exact_apply_commits_only_the_source_and_editable_txt(tmp_path: Path) -> None:
+    prompt = make_repo(tmp_path)
+    repo = tmp_path / "repo"
+    (prompt / "harness.py").write_text("open('harness.log', 'w').write('built')\n" + HARNESS)
+    git(repo, "commit", "-qam", "harness logs")
+    swiped_run(prompt)
+
+    assert apply(prompt) == 0
+
+    assert git(repo, "diff", "--name-only", f"{BRANCH}~1", BRANCH).splitlines() == ["src/prompt.txt", "whetstone/prompts/daily/editable.txt"]
+
+
+def test_a_code_edit_commit_lists_its_files(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = code_edit_repo(tmp_path)
+    apply(prompt)
+    (tmp_path / WORKTREE / "src" / "prompt.txt").write_text("PROMPT = `Be brief. Keep it short.`\n")
+    (tmp_path / WORKTREE / "src" / "prompt_test.txt").write_text("pins the new wording")
+    capsys.readouterr()
+
+    assert apply(prompt, "--verify") == 0
+
+    out = capsys.readouterr().out
+    assert "committed src/prompt.txt, src/prompt_test.txt, whetstone/prompts/daily/editable.txt" in out
