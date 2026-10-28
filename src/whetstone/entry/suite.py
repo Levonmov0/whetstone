@@ -67,10 +67,25 @@ class Suite:
         return failures
 
 
-def prepare_suite(prompt: PromptSettings, make_model: MakeModel, make_judge: MakeJudge, case: str | None = None) -> Suite:
-    """Every case of the prompt, or only `case`, an id as cases are named: the path under cases/ without .json."""
+def editable_or_stop(prompt: PromptSettings) -> str:
     if prompt.editable is None:
         raise Stop(f"{prompt.dir.name} has no editable part yet: {prompt.dir / 'editable.txt'} doesn't exist")
+    return prompt.editable
+
+
+def source_or_stop(prompt: PromptSettings) -> str:
+    """The text of the file the editable part lives in."""
+    if prompt.source is None:
+        raise Stop(f'{prompt.dir / "prompt.toml"} has no "source": the file the editable part lives in')
+    try:
+        return (prompt.workspace / prompt.source).read_text()
+    except OSError as e:
+        raise Stop(f"can't read the source {prompt.source}: {e.strerror or e}") from None
+
+
+def prepare_suite(prompt: PromptSettings, make_model: MakeModel, make_judge: MakeJudge, case: str | None = None) -> Suite:
+    """Every case of the prompt, or only `case`, an id as cases are named: the path under cases/ without .json."""
+    editable = editable_or_stop(prompt)
     # Every request is built and vetted before the first model call, so a broken harness costs nothing.
     try:
         cases = [c for c in load_cases(prompt.dir) if case in (None, c[0])]
@@ -93,7 +108,7 @@ def prepare_suite(prompt: PromptSettings, make_model: MakeModel, make_judge: Mak
         except ValueError as e:
             raise Stop(f"case {case_id} is not valid JSON: {e}") from None
         request = build(prompt, case_id, case_json)
-        if problem := request_problem(request, case_id, prompt.model, expand(prompt.editable, prompt.placeholders)):
+        if problem := request_problem(request, case_id, prompt.model, expand(editable, prompt.placeholders)):
             raise Stop(problem)
         requests.append((case_id, case_input, request))
 

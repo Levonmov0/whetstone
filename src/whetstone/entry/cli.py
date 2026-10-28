@@ -15,7 +15,7 @@ from typing import IO, Any
 import qrcode
 
 from whetstone.entry.optimize import Meter, production_estimate, run_optimize
-from whetstone.entry.suite import MakeJudge, MakeModel, MakeRewrite, Stop, Suite, build, card, judges_or_stop, prepare_judge, prepare_suite, prices_or_stop, providers_or_stop
+from whetstone.entry.suite import editable_or_stop, source_or_stop, MakeJudge, MakeModel, MakeRewrite, Stop, Suite, build, card, judges_or_stop, prepare_judge, prepare_suite, prices_or_stop, providers_or_stop
 from whetstone.features.apply.core import apply_method
 from whetstone.features.baseline.core import baseline_report, swipe_section
 from whetstone.features.baseline.store import card_models, latest_run, save_run
@@ -176,8 +176,8 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
 
 
 def show_apply_method(prompt: PromptSettings) -> int:
-    assert prompt.source is not None and prompt.editable is not None
-    method, why = apply_method((prompt.workspace / prompt.source).read_text(), prompt.editable, prompt.source)
+    editable = editable_or_stop(prompt)
+    method, why = apply_method(source_or_stop(prompt), editable, str(prompt.source))
     print(method)
     if why:
         print(why)
