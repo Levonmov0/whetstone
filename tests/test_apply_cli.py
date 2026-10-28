@@ -530,3 +530,13 @@ def test_a_code_edit_commit_lists_its_files(tmp_path: Path, capsys: pytest.Captu
 
     out = capsys.readouterr().out
     assert "committed src/prompt.txt, src/prompt_test.txt, whetstone/prompts/daily/editable.txt" in out
+
+
+def test_a_broken_private_case_stops_apply_with_exit_2(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_repo(tmp_path)
+    (prompt / "cases" / "private" / "diary").mkdir(parents=True)
+    (prompt / "cases" / "private" / "diary" / "x.json").write_text("{}")
+    swiped_run(prompt)
+
+    assert apply(prompt) == 2
+    assert "has no consent record" in capsys.readouterr().err
