@@ -3,6 +3,13 @@
 from typing import Any, cast
 
 
+def expand(text: str, placeholders: dict[str, str]) -> str:
+    """The text as the request carries it: each placeholder replaced by the text it is built as."""
+    for placeholder, built in placeholders.items():
+        text = text.replace(placeholder, built)
+    return text
+
+
 def request_problem(request: Any, case_id: str, production_model: str, editable: str) -> str | None:
     """Why a harness request can't be used, or None when it can."""
     if not isinstance(request, dict):

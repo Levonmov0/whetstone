@@ -12,7 +12,7 @@ from whetstone.features.cases.core import provider_refusal
 from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.checks.core import JudgeAnswerError, Rubric, judge_failures, judge_request
 from whetstone.features.checks.load import Check, CheckLoadError, load_checks, load_judges
-from whetstone.features.workspace.core import request_problem
+from whetstone.features.workspace.core import expand, request_problem
 from whetstone.features.workspace.load import PromptError, PromptSettings, judge_model, prices, repo_providers
 from whetstone.platform.config import MissingKey
 from whetstone.platform.harness import HarnessError, build_request
@@ -88,7 +88,7 @@ def prepare_suite(prompt: PromptSettings, make_model: MakeModel, make_judge: Mak
         except ValueError as e:
             raise Stop(f"case {case_id} is not valid JSON: {e}") from None
         request = build(prompt, case_id, case_json)
-        if problem := request_problem(request, case_id, prompt.model, prompt.editable):
+        if problem := request_problem(request, case_id, prompt.model, expand(prompt.editable, prompt.placeholders)):
             raise Stop(problem)
         requests.append((case_id, case_input, request))
 
