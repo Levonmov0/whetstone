@@ -45,6 +45,8 @@ def apply_candidate(prompt: PromptSettings, run_id: str | None, yes: bool, verif
     editable = prompt.dir.resolve().relative_to(repo) / "editable.txt" if inside else None
     branched = Branch(repo, branch, worktree, editable, folder)
     if verify:
+        if not worktree.is_dir():
+            raise Stop(f"no apply branch of {folder.name} is waiting at {worktree}; run whetstone apply {prompt.dir.name} first")
         return commit_verified(prompt, branched, candidate)
     if branch_exists(repo, branch):
         raise Stop(f"branch {branch} already exists; delete it or apply another run")
