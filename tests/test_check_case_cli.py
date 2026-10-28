@@ -72,3 +72,18 @@ def test_an_unknown_case_is_named(case: str, tmp_path: Path, monkeypatch: pytest
 
     assert run(["check", "daily", "--case", case], make_model=lambda _settings: FakeModel(lambda _r: "x")) == 2
     assert f"no case named {case}" in capsys.readouterr().err
+
+
+def test_a_proposed_id_cannot_climb_out_of_proposed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = case_prompt(tmp_path)
+    (prompt / "cases" / "proposed").mkdir()
+    (prompt / "cases" / "private" / "diary").mkdir(parents=True)
+    (prompt / "cases" / "private" / "diary" / "consent.toml").write_text('consented_by = "Levon"\nconsented_on = 2026-10-26\n')
+    (prompt / "cases" / "private" / "diary" / "x.json").write_text(json.dumps({"text": "Private."}))
+    model = FakeModel(lambda _r: "x")
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily", "--case", "proposed/../private/diary/x"], make_model=lambda _settings: model)
+
+    assert code == 2
+    assert model.requests == []
