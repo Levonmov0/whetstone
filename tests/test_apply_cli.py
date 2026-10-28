@@ -27,12 +27,7 @@ def git(cwd: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
 
 
-@pytest.fixture(autouse=True)
-def plain_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Git without the user's own config (signing, hooks), and with a committer."""
-    (tmp_path / "gitconfig").write_text("[user]\n\tname = Tester\n\temail = tester@example.com\n[init]\n\tdefaultBranch = main\n")
-    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig"))
-    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+pytestmark = pytest.mark.usefixtures("plain_git")
 
 
 def make_repo(root: Path, editable: str = "Be brief.", source: str = "PROMPT = `Be brief.`\n") -> Path:
@@ -122,7 +117,7 @@ def test_apply_names_the_run_first(model: str, named: str, tmp_path: Path, capsy
 
 
 def swipe(prompt: Path, run_id: str, tag: str, verdict: str, grader: str = "Levon") -> None:
-    label = {"card_id": f"{run_id}:case-0:{tag}", "case_id": "case-0", "grader": grader, "verdict": verdict, "reasons": [], "at": "2026-10-28T10:00:00+00:00"}
+    label: dict[str, Any] = {"card_id": f"{run_id}:case-0:{tag}", "case_id": "case-0", "grader": grader, "verdict": verdict, "reasons": [], "at": "2026-10-28T10:00:00+00:00"}
     with (prompt / "labels.jsonl").open("a") as labels:
         labels.write(json.dumps(label) + "\n")
 

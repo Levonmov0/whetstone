@@ -3,8 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_apply_cli import git, plain_git  # noqa: F401  # plain_git: the autouse fixture, so git ignores the user's config
+from tests.test_apply_cli import git
 from whetstone.platform.git import GitError, commit_all
+
+
+pytestmark = pytest.mark.usefixtures("plain_git")
 
 
 def repo_on(tmp_path: Path, branch: str) -> Path:
