@@ -426,3 +426,12 @@ def test_a_deleted_file_is_in_the_patch_but_not_copied(tmp_path: Path) -> None:
     assert "deleted file mode" in (export / "change.patch").read_text()
     assert not (export / "src" / "old.txt").exists()
     assert (export / "src" / "prompt.txt").is_file()
+
+
+def test_the_folder_target_defaults_to_the_workspace(tmp_path: Path) -> None:
+    prompt = make_repo(tmp_path)
+    swiped_run(prompt)
+
+    assert apply(prompt, "--folder") == 0
+
+    assert (tmp_path / "repo" / "whetstone" / ".whetstone" / "applied" / f"daily-{LATER}" / "change.patch").is_file()
