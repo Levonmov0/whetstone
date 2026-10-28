@@ -472,3 +472,15 @@ def test_a_crlf_candidate_reaches_editable_txt_byte_for_byte(tmp_path: Path) -> 
 
     shown = subprocess.run(["git", "show", f"{BRANCH}:whetstone/prompts/daily/editable.txt"], cwd=tmp_path / "repo", capture_output=True, check=True).stdout
     assert shown == b"Be brief.\r\nKeep it short."
+
+
+def test_a_changed_binary_file_is_exported_as_it_is(tmp_path: Path) -> None:
+    prompt = code_edit_repo(tmp_path)
+    out = tmp_path / "out"
+    apply(prompt, "--folder", str(out))
+    (tmp_path / WORKTREE / "src" / "prompt.txt").write_text("PROMPT = `Be brief. Keep it short.`\n")
+    (tmp_path / WORKTREE / "src" / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00\xff")
+
+    assert apply(prompt, "--verify", "--folder", str(out)) == 0
+
+    assert (out / f"daily-{LATER}" / "src" / "logo.png").read_bytes() == b"\x89PNG\r\n\x1a\n\x00\xff"
