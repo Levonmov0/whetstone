@@ -1,14 +1,17 @@
 """Applying a run's candidate to the source: on a branch of its own, in a worktree of its own."""
 
 import json
+from pathlib import Path
 
 from whetstone.entry.suite import Stop
 from whetstone.features.apply.core import replace_once, run_line, warnings
 from whetstone.features.apply.store import RunError, candidate_run, run_record
 from whetstone.features.baseline.core import swipe_tally
+from whetstone.features.cases.load import load_cases
 from whetstone.features.grading.store import load_labels
 from whetstone.features.workspace.load import PromptSettings
 from whetstone.platform.git import add_worktree, branch_exists, commit_all, head, remove_worktree, show, toplevel
+from whetstone.platform.harness import HarnessError, build_request
 
 
 def apply_candidate(prompt: PromptSettings, run_id: str | None, yes: bool) -> int:
@@ -41,7 +44,18 @@ def apply_candidate(prompt: PromptSettings, run_id: str | None, yes: bool) -> in
     (worktree / source_rel).write_text(applied)
     prompt_rel = prompt.dir.resolve().relative_to(repo)
     (worktree / prompt_rel / "editable.txt").write_text(candidate)
+    verify_branch(prompt, repo, worktree)
     commit_all(worktree, f"whetstone: apply {folder.name} to {prompt.dir.name}\n\nReport: {prompt_rel / 'runs' / folder.name / 'report.md'}")
     remove_worktree(repo, worktree)
     print(f"committed the candidate on branch {branch}; nothing was pushed")
     return 0
+
+
+def verify_branch(prompt: PromptSettings, repo: Path, worktree: Path) -> None:
+    """Builds every case's request with the harness from the branch, so it is the branch's code that is checked."""
+    workspace = worktree / prompt.workspace.resolve().relative_to(repo)
+    for case_id, case_json in load_cases(prompt.dir):
+        try:
+            build_request(prompt.harness, workspace, case_json)
+        except HarnessError as e:
+            raise Stop(f"case {case_id}: on the branch, {e}\nSet up the worktree at {worktree} (install its dependencies), then run whetstone apply {prompt.dir.name} --verify") from None
