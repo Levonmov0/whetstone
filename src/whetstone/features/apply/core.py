@@ -22,7 +22,7 @@ def warnings(tally: dict[str, dict[str, int]], within_noise: bool) -> list[str]:
     found: list[str] = []
     if not any(sum(counts.values()) for counts in tally.values()):
         found.append("no blind swipe yet: nobody has compared the candidate with the original without knowing which is which")
-    original, candidate = (tally.get(version, {}).get("good", 0) for version in ("original", "candidate"))
+    original, candidate = (tally[version]["good"] for version in ("original", "candidate"))
     if original > candidate:
         found.append(f"the blind swipe preferred the original: {original} good swipes against the candidate's {candidate}")
     if within_noise:
