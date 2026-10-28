@@ -165,7 +165,7 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
         save_deck(prompt.workspace, prompt.dir.name, cards)
     else:
         # One case is a look at its output, not a round of swipes: a one-card deck would replace a blind swipe's.
-        print(output)
+        print(output if isinstance(output, str) else json.dumps(output, indent=2, ensure_ascii=False))
     lines, code = report(results, suite.check_names())
     print("\n".join(lines))
     return code
