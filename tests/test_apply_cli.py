@@ -253,3 +253,22 @@ def test_the_applied_source_keeps_every_byte_around_the_candidate(tmp_path: Path
 
     shown = subprocess.run(["git", "show", f"{BRANCH}:src/prompt.txt"], cwd=tmp_path / "repo", capture_output=True, text=True, check=True).stdout
     assert shown == "PROMPT = `Be brief. Keep it short.`\n\n"
+
+
+def test_a_harness_that_fails_on_the_branch_keeps_the_worktree_for_verify(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_repo(tmp_path)
+    repo = tmp_path / "repo"
+    # Like node_modules: the harness needs a file that is ignored, so a fresh worktree lacks it until set up.
+    (prompt / "harness.py").write_text("open('deps.txt')\n" + HARNESS)
+    (repo / ".gitignore").write_text("deps.txt\n")
+    (repo / "whetstone" / "deps.txt").write_text("installed")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "harness needs deps")
+    swiped_run(prompt)
+
+    assert apply(prompt) == 2
+
+    err = capsys.readouterr().err
+    assert "harness exited 1" in err and "then run whetstone apply daily --verify" in err
+    assert len(git(repo, "worktree", "list").splitlines()) == 2
+    assert git(repo, "rev-parse", BRANCH) == git(repo, "rev-parse", "main")
