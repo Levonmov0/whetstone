@@ -243,3 +243,13 @@ def test_a_source_that_no_longer_holds_the_original_once_is_refused(source: str,
     assert "src/prompt.txt no longer holds the text this run optimized exactly once" in capsys.readouterr().err
     assert apply_branches(prompt) == ""
     assert len(git(tmp_path / "repo", "worktree", "list").splitlines()) == 1
+
+
+def test_the_applied_source_keeps_every_byte_around_the_candidate(tmp_path: Path) -> None:
+    prompt = make_repo(tmp_path, source="PROMPT = `Be brief.`\n\n")
+    swiped_run(prompt)
+
+    assert apply(prompt) == 0
+
+    shown = subprocess.run(["git", "show", f"{BRANCH}:src/prompt.txt"], cwd=tmp_path / "repo", capture_output=True, text=True, check=True).stdout
+    assert shown == "PROMPT = `Be brief. Keep it short.`\n\n"
