@@ -1,13 +1,17 @@
 """Pure rules about a prompt's harness request: no I/O, environment or SDKs."""
 
+import re
 from typing import Any, cast
 
 
 def expand(text: str, placeholders: dict[str, str]) -> str:
-    """The text as the request carries it: each placeholder replaced by the text it is built as."""
-    for placeholder, built in placeholders.items():
-        text = text.replace(placeholder, built)
-    return text
+    """The text as the request carries it: each placeholder replaced by the text it is built as, in one pass, so a built
+    text that holds another placeholder keeps it as written."""
+    if not placeholders:
+        return text
+    # Longest first, so a placeholder that begins with another is never matched as the shorter one.
+    pattern = re.compile("|".join(re.escape(p) for p in sorted(placeholders, key=len, reverse=True)))
+    return pattern.sub(lambda match: placeholders[match.group()], text)
 
 
 def request_problem(request: Any, case_id: str, production_model: str, editable: str) -> str | None:
