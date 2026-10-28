@@ -43,16 +43,22 @@ def apply_candidate(prompt: PromptSettings, run_id: str | None, yes: bool) -> in
     applied = replace_once(show(repo, start, source_rel), record.original, candidate)
     if applied is None:
         raise Stop(f"{source_rel} no longer holds the text this run optimized exactly once; rerun the run on today's code")
-    prompt_rel = prompt.dir.resolve().relative_to(repo)
-    if not has_file(repo, start, prompt_rel / "editable.txt"):
-        raise Stop(f"{prompt_rel / 'editable.txt'} isn't committed; commit the workspace first, as the branch starts from your last commit")
+    # A workspace in the repo moves with the branch: its editable.txt is updated there, and its harness builds from it.
+    inside = prompt.dir.resolve().is_relative_to(repo)
+    editable = prompt.dir.resolve().relative_to(repo) / "editable.txt" if inside else None
+    if editable and not has_file(repo, start, editable):
+        raise Stop(f"{editable} isn't committed; commit the workspace first, as the branch starts from your last commit")
     add_worktree(repo, worktree, branch, start)
     (worktree / source_rel).write_text(applied)
-    (worktree / prompt_rel / "editable.txt").write_text(candidate)
-    verify_branch(prompt, repo, worktree)
-    commit_all(worktree, f"whetstone: apply {folder.name} to {prompt.dir.name}\n\nReport: {prompt_rel / 'runs' / folder.name / 'report.md'}")
+    if editable:
+        (worktree / editable).write_text(candidate)
+        verify_branch(prompt, repo, worktree)
+    report = editable.parent / "runs" / folder.name / "report.md" if editable else folder / "report.md"
+    commit_all(worktree, f"whetstone: apply {folder.name} to {prompt.dir.name}\n\nReport: {report}")
     remove_worktree(repo, worktree)
     print(f"committed the candidate on branch {branch}; nothing was pushed")
+    if not editable:
+        print("the workspace is outside the repo, so its editable.txt still holds the original: after merging, rerun /whetstone:init's editable step")
     return 0
 
 
