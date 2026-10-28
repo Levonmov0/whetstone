@@ -381,3 +381,14 @@ def test_verify_needs_an_apply_branch(tmp_path: Path, capsys: pytest.CaptureFixt
 
     assert apply(prompt, "--verify") == 2
     assert "run whetstone apply daily first" in capsys.readouterr().err
+
+
+def test_a_code_edit_needs_the_workspace_in_the_repo(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = outside_workspace(tmp_path)
+    with (prompt / "prompt.toml").open("a") as toml:
+        toml.write('apply = "code-edit"\n')
+    swiped_run(prompt)
+
+    assert apply(prompt) == 2
+    assert "a code edit needs the workspace in the repo" in capsys.readouterr().err
+    assert apply_branches(tmp_path / "repo") == ""
