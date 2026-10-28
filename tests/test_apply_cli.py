@@ -1,4 +1,5 @@
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -285,3 +286,12 @@ def test_an_uncommitted_workspace_is_refused(tmp_path: Path, capsys: pytest.Capt
     assert "commit the workspace first" in capsys.readouterr().err
     assert apply_branches(prompt) == ""
     assert len(git(repo, "worktree", "list").splitlines()) == 1
+
+
+def test_a_source_outside_any_git_repo_is_refused(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_repo(tmp_path)
+    shutil.rmtree(tmp_path / "repo" / ".git")
+    swiped_run(prompt)
+
+    assert apply(prompt) == 2
+    assert "src/prompt.txt isn't in a git repo" in capsys.readouterr().err
