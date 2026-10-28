@@ -38,3 +38,24 @@ def test_text_not_found_once_needs_a_code_edit(
     out = capsys.readouterr().out
     assert out.splitlines()[0] == "code-edit"
     assert f"found {times} times in ../src/prompt.txt" in out
+
+
+@pytest.mark.parametrize(
+    ("breakage", "message"),
+    [("no source", 'has no "source"'), ("source missing", "../src/prompt.txt"), ("no editable", "editable.txt")],
+)
+def test_apply_method_needs_a_source_and_an_editable_part(
+    breakage: str, message: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    prompt = sourced_prompt(tmp_path, "PROMPT = `Be brief.`\n")
+    if breakage == "no source":
+        toml = prompt / "prompt.toml"
+        toml.write_text(toml.read_text().replace('source = "../src/prompt.txt"\n', ""))
+    elif breakage == "source missing":
+        (tmp_path / "src" / "prompt.txt").unlink()
+    else:
+        (prompt / "editable.txt").unlink()
+    monkeypatch.chdir(tmp_path / "whetstone")
+
+    assert run(["apply-method", "daily"], make_model=unused_model) == 2
+    assert message in capsys.readouterr().err
