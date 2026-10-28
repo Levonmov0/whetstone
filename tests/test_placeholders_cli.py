@@ -67,3 +67,16 @@ def test_a_run_sends_expanded_text_and_keeps_placeholders_in_its_candidate(tmp_p
     assert model.requests
     assert all("${VOICE}" not in json.dumps(request) and "Speak plainly." in request["system"] for request in model.requests)
     assert (run_folder(prompt) / "candidate.txt").read_text() == "Be brief. ${VOICE} Keep it short."
+
+
+def test_a_rewrite_that_drops_a_table_placeholder_never_wins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_run_suite(tmp_path)
+    (prompt / "harness.py").write_text(HARNESS.replace("Be brief.", "Be brief. Speak plainly."))
+    (prompt / "editable.txt").write_text("Be brief. VOICE_RULES")
+    with (prompt / "prompt.toml").open("a") as toml:
+        toml.write('[placeholders]\nVOICE_RULES = "Speak plainly."\n')
+    model = writer()
+    monkeypatch.chdir(tmp_path)
+
+    assert start_run(model, rewriter("Be brief. Keep it short.")) == 1
+    assert all(request["system"] == "Be brief. Speak plainly." for request in model.requests)
