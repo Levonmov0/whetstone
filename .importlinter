@@ -27,6 +27,7 @@ forbidden_modules =
     openai
     dotenv
     httpx2
+    gepa
     os
     subprocess
     pathlib
@@ -43,6 +44,7 @@ forbidden_modules =
     openai
     dotenv
     httpx2
+    gepa
 allow_indirect_imports = True
 
 [importlinter:contract:web-in-entry]

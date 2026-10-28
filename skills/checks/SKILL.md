@@ -31,6 +31,7 @@ One check per rule, never one check for several rules. Write each into `checks/p
   - Each entry under `[fail]` is a failing answer, and its value is the reason shown, written the way a grader would say it. Use two answers for a binary question, more for multiple choice.
   - `reasons` lists the swipe reasons this judge stands for, including the exact one from step 1. It sits above `[fail]`, since TOML puts every key after `[fail]` inside it.
   - `guide` (optional) gives the detail the question needs: what counts and what doesn't, with a good and a bad example taken from the swipes.
+  - **Keep the guide to the question's one rule.** A second rule slips in most easily as one more "wrong" bullet or example. Test every failing case in the guide: fix only what the question asks about (for a timing judge, move the line to the right moment) and ask whether it would now pass. If it would still fail, it fails for another rule. Take it out, and propose that rule as its own check. Example: a morning-timing guide that also failed "asks whether a task got done" failed "Did you put the phone down last night?" at exactly the right time, so it judged two rules and disagreed with the grader on the second.
 
 For each judge, also add its reason to `prompt.toml`'s `reasons` list if it isn't there yet. On a card only a judge caught, the app still asks why, so graders tap it there and on later swipes. Only swipes that name the rule count when the judge is measured.
 
@@ -58,10 +59,10 @@ whetstone agreement <prompt>
 It judges every swiped card once (one OpenAI call per card per judge, printed before it starts). For each judge and each grader, it shows how often the judge agreed: on cards they called good, and on cards they called bad for that judge's rule.
 - **trusted:** 90% or more on both sides.
 - **warn:** 80% to 90%.
-- **untrusted:** below 80% on either side, or fewer than 5 swipes on a side. The optimizer (`/whetstone:run`, coming next) will refuse to run against an untrusted judge.
+- **untrusted:** below 80% on either side, or fewer than 5 swipes on a side. The optimizer (`/whetstone:run`) refuses to run against an untrusted judge.
 
 For each untrusted judge, follow its advice:
-- "fails outputs … called good": the judge is too strict. Sharpen `guide` with the good outputs it failed, then run `agreement` again.
+- "fails outputs … called good": the judge is too strict. Read the good outputs it failed side by side. If what they share has nothing to do with the question (they are all yes/no, all long), the guide carries a second rule: remove it as in step 2, and propose that rule as its own check. Otherwise sharpen `guide` with those outputs. Then run `agreement` again.
 - "misses problems … flagged": the judge is too lenient. Sharpen `guide` with the bad outputs it passed, or swipe more examples.
 - "only N … swipes": run `whetstone check <prompt>` and `/whetstone:grade` for more swipes, tapping the judge's reason on bad cards.
 

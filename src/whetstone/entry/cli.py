@@ -2,47 +2,41 @@ import argparse
 import fcntl
 import ipaddress
 import json
+import os
 import random
 import secrets
 import socket
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import IO, Any
 
 import qrcode
 
+from whetstone.entry.optimize import Meter, production_estimate, run_optimize
+from whetstone.entry.suite import MakeJudge, MakeModel, MakeRewrite, Stop, Suite, build, card, judges_or_stop, prepare_judge, prepare_suite, prices_or_stop, providers_or_stop
 from whetstone.features.baseline.core import baseline_report, swipe_section
 from whetstone.features.baseline.store import card_models, latest_run, save_run
-from whetstone.features.cases.core import provider_refusal
-from whetstone.features.cases.load import CaseError, load_cases
+from whetstone.features.cases.load import load_cases
 from whetstone.features.cases.sources import SourceError, add_source
-from whetstone.features.checks.core import CaseResult, JudgeAnswerError, Rubric, Side, agreement, covered_reasons, judge_failures, judge_gate, judge_request, report, uncovered_reasons
-from whetstone.features.checks.load import Check, CheckLoadError, code_check_reasons, load_checks, load_judges
+from whetstone.features.checks.core import Agreement, CaseResult, Side, agreement, covered_reasons, judge_gate, optimize_gate, report, uncovered_reasons
+from whetstone.features.checks.load import CheckLoadError, code_check_reasons
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
-from whetstone.features.workspace.core import request_differences, request_problem
-from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, judge_model, load_prompt, phone_access, prompt_names, repo_providers
+from whetstone.features.optimize.core import SplitError, split_cases
+from whetstone.features.workspace.core import request_differences
+from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, judge_model, load_prompt, phone_access, prompt_names, rewrite_settings
 from whetstone.platform.anthropic import anthropic_model
+from whetstone.platform.claude_code import claude_code_model
 from whetstone.platform.config import MissingKey, load_key
 from whetstone.platform.daemon import command_line, is_running, start_detached, stop, write_private
-from whetstone.platform.harness import HarnessError, build_request
 from whetstone.platform.model import ModelCall, ModelError
 from whetstone.platform.network import TailscaleError, TailscaleMissing, lan_address, tailscale_address
 from whetstone.platform.openai import openai_model
 
-MakeModel = Callable[[PromptSettings], ModelCall]
-MakeJudge = Callable[[Path], ModelCall]  # takes the workspace, whose .env holds the judge key
-Ask = Callable[[str, Rubric, str, Any, Any], list[str]]  # judge name, rubric, case id, input, output -> failures
 
-
-class Stop(Exception):
-    """A broken setup: the message is printed and the command exits 2."""
-
-
-def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = None) -> int:
+def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = None, make_rewrite: MakeRewrite | None = None) -> int:
     parser = argparse.ArgumentParser(prog="whetstone")
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("check", help="run every case through the prompt and its checks")
@@ -58,11 +52,20 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
     settle = commands.add_parser("settle", help="record your call on a card graders disagree on")
     serve = commands.add_parser("serve", help="start the swipe server in the background and show its QR code")
     source = commands.add_parser("add-source", help="make a private folder for one real-data source and record its consent")
-    for command in (check, verify, source, disagree, settle, reasons, agree, baseline):
+    optimize = commands.add_parser("run", help="optimize the prompt's editable part with GEPA, and test the winner on held-back cases")
+    optimize.add_argument("--model", help="the cheap model to generate on")
+    optimize.add_argument("--report", action="store_true", help="add the blind swipes so far to the latest run's report")
+    optimize.add_argument("--budget", type=int, default=150, help="the most generation calls GEPA may make")
+    optimize.add_argument("--production", action="store_true", help="run on the production model, after showing a cost estimate")
+    optimize.add_argument("--yes", action="store_true", help="start the production run the estimate was shown for")
+    optimize.add_argument("--foreground", action="store_true", help="run here instead of in the background")
+    optimize.add_argument("--run-id", help=argparse.SUPPRESS)  # given to the background worker
+    optimize.add_argument("--lock-fd", type=int, help=argparse.SUPPRESS)  # the run lock the worker inherits
+    for command in (check, verify, source, disagree, settle, reasons, agree, baseline, optimize):
         command.add_argument("prompt")
     serve.add_argument("prompt", nargs="?")
     serve.add_argument("--stop", action="store_true", help="stop the running swipe server")
-    for command in (check, verify, source, disagree, settle, serve, reasons, agree, baseline):
+    for command in (check, verify, source, disagree, settle, serve, reasons, agree, baseline, optimize):
         command.add_argument("--workspace", type=Path, help="the workspace folder, when it is not ./ or ./whetstone/")
     serve.add_argument("--host", help="the address to listen on")
     settle.add_argument("card", help="the card id, as disagreements prints it")
@@ -74,6 +77,7 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
     source.add_argument("--consented-on", required=True, help="the date they consented, such as 2026-10-26")
     args = parser.parse_args(argv)
     make_judge = make_judge or production_judge
+    make_rewrite = make_rewrite or production_rewrite
 
     try:
         if args.command == "serve" and args.stop:
@@ -85,6 +89,24 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
             return refresh_baseline_report(prompt)
         if args.command == "baseline":
             return run_baseline(prompt, [m for m in args.models.split(",") if m], make_model, make_judge)
+        if args.command == "run" and args.report:
+            return refresh_run_report(prompt)
+        if args.command == "run":
+            if args.production:
+                cap = production_cap(prompt, args.budget, args.yes)
+                if cap is None:
+                    return 0
+                model = prompt.model
+            elif args.model is None:
+                raise Stop("pass --model <a cheap model>, or --production")
+            else:
+                model, cap = args.model, None
+            if not args.foreground:
+                with run_lock(prompt) as lock:
+                    return start_in_background(prompt, argv, make_model, make_judge, make_rewrite, lock)
+            # A worker inherits the lock its starting command took, so no other run can start in between.
+            with os.fdopen(args.lock_fd, "w") if args.lock_fd is not None else run_lock(prompt):
+                return start_run(prompt, model, args.budget, make_model, make_judge, make_rewrite, cap, args.run_id or new_deck_id())
         if args.command == "agreement":
             return show_agreement(prompt, make_judge)
         if args.command == "reasons":
@@ -123,90 +145,6 @@ def workspace_or_stop(explicit_workspace: Path | None) -> Path:
     if workspace is None:
         raise Stop("no Whetstone workspace found; run /whetstone:init or pass --workspace")
     return workspace
-
-
-def build(prompt: PromptSettings, case_id: str, case_json: str) -> Any:
-    try:
-        return build_request(prompt.harness, prompt.workspace, case_json)
-    except HarnessError as e:
-        raise Stop(f"case {case_id}: {e}") from None
-
-
-@dataclass(frozen=True)
-class Suite:
-    """A prompt's vetted requests and its checks, ready to run: everything that can stop a run is checked by then."""
-
-    requests: list[tuple[str, Any, Any]]  # case id, case input, the harness's request
-    checks: dict[str, Check]
-    judges: dict[str, Rubric]
-    ask: Ask | None
-    model: ModelCall
-
-    def check_names(self) -> list[str]:
-        return [*self.checks, *(f"{name} (judge)" for name in self.judges)]
-
-    def score(self, case_id: str, case_input: Any, output: Any) -> dict[str, list[str]]:
-        """Each check's failure messages on one output, empty when it passed; judges are named "<name> (judge)"."""
-        failures: dict[str, list[str]] = {}
-        for name, check in self.checks.items():
-            try:
-                messages = check(output)
-            except Exception as e:  # a check is the workspace's own code; any crash means the suite is broken
-                raise Stop(f"check {name} crashed on case {case_id}: {e}") from None
-            if not isinstance(messages, list) or not all(isinstance(m, str) for m in cast(list[Any], messages)):
-                raise Stop(f"check {name} returned {messages!r} on case {case_id}; a check returns a list of failure messages")
-            failures[name] = cast(list[str], messages)
-        for name, rubric in self.judges.items():
-            assert self.ask
-            failures[f"{name} (judge)"] = self.ask(name, rubric, case_id, case_input, output)
-        return failures
-
-
-def prepare_suite(prompt: PromptSettings, make_model: MakeModel, make_judge: MakeJudge) -> Suite:
-    if prompt.editable is None:
-        raise Stop(f'{prompt.dir / "prompt.toml"} has no "editable" part yet')
-    # Every request is built and vetted before the first model call, so a broken harness costs nothing.
-    try:
-        cases = load_cases(prompt.dir)
-    except CaseError as e:
-        raise Stop(str(e)) from None
-    if not cases:
-        raise Stop(f"no cases in {prompt.dir / 'cases'}")
-    has_private = any(case_id.startswith("private/") for case_id, _ in cases)
-    providers = providers_or_stop(prompt)
-    if refusal := provider_refusal(prompt.provider, providers, has_private):
-        raise Stop(refusal)
-    requests: list[tuple[str, Any, Any]] = []
-    for case_id, case_json in cases:
-        try:
-            case_input = json.loads(case_json)
-        except ValueError as e:
-            raise Stop(f"case {case_id} is not valid JSON: {e}") from None
-        request = build(prompt, case_id, case_json)
-        if problem := request_problem(request, case_id, prompt.model, prompt.editable):
-            raise Stop(problem)
-        requests.append((case_id, case_input, request))
-
-    try:
-        checks = load_checks(prompt.dir)
-    except CheckLoadError as e:
-        raise Stop(str(e)) from None
-    judges = judges_or_stop(prompt)
-    ask = prepare_judge(prompt, providers, has_private, make_judge) if judges else None
-    try:
-        model = make_model(prompt)
-    except MissingKey as e:
-        raise Stop(str(e)) from None
-    return Suite(requests, checks, judges, ask, model)
-
-
-def card(case_id: str, case_input: Any, output: Any, failures: dict[str, list[str]]) -> dict[str, Any]:
-    """An output as a card: the checks that caught it, and, when any are judges, which ones. A judge's catch is never
-    taken as the grader's reason, or agreement would count the judge as agreeing with itself."""
-    made: dict[str, Any] = {"case_id": case_id, "input": case_input, "output": output}
-    made["caught_by"] = [name.removesuffix(" (judge)") for name, messages in failures.items() if messages]
-    judges = [name.removesuffix(" (judge)") for name, messages in failures.items() if messages and name.endswith(" (judge)")]
-    return made | ({"judges": judges} if judges else {})
 
 
 def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: MakeJudge) -> int:
@@ -274,6 +212,87 @@ def refresh_baseline_report(prompt: PromptSettings) -> int:
     report = folder / "report.md"
     deck_id = folder.name.removeprefix("baseline-")
     report.write_text(swipe_section(report.read_text(), load_labels(prompt.dir), deck_id, card_models(folder)))
+    return 0
+
+
+def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite, cap: float | None, run_id: str) -> int:
+    meter = Meter(prices_or_stop(prompt))
+    suite, rewrite, rewrite_model = vet_run(prompt, meter, make_model, make_judge, make_rewrite)
+    return run_optimize(suite, prompt, model, rewrite, rewrite_model, budget, run_id, meter, cap)
+
+
+def vet_run(prompt: PromptSettings, meter: Meter, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite) -> tuple[Suite, ModelCall, str | None]:
+    """Everything that can stop a run before it optimizes: the suite, the split, the rewriter and the judge gate. The
+    starting command and the worker both run it, so a broken setup is said before "started"."""
+    # The suite first: it is vetted without a model call, and the judge gate then spends judge calls.
+    suite = prepare_suite(prompt, make_model, lambda workspace: meter.wrap("judge", make_judge(workspace)))
+    try:
+        split_cases([case_id for case_id, _, _ in suite.requests])
+        rewrite = make_rewrite(prompt.workspace)
+        _via, rewrite_model = rewrite_settings(prompt.workspace)
+    except (SplitError, PromptError, MissingKey) as e:
+        raise Stop(str(e)) from None
+    gates = judge_gates(prompt, lambda workspace: meter.wrap("gate", make_judge(workspace))) or {}
+    allowed, advice = optimize_gate({name: (status, lines) for name, (_rows, status, lines) in gates.items()})
+    if not allowed:
+        raise Stop("\n".join(advice))
+    print("".join(f"{line}\n" for line in advice), end="")
+    return suite, rewrite, rewrite_model
+
+
+def production_cap(prompt: PromptSettings, budget: int, yes: bool) -> float | None:
+    """Shows a production run's estimate; its cap, twice the estimate, once the user said yes, else None."""
+    table = prices_or_stop(prompt)
+    # Every model paid by the token needs a price, or its spend would escape the cap; Claude Code reports its own cost.
+    try:
+        via, rewrite_model = rewrite_settings(prompt.workspace)
+        judged = judge_model(prompt.workspace)[1] if judges_or_stop(prompt) else None
+    except PromptError as e:
+        raise Stop(str(e)) from None
+    for model in (prompt.model, judged, rewrite_model if via == "api" else None):
+        if model is not None and model not in table:
+            raise Stop(f"[prices] in whetstone.toml has no price for {model}; a production run needs one to estimate its cost")
+    price = table[prompt.model]
+    expected = production_estimate(prompt, budget, price)
+    print(f"a production run on {prompt.model}: about ${expected:.2f}; it stops at ${2 * expected:.2f}." + ("" if yes else " Rerun with --yes to start."), flush=True)
+    return 2 * expected if yes else None
+
+
+def run_lock(prompt: PromptSettings) -> IO[str]:
+    """Held for a run's life, so two runs of one prompt never spend at once or replace each other's deck. The starting
+    command takes it and hands it to the worker it starts."""
+    logs = private_dir(prompt.workspace) / "runs"
+    logs.mkdir(exist_ok=True)
+    lock = (logs / f"{prompt.dir.name}.lock").open("w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock.close()
+        raise Stop(f"a run of {prompt.dir.name} is already going; its log is in .whetstone/runs/") from None
+    return lock
+
+
+def start_in_background(prompt: PromptSettings, argv: list[str], make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite, lock: IO[str]) -> int:
+    """Vets the run, then starts it as a worker in a session of its own, so it outlives this command and the Claude
+    session; the worker vets again and does the rest, logging as it goes."""
+    vet_run(prompt, Meter(prices_or_stop(prompt)), make_model, make_judge, make_rewrite)
+    run_id = new_deck_id()
+    log = prompt.workspace / ".whetstone" / "runs" / f"{prompt.dir.name}-{run_id}.log"
+    worker = [sys.executable, "-m", "whetstone.entry.cli", *argv, "--foreground", "--run-id", run_id, "--lock-fd", str(lock.fileno()), "--workspace", str(prompt.workspace)]
+    pid = start_detached(worker, "", log, pass_fds=(lock.fileno(),))
+    print(f"run {run_id} of {prompt.dir.name} started in the background (pid {pid})")
+    print(f"log: {log}")
+    return 0
+
+
+def refresh_run_report(prompt: PromptSettings) -> int:
+    # Run ids are timestamps, so the names sort by time; only a run with a candidate has a blind deck.
+    runs = sorted(folder for folder in (prompt.dir / "runs").glob("run-*") if (folder / "cards.json").is_file())
+    if not runs:
+        raise Stop(f"no run of {prompt.dir.name} yet; run whetstone run {prompt.dir.name} --model …")
+    report = runs[-1] / "report.md"
+    deck_id = runs[-1].name.removeprefix("run-")
+    report.write_text(swipe_section(report.read_text(), load_labels(prompt.dir), deck_id, json.loads((runs[-1] / "cards.json").read_text())))
     return 0
 
 
@@ -390,69 +409,38 @@ def show_link(url: str) -> None:
     print(url)
 
 
-def providers_or_stop(prompt: PromptSettings) -> list[str] | None:
-    try:
-        return repo_providers(prompt.workspace)
-    except PromptError as e:
-        raise Stop(str(e)) from None
-
-
-def judges_or_stop(prompt: PromptSettings) -> dict[str, Rubric]:
-    try:
-        return load_judges(prompt.dir)
-    except CheckLoadError as e:
-        raise Stop(str(e)) from None
-
-
-def prepare_judge(prompt: PromptSettings, providers: list[str] | None, has_private: bool, make_judge: MakeJudge) -> Ask:
-    """Asks one judge about one case's output, giving its failure messages. Everything that can stop it is checked here,
-    before any model call."""
-    try:
-        provider, judged_by = judge_model(prompt.workspace)
-    except PromptError as e:
-        raise Stop(str(e)) from None
-    # Judges see each case's input, so a real-data case goes to them only on a provider the repo already uses.
-    if refusal := provider_refusal(provider, providers, has_private):
-        raise Stop(refusal)
-    try:
-        judge = make_judge(prompt.workspace)
-    except MissingKey as e:
-        raise Stop(str(e)) from None
-
-    def ask(name: str, rubric: Rubric, case_id: str, case_input: Any, output: Any) -> list[str]:
-        try:
-            return judge_failures(rubric, judge(judge_request(rubric, judged_by, case_input, output)).output)
-        except ModelError as e:
-            raise Stop(f"judge {name} failed on case {case_id}: {e}") from None
-        except JudgeAnswerError as e:
-            choices = ", ".join([rubric.passing, *rubric.fail])
-            raise Stop(f"judge {name} answered {json.dumps(str(e))} on case {case_id}; expected one of: {choices}") from None
-
-    return ask
-
-
 def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
-    judges = judges_or_stop(prompt)
-    if not judges:
+    gates = judge_gates(prompt, make_judge)
+    if gates is None:
         print("no judges in checks/")
         return 0
-    labels = load_labels(prompt.dir)
-    providers = providers_or_stop(prompt)
-    ask = prepare_judge(prompt, providers, any(label["case_id"].startswith("private/") for label in labels), make_judge)
-    # Each swiped card is judged once, from the input and output its label kept, however many graders swiped it.
-    cards = {label["card_id"]: label for label in labels}
-    print(_count(len(cards) * len(judges), "judge call"), flush=True)
     code = 0
-    for name, rubric in judges.items():
-        verdicts = {card: not ask(name, rubric, label["case_id"], label["input"], label["output"]) for card, label in cards.items()}
-        rows = agreement(labels, verdicts, covered_reasons({}, {name: rubric}))
-        status, advice = judge_gate(rows)
+    for name, (rows, status, advice) in gates.items():
         print(f"{name}: {status}")
         for grader, row in rows.items():
             print(f"  {grader}: good {_side(row.good)}, bad {_side(row.bad)}")
         print("".join(f"  {line}\n" for line in advice), end="")
         code = 1 if status == "untrusted" else code
     return code
+
+
+def judge_gates(prompt: PromptSettings, make_judge: MakeJudge) -> dict[str, tuple[dict[str, Agreement], str, list[str]]] | None:
+    """Each judge's agreement with the swipes per grader, its gate and the advice; None without judges."""
+    judges = judges_or_stop(prompt)
+    if not judges:
+        return None
+    labels = load_labels(prompt.dir)
+    providers = providers_or_stop(prompt)
+    ask = prepare_judge(prompt, providers, any(label["case_id"].startswith("private/") for label in labels), make_judge)
+    # Each swiped card is judged once, from the input and output its label kept, however many graders swiped it.
+    cards = {label["card_id"]: label for label in labels}
+    print(_count(len(cards) * len(judges), "judge call"), flush=True)
+    gates: dict[str, tuple[dict[str, Agreement], str, list[str]]] = {}
+    for name, rubric in judges.items():
+        verdicts = {card: not ask(name, rubric, label["case_id"], label["input"], label["output"]) for card, label in cards.items()}
+        rows = agreement(labels, verdicts, covered_reasons({}, {name: rubric}))
+        gates[name] = (rows, *judge_gate(rows))
+    return gates
 
 
 def _calls(generation: int, judging: int) -> str:
@@ -513,9 +501,19 @@ def production_model(settings: PromptSettings) -> ModelCall:
     return anthropic_model(load_key(settings.workspace, "GENERATION_API_KEY"))
 
 
+def production_rewrite(workspace: Path, api: Callable[[str], ModelCall] = anthropic_model) -> ModelCall:
+    """Rewrites through Claude Code's headless mode by default, else the Anthropic API with their own key."""
+    via, _model = rewrite_settings(workspace)  # the run puts the model in each rewrite request, where the meter sees it
+    return api(load_key(workspace, "REWRITE_API_KEY")) if via == "api" else claude_code_model()
+
+
 def production_judge(workspace: Path) -> ModelCall:
     return openai_model(load_key(workspace, "JUDGE_API_KEY"))
 
 
 def main() -> None:
     sys.exit(run(sys.argv[1:], make_model=production_model, make_judge=production_judge))
+
+
+if __name__ == "__main__":
+    main()
