@@ -374,3 +374,10 @@ def test_verify_commits_the_code_edit_once_the_branch_builds_the_candidate(tmp_p
     assert git(repo, "diff", "--name-only", f"{BRANCH}~1", BRANCH).splitlines() == ["src/prompt.txt", "whetstone/prompts/daily/editable.txt"]
     assert git(repo, "show", f"{BRANCH}:whetstone/prompts/daily/editable.txt") == "Be brief. Keep it short."
     assert not (tmp_path / WORKTREE).exists()
+
+
+def test_verify_needs_an_apply_branch(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = code_edit_repo(tmp_path)
+
+    assert apply(prompt, "--verify") == 2
+    assert "run whetstone apply daily first" in capsys.readouterr().err
