@@ -220,3 +220,15 @@ def test_a_placeholder_prompt_is_applied_in_its_source_form(tmp_path: Path) -> N
     assert apply(prompt) == 0
 
     assert git(tmp_path / "repo", "show", f"{BRANCH}:src/prompt.txt") == "PROMPT = `Be brief. ${VOICE} Keep it short.`"
+
+
+def test_an_existing_branch_name_is_refused(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_repo(tmp_path)
+    repo = tmp_path / "repo"
+    git(repo, "branch", BRANCH)
+    swiped_run(prompt)
+
+    assert apply(prompt) == 2
+    assert f"branch {BRANCH} already exists" in capsys.readouterr().err
+    assert git(repo, "rev-parse", BRANCH) == git(repo, "rev-parse", "main")
+    assert len(git(repo, "worktree", "list").splitlines()) == 1
