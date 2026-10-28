@@ -15,12 +15,12 @@ def _git(cwd: Path, *args: str) -> str:
 def _raw(cwd: Path, *args: str) -> str:
     """Git's output as it printed it, every byte kept."""
     try:
-        done = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+        done = subprocess.run(["git", *args], cwd=cwd, capture_output=True)
     except FileNotFoundError:
         raise GitError("git was not found") from None
     if done.returncode != 0:
-        raise GitError(f"git {args[0]} failed: {done.stderr.strip()}")
-    return done.stdout
+        raise GitError(f"git {args[0]} failed: {done.stderr.decode(errors='replace').strip()}")
+    return done.stdout.decode()  # bytes decoded as they are: text mode would turn \r\n into \n
 
 
 def toplevel(path: Path) -> Path:

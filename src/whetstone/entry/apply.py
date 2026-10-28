@@ -74,7 +74,7 @@ def _apply(prompt: PromptSettings, run_id: str | None, yes: bool, verify: bool, 
     if applied is None:
         raise Stop(f"{source_rel} no longer holds the text this run optimized exactly once; rerun the run on today's code")
     add_worktree(repo, worktree, branch, start)
-    (worktree / source_rel).write_text(applied)
+    (worktree / source_rel).write_text(applied, newline="")
     return commit_verified(prompt, branched, candidate)
 
 
