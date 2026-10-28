@@ -123,6 +123,11 @@ def progress_line(version: int, passing: int, total: int, best: bool) -> str:
 NOISE = 0.03  # the same prompt scored 0.90 and 0.87 on two runs
 
 
+def within_noise(original: float, candidate: float) -> bool:
+    """Whether two average scores are as close as two runs of one prompt can be."""
+    return round(abs(candidate - original), 6) <= NOISE
+
+
 def run_report(
     prompt: str,
     original: str,
@@ -142,7 +147,7 @@ def run_report(
         clean = sum(not any(failures.values()) for failures in cases.values())
         counts = [f"{sum(not failures[name] for failures in cases.values())}/{len(cases)}" for name in checks]
         lines.append("| " + " | ".join([version, f"{clean}/{len(cases)}", f"{average[version]:.2f}", *counts]) + " |")
-    if round(abs(average["candidate"] - average["original"]), 6) <= NOISE:
+    if within_noise(average["original"], average["candidate"]):
         lines += ["", f"The average scores differ by {NOISE} or less: within noise (±{NOISE}), as two runs of one prompt can."]
     fixed = [
         name

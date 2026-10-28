@@ -12,7 +12,7 @@ from typing import Any
 from whetstone.entry.suite import Stop, Suite, card
 from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.grading.store import save_deck
-from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, length_factor, placeholder_problem, progress_line, run_report, split_cases, stop_for_cap, stuck_reasons, swap_editable
+from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, length_factor, placeholder_problem, progress_line, run_report, split_cases, stop_for_cap, stuck_reasons, swap_editable, within_noise
 from whetstone.features.workspace.core import expand
 from whetstone.features.workspace.load import PromptSettings
 from whetstone.platform.gepa import optimize
@@ -183,6 +183,9 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
         average = {version: total / len(held) for version, total in totals.items()}
 
         (folder / "candidate.txt").write_text(best)
+        clean = {version: sum(not any(f.values()) for f in cases.values()) for version, cases in held_failures.items()}
+        result = {"original": editable, "held_back": {"cases": len(held), **clean}, "within_noise": within_noise(average["original"], average["candidate"])}
+        (folder / "run.json").write_text(json.dumps({"model": model, **result}))
         save_cost()
         (folder / "cards.json").write_text(json.dumps(versions_by_tag, indent=2))
         report = run_report(prompt_dir.name, editable, best, held_failures, average, meter.spent, stuck_reasons(records))
