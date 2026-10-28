@@ -8,3 +8,9 @@ def apply_method(source_text: str, editable: str, source: str) -> tuple[str, str
     if times == 1:
         return "exact", None
     return "code-edit", f"the editable part is found {times} times in {source}, so applying a candidate means editing the code"
+
+
+def run_line(run: str, model: str, production_model: str, cases: int, original_clean: int, candidate_clean: int) -> str:
+    """The run apply is about to use, said before anything else."""
+    on = "production model" if model == production_model else f"cheap model {model}"
+    return f"{run}, {on}, {candidate_clean}/{cases} held-back passing vs {original_clean}/{cases} original"
