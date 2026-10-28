@@ -139,3 +139,12 @@ def test_a_candidate_never_swiped_blind_is_warned_about(tmp_path: Path, capsys: 
     assert apply_branches(prompt) == ""
     assert apply(prompt, "--yes") == 0
     assert "no blind swipe yet" in capsys.readouterr().out
+
+
+def test_a_gain_within_noise_is_warned_about(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_repo(tmp_path)
+    write_run(prompt, LATER, within_noise=True)
+    swipe(prompt, LATER, "c1", "good")
+
+    assert apply(prompt) == 1
+    assert "within noise" in capsys.readouterr().out
