@@ -10,7 +10,7 @@ from whetstone.features.baseline.core import swipe_tally
 from whetstone.features.cases.load import load_cases
 from whetstone.features.grading.store import load_labels
 from whetstone.features.workspace.load import PromptSettings
-from whetstone.platform.git import add_worktree, branch_exists, commit_all, has_file, head, remove_worktree, show, toplevel
+from whetstone.platform.git import GitError, add_worktree, branch_exists, commit_all, has_file, head, remove_worktree, show, toplevel
 from whetstone.platform.harness import HarnessError, build_request
 
 
@@ -29,7 +29,10 @@ def apply_candidate(prompt: PromptSettings, run_id: str | None, yes: bool) -> in
         return 1
     candidate = (folder / "candidate.txt").read_text()
     source = (prompt.workspace / str(prompt.source)).resolve()
-    repo = toplevel(source.parent)
+    try:
+        repo = toplevel(source.parent)
+    except GitError:
+        raise Stop(f"{prompt.source} isn't in a git repo; apply commits the candidate on a branch") from None
     run_id = folder.name.removeprefix("run-")
     branch = f"whetstone/{prompt.dir.name}-{run_id}"
     if branch_exists(repo, branch):
