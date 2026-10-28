@@ -8,7 +8,7 @@ from whetstone.entry.suite import Stop, source_file
 from whetstone.features.apply.core import replace_once, run_line, warnings
 from whetstone.features.apply.store import RunError, candidate_run, run_record, write_export
 from whetstone.features.baseline.core import swipe_tally
-from whetstone.features.cases.load import load_cases
+from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.grading.store import load_labels
 from whetstone.features.workspace.core import expand, rendered_texts
 from whetstone.features.workspace.load import PromptSettings
@@ -125,7 +125,11 @@ def verify_branch(prompt: PromptSettings, branch: Branch, candidate: str) -> str
     the candidate isn't in one of them exactly once, or None."""
     workspace = branch.worktree / prompt.workspace.resolve().relative_to(branch.repo)
     expanded = expand(candidate, prompt.placeholders)
-    for case_id, case_json in load_cases(prompt.dir):
+    try:
+        cases = load_cases(prompt.dir)
+    except CaseError as e:
+        raise Stop(f"{e}\nThen run {branch.verify_command}") from None
+    for case_id, case_json in cases:
         try:
             request = build_request(prompt.harness, workspace, case_json)
         except HarnessError as e:
