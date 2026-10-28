@@ -40,3 +40,12 @@ def run_record(folder: Path) -> RunRecord:
         raise RunError(f"{folder.name} was made before apply existed and has no recorded result; run it again")
     held = record["held_back"]
     return RunRecord(record["model"], record["original"], held["cases"], held["original"], held["candidate"], record["within_noise"])
+
+
+def write_export(folder: Path, patch: str, files: dict[str, str]) -> None:
+    """A candidate applied to a folder: `change.patch`, and each changed file at its path in the repo."""
+    folder.mkdir(parents=True)
+    (folder / "change.patch").write_text(patch)
+    for path, text in files.items():
+        (folder / path).parent.mkdir(parents=True, exist_ok=True)
+        (folder / path).write_text(text)

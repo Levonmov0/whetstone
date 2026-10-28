@@ -6,17 +6,17 @@ from pathlib import Path
 
 from whetstone.entry.suite import Stop
 from whetstone.features.apply.core import replace_once, run_line, warnings
-from whetstone.features.apply.store import RunError, candidate_run, run_record
+from whetstone.features.apply.store import RunError, candidate_run, run_record, write_export
 from whetstone.features.baseline.core import swipe_tally
 from whetstone.features.cases.load import load_cases
 from whetstone.features.grading.store import load_labels
 from whetstone.features.workspace.core import expand, rendered_texts
 from whetstone.features.workspace.load import PromptSettings
-from whetstone.platform.git import GitError, add_worktree, branch_exists, commit_all, has_file, head, remove_worktree, show, toplevel
+from whetstone.platform.git import GitError, add_worktree, branch_exists, changed_files, commit_all, delete_branch, diff, has_file, head, remove_worktree, show, toplevel
 from whetstone.platform.harness import HarnessError, build_request
 
 
-def apply_candidate(prompt: PromptSettings, run_id: str | None, yes: bool, verify: bool) -> int:
+def apply_candidate(prompt: PromptSettings, run_id: str | None, yes: bool, verify: bool, out: Path | None) -> int:
     try:
         folder = candidate_run(prompt.dir, run_id)
         record = run_record(folder)
@@ -43,7 +43,7 @@ def apply_candidate(prompt: PromptSettings, run_id: str | None, yes: bool, verif
     # A workspace in the repo moves with the branch: its editable.txt is updated there, and its harness builds from it.
     inside = prompt.dir.resolve().is_relative_to(repo)
     editable = prompt.dir.resolve().relative_to(repo) / "editable.txt" if inside else None
-    branched = Branch(repo, branch, worktree, editable, folder)
+    branched = Branch(repo, branch, worktree, editable, folder, out / f"{prompt.dir.name}-{run_id}" if out else None)
     if verify:
         if not worktree.is_dir():
             raise Stop(f"no apply branch of {folder.name} is waiting at {worktree}; run whetstone apply {prompt.dir.name} first")
@@ -78,6 +78,7 @@ class Branch:
     worktree: Path
     editable: Path | None  # the prompt's editable.txt, relative to the repo; None when the workspace is outside it
     run: Path  # the run's folder
+    export: Path | None  # the folder target: the change is written here, and the branch deleted
 
 
 def commit_verified(prompt: PromptSettings, branch: Branch, candidate: str) -> int:
@@ -91,7 +92,14 @@ def commit_verified(prompt: PromptSettings, branch: Branch, candidate: str) -> i
     report = branch.editable.parent / "runs" / branch.run.name / "report.md" if branch.editable else branch.run / "report.md"
     commit_all(branch.worktree, f"whetstone: apply {branch.run.name} to {prompt.dir.name}\n\nReport: {report}")
     remove_worktree(branch.repo, branch.worktree)
-    print(f"committed the candidate on branch {branch.name}; nothing was pushed")
+    if branch.export:
+        base = f"{branch.name}~1"
+        files = {path: show(branch.repo, branch.name, Path(path)) for path in changed_files(branch.repo, base, branch.name)}
+        write_export(branch.export, diff(branch.repo, base, branch.name), files)
+        delete_branch(branch.repo, branch.name)
+        print(f"wrote the change to {branch.export}: change.patch applies with git apply")
+    else:
+        print(f"committed the candidate on branch {branch.name}; nothing was pushed")
     if not branch.editable:
         print("the workspace is outside the repo, so its editable.txt still holds the original: after merging, rerun /whetstone:init's editable step")
     return 0

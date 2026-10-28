@@ -66,6 +66,7 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
     optimize.add_argument("--lock-fd", type=int, help=argparse.SUPPRESS)  # the run lock the worker inherits
     applying = commands.add_parser("apply", help="put a run's candidate into the source, on a new branch")
     applying.add_argument("--verify", action="store_true", help="commit a code edit once the request its harness builds holds the candidate")
+    applying.add_argument("--folder", type=Path, help="write the change to this folder instead of leaving a branch")
     applying.add_argument("--yes", action="store_true", help="apply even after warnings")
     applying.add_argument("--run", help="the run to apply, by id; the latest run with a candidate by default")
     method = commands.add_parser("apply-method", help="say whether the editable part is one fixed string in its source file")
@@ -116,7 +117,7 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
             with os.fdopen(args.lock_fd, "w") if args.lock_fd is not None else run_lock(prompt):
                 return start_run(prompt, model, args.budget, make_model, make_judge, make_rewrite, cap, args.run_id or new_deck_id())
         if args.command == "apply":
-            return apply_candidate(prompt, args.run, args.yes, args.verify)
+            return apply_candidate(prompt, args.run, args.yes, args.verify, args.folder)
         if args.command == "apply-method":
             return show_apply_method(prompt)
         if args.command == "agreement":

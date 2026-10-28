@@ -70,3 +70,17 @@ def commit_all(worktree: Path, message: str) -> None:
 def remove_worktree(repo: Path, path: Path) -> None:
     """The worktree's folder goes; its branch stays."""
     _git(repo, "worktree", "remove", "--force", str(path))
+
+
+def diff(repo: Path, base: str, tip: str) -> str:
+    """The change from `base` to `tip` as a patch `git apply` takes."""
+    return _raw(repo, "diff", "--binary", base, tip)
+
+
+def changed_files(repo: Path, base: str, tip: str) -> list[str]:
+    """The paths, relative to the repo's root, that `tip` adds or changes since `base`."""
+    return _git(repo, "diff", "--name-only", base, tip).splitlines()
+
+
+def delete_branch(repo: Path, branch: str) -> None:
+    _git(repo, "branch", "-q", "-D", branch)
