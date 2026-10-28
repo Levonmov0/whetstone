@@ -348,3 +348,15 @@ def test_a_code_edit_apply_makes_the_branch_and_shows_the_edit(tmp_path: Path, c
     assert "Be brief.\n" in out and "Be brief. Keep it short.\n" in out
     assert git(repo, "rev-parse", BRANCH) == git(repo, "rev-parse", "main")
     assert git(tmp_path / WORKTREE, "status", "--porcelain") == ""
+
+
+def test_verify_refuses_until_the_branch_builds_the_candidate(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = code_edit_repo(tmp_path)
+    repo = tmp_path / "repo"
+    apply(prompt)
+    capsys.readouterr()
+
+    assert apply(prompt, "--verify") == 1
+
+    assert "candidate found 0 times in the request for case case-0" in capsys.readouterr().out
+    assert git(repo, "rev-parse", BRANCH) == git(repo, "rev-parse", "main")
