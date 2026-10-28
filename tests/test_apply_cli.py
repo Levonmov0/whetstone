@@ -118,3 +118,24 @@ def test_apply_names_the_run_first(model: str, named: str, tmp_path: Path, capsy
     apply(prompt)
 
     assert capsys.readouterr().out.splitlines()[0] == f"run-{LATER}, {named}, 2/3 held-back passing vs 1/3 original"
+
+
+def swipe(prompt: Path, run_id: str, tag: str, verdict: str, grader: str = "Levon") -> None:
+    label = {"card_id": f"{run_id}:case-0:{tag}", "case_id": "case-0", "grader": grader, "verdict": verdict, "reasons": [], "at": "2026-10-28T10:00:00+00:00"}
+    with (prompt / "labels.jsonl").open("a") as labels:
+        labels.write(json.dumps(label) + "\n")
+
+
+def apply_branches(prompt: Path) -> str:
+    return git(prompt, "branch", "--list", "whetstone/*")
+
+
+def test_a_candidate_never_swiped_blind_is_warned_about(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_repo(tmp_path)
+    write_run(prompt, LATER)
+
+    assert apply(prompt) == 1
+    assert "no blind swipe yet" in capsys.readouterr().out
+    assert apply_branches(prompt) == ""
+    assert apply(prompt, "--yes") == 0
+    assert "no blind swipe yet" in capsys.readouterr().out
