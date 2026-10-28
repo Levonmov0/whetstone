@@ -550,3 +550,18 @@ def test_a_run_still_writing_its_files_is_passed_over(tmp_path: Path, capsys: py
     apply(prompt)
 
     assert capsys.readouterr().out.startswith(f"run-{LATER},")
+
+
+def test_an_exact_apply_the_harness_does_not_carry_is_undone(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_repo(tmp_path)
+    repo = tmp_path / "repo"
+    # A harness with its own copy of the text: the source changes, the request doesn't.
+    (prompt / "harness.py").write_text(HARNESS.replace("system = source.split('`')[1].replace('${VOICE}', 'Speak plainly.')", "system = 'Be brief.'"))
+    git(repo, "commit", "-qam", "harness keeps its own text")
+    swiped_run(prompt)
+
+    assert apply(prompt) == 2
+
+    assert 'its harness doesn\'t build the request from src/prompt.txt; set apply = "code-edit"' in capsys.readouterr().err
+    assert apply_branches(prompt) == ""
+    assert len(git(repo, "worktree", "list").splitlines()) == 1
