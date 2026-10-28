@@ -392,3 +392,18 @@ def test_a_code_edit_needs_the_workspace_in_the_repo(tmp_path: Path, capsys: pyt
     assert apply(prompt) == 2
     assert "a code edit needs the workspace in the repo" in capsys.readouterr().err
     assert apply_branches(tmp_path / "repo") == ""
+
+
+def test_the_folder_target_leaves_a_patch_and_the_changed_files(tmp_path: Path) -> None:
+    prompt = make_repo(tmp_path)
+    repo = tmp_path / "repo"
+    swiped_run(prompt)
+
+    assert apply(prompt, "--folder", str(tmp_path / "out")) == 0
+
+    out = tmp_path / "out" / f"daily-{LATER}"
+    subprocess.run(["git", "apply", "--check", str(out / "change.patch")], cwd=repo, check=True)
+    assert (out / "src" / "prompt.txt").read_text() == "PROMPT = `Be brief. Keep it short.`\n"
+    assert (out / "whetstone" / "prompts" / "daily" / "editable.txt").read_text() == "Be brief. Keep it short."
+    assert apply_branches(prompt) == ""
+    assert len(git(repo, "worktree", "list").splitlines()) == 1
