@@ -148,3 +148,14 @@ def test_a_gain_within_noise_is_warned_about(tmp_path: Path, capsys: pytest.Capt
 
     assert apply(prompt) == 1
     assert "within noise" in capsys.readouterr().out
+
+
+def test_a_blind_swipe_that_preferred_the_original_is_warned_about(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_repo(tmp_path)
+    write_run(prompt, LATER)
+    swipe(prompt, LATER, "o1", "good")
+    swipe(prompt, LATER, "o1", "good", grader="Hampus")
+    swipe(prompt, LATER, "c1", "good")
+
+    assert apply(prompt) == 1
+    assert "the blind swipe preferred the original" in capsys.readouterr().out
