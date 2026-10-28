@@ -177,7 +177,10 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
 
 def show_apply_method(prompt: PromptSettings) -> int:
     assert prompt.source is not None and prompt.editable is not None
-    print(apply_method((prompt.workspace / prompt.source).read_text(), prompt.editable))
+    method, why = apply_method((prompt.workspace / prompt.source).read_text(), prompt.editable, prompt.source)
+    print(method)
+    if why:
+        print(why)
     return 0
 
 
