@@ -441,3 +441,14 @@ def test_an_existing_output_folder_is_refused(tmp_path: Path, capsys: pytest.Cap
     assert f"daily-{LATER} already exists" in capsys.readouterr().err
     assert apply_branches(prompt) == ""
     assert list((tmp_path / "out" / f"daily-{LATER}").iterdir()) == []
+
+
+def test_a_git_failure_exits_2_with_gits_reason(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_repo(tmp_path)
+    hook = tmp_path / "repo" / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\necho 'lint failed' >&2\nexit 1\n")
+    hook.chmod(0o755)
+    swiped_run(prompt)
+
+    assert apply(prompt) == 2
+    assert "lint failed" in capsys.readouterr().err
