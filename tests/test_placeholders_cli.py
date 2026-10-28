@@ -80,3 +80,13 @@ def test_a_rewrite_that_drops_a_table_placeholder_never_wins(tmp_path: Path, mon
 
     assert start_run(model, rewriter("Be brief. Keep it short.")) == 1
     assert all(request["system"] == "Be brief. Speak plainly." for request in model.requests)
+
+
+def test_a_built_text_is_not_expanded_again(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_prompt(make_workspace(tmp_path), harness_building("Be brief. Say ${B} as written."), {"first-day": {}})
+    (prompt / "editable.txt").write_text("Be brief. ${A}")
+    with (prompt / "prompt.toml").open("a") as toml:
+        toml.write('[placeholders]\n"${A}" = "Say ${B} as written."\n"${B}" = "Speak plainly."\n')
+    monkeypatch.chdir(tmp_path)
+
+    assert run(["check", "daily"], make_model=lambda _settings: FakeModel(lambda _request: "ok")) == 0
