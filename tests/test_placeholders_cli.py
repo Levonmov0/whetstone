@@ -23,3 +23,14 @@ def test_a_placeholder_table_must_map_text_to_text(table: str, tmp_path: Path, m
     assert run(["check", "daily"], make_model=unused_model) == 2
     err = capsys.readouterr().err
     assert "prompt.toml" in err and "placeholders" in err
+
+
+@pytest.mark.parametrize("method", ["placeholders", "anything"])
+def test_apply_is_exact_or_code_edit(method: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_prompt(make_workspace(tmp_path), harness_building("Be brief."), {"first-day": {}})
+    with (prompt / "prompt.toml").open("a") as toml:
+        toml.write(f'apply = "{method}"\n')
+    monkeypatch.chdir(tmp_path)
+
+    assert run(["check", "daily"], make_model=unused_model) == 2
+    assert 'apply must be "exact" or "code-edit"' in capsys.readouterr().err
