@@ -321,3 +321,30 @@ def test_a_workspace_outside_the_repo_is_left_alone(tmp_path: Path, capsys: pyte
     assert git(repo, "diff", "--name-only", f"{BRANCH}~1", BRANCH) == "src/prompt.txt"
     assert (prompt / "editable.txt").read_text() == "Be brief."
     assert "after merging, rerun /whetstone:init's editable step" in capsys.readouterr().out
+
+
+ASSEMBLED = "PROMPT = [`Be`, `brief.`].join(' ')\n"
+WORKTREE = f"repo.worktrees/whetstone-daily-{LATER}"
+
+
+def code_edit_repo(tmp_path: Path) -> Path:
+    """A prompt whose editable part is assembled from parts in the source, so applying it means editing code."""
+    prompt = make_repo(tmp_path, source=ASSEMBLED)
+    with (prompt / "prompt.toml").open("a") as toml:
+        toml.write('apply = "code-edit"\n')
+    git(tmp_path / "repo", "commit", "-qam", "code edit")
+    swiped_run(prompt)
+    return prompt
+
+
+def test_a_code_edit_apply_makes_the_branch_and_shows_the_edit(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = code_edit_repo(tmp_path)
+    repo = tmp_path / "repo"
+
+    assert apply(prompt) == 0
+
+    out = capsys.readouterr().out
+    assert str((tmp_path / WORKTREE).resolve()) in out
+    assert "Be brief.\n" in out and "Be brief. Keep it short.\n" in out
+    assert git(repo, "rev-parse", BRANCH) == git(repo, "rev-parse", "main")
+    assert git(tmp_path / WORKTREE, "status", "--porcelain") == ""
