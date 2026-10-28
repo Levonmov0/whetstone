@@ -16,6 +16,7 @@ import qrcode
 
 from whetstone.entry.optimize import Meter, production_estimate, run_optimize
 from whetstone.entry.suite import MakeJudge, MakeModel, MakeRewrite, Stop, Suite, build, card, judges_or_stop, prepare_judge, prepare_suite, prices_or_stop, providers_or_stop
+from whetstone.features.apply.core import apply_method
 from whetstone.features.baseline.core import baseline_report, swipe_section
 from whetstone.features.baseline.store import card_models, latest_run, save_run
 from whetstone.features.cases.load import load_cases
@@ -62,11 +63,12 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
     optimize.add_argument("--foreground", action="store_true", help="run here instead of in the background")
     optimize.add_argument("--run-id", help=argparse.SUPPRESS)  # given to the background worker
     optimize.add_argument("--lock-fd", type=int, help=argparse.SUPPRESS)  # the run lock the worker inherits
-    for command in (check, verify, source, disagree, settle, reasons, agree, baseline, optimize):
+    method = commands.add_parser("apply-method", help="say whether the editable part is one fixed string in its source file")
+    for command in (check, verify, source, disagree, settle, reasons, agree, baseline, optimize, method):
         command.add_argument("prompt")
     serve.add_argument("prompt", nargs="?")
     serve.add_argument("--stop", action="store_true", help="stop the running swipe server")
-    for command in (check, verify, source, disagree, settle, serve, reasons, agree, baseline, optimize):
+    for command in (check, verify, source, disagree, settle, serve, reasons, agree, baseline, optimize, method):
         command.add_argument("--workspace", type=Path, help="the workspace folder, when it is not ./ or ./whetstone/")
     serve.add_argument("--host", help="the address to listen on")
     settle.add_argument("card", help="the card id, as disagreements prints it")
@@ -108,6 +110,8 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
             # A worker inherits the lock its starting command took, so no other run can start in between.
             with os.fdopen(args.lock_fd, "w") if args.lock_fd is not None else run_lock(prompt):
                 return start_run(prompt, model, args.budget, make_model, make_judge, make_rewrite, cap, args.run_id or new_deck_id())
+        if args.command == "apply-method":
+            return show_apply_method(prompt)
         if args.command == "agreement":
             return show_agreement(prompt, make_judge)
         if args.command == "reasons":
@@ -169,6 +173,12 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
     lines, code = report(results, suite.check_names())
     print("\n".join(lines))
     return code
+
+
+def show_apply_method(prompt: PromptSettings) -> int:
+    assert prompt.source is not None and prompt.editable is not None
+    print(apply_method((prompt.workspace / prompt.source).read_text(), prompt.editable))
+    return 0
 
 
 def run_baseline(prompt: PromptSettings, others: list[str], make_model: MakeModel, make_judge: MakeJudge) -> int:

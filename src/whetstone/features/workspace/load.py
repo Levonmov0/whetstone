@@ -30,6 +30,7 @@ class PromptSettings:
     editable: str | None  # editable.txt, byte for byte; None until init writes it. check needs it, verify-harness does not
     reasons: list[str]  # the swipe app's reason chips
     placeholders: dict[str, str]  # each placeholder in the editable part -> the text it is built as
+    source: str | None  # the file the editable part lives in, relative to the workspace
 
 
 def load_prompt(workspace: Path, name: str) -> PromptSettings:
@@ -61,6 +62,7 @@ def load_prompt(workspace: Path, name: str) -> PromptSettings:
         editable=(prompt_dir / "editable.txt").read_text() if (prompt_dir / "editable.txt").is_file() else None,
         reasons=cast(list[str], reasons),
         placeholders=cast(dict[str, str], placeholders),
+        source=raw.get("source"),
     )
 
 
