@@ -73,12 +73,17 @@ def editable_or_stop(prompt: PromptSettings) -> str:
     return prompt.editable
 
 
-def source_or_stop(prompt: PromptSettings) -> str:
-    """The text of the file the editable part lives in."""
+def source_file(prompt: PromptSettings) -> Path:
+    """The file the editable part lives in."""
     if prompt.source is None:
         raise Stop(f'{prompt.dir / "prompt.toml"} has no "source": the file the editable part lives in')
+    return (prompt.workspace / prompt.source).resolve()
+
+
+def source_or_stop(prompt: PromptSettings) -> str:
+    """The text of the file the editable part lives in."""
     try:
-        return (prompt.workspace / prompt.source).read_text()
+        return source_file(prompt).read_text()
     except OSError as e:
         raise Stop(f"can't read the source {prompt.source}: {e.strerror or e}") from None
 

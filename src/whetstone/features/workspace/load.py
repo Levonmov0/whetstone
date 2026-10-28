@@ -50,6 +50,8 @@ def load_prompt(workspace: Path, name: str) -> PromptSettings:
     placeholders = raw.get("placeholders", {})
     if not (isinstance(placeholders, dict) and all(isinstance(v, str) for v in cast(dict[str, Any], placeholders).values())):
         raise PromptError(f"{settings_file}: [placeholders] must map each placeholder to its text")
+    if not isinstance(raw.get("source", ""), str):
+        raise PromptError(f"{settings_file}: source must be a path, the file the editable part lives in")
     if raw.get("apply", "exact") not in ("exact", "code-edit"):
         raise PromptError(f'{settings_file}: apply must be "exact" or "code-edit"')
     editable_file = prompt_dir / "editable.txt"

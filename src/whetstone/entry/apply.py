@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from whetstone.entry.suite import Stop
+from whetstone.entry.suite import Stop, source_file
 from whetstone.features.apply.core import replace_once, run_line, warnings
 from whetstone.features.apply.store import RunError, candidate_run, run_record, write_export
 from whetstone.features.baseline.core import swipe_tally
@@ -38,7 +38,7 @@ def _apply(prompt: PromptSettings, run_id: str | None, yes: bool, verify: bool, 
             print("rerun with --yes to apply it anyway")
             return 1
     candidate = (folder / "candidate.txt").read_bytes().decode()
-    source = (prompt.workspace / str(prompt.source)).resolve()
+    source = source_file(prompt)
     try:
         repo = toplevel(source.parent)
     except GitError:
