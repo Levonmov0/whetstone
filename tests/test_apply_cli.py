@@ -360,3 +360,17 @@ def test_verify_refuses_until_the_branch_builds_the_candidate(tmp_path: Path, ca
 
     assert "candidate found 0 times in the request for case case-0" in capsys.readouterr().out
     assert git(repo, "rev-parse", BRANCH) == git(repo, "rev-parse", "main")
+
+
+def test_verify_commits_the_code_edit_once_the_branch_builds_the_candidate(tmp_path: Path) -> None:
+    prompt = code_edit_repo(tmp_path)
+    repo = tmp_path / "repo"
+    apply(prompt)
+    (tmp_path / WORKTREE / "src" / "prompt.txt").write_text("PROMPT = `Be brief. Keep it short.`\n")
+
+    assert apply(prompt, "--verify") == 0
+
+    assert git(repo, "rev-parse", f"{BRANCH}~1") == git(repo, "rev-parse", "main")
+    assert git(repo, "diff", "--name-only", f"{BRANCH}~1", BRANCH).splitlines() == ["src/prompt.txt", "whetstone/prompts/daily/editable.txt"]
+    assert git(repo, "show", f"{BRANCH}:whetstone/prompts/daily/editable.txt") == "Be brief. Keep it short."
+    assert not (tmp_path / WORKTREE).exists()
