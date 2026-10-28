@@ -5,6 +5,7 @@ import pytest
 
 from tests.fakes import FakeModel, unused_model
 from tests.test_check_cli import make_prompt, make_workspace
+from tests.test_run_cli import HARNESS, make_run_suite, rewriter, run_folder, start_run, writer
 from whetstone.entry.cli import run
 
 
@@ -50,3 +51,19 @@ def test_placeholders_are_expanded_before_the_editable_part_is_found(tmp_path: P
     monkeypatch.chdir(tmp_path)
 
     assert run(["check", "daily"], make_model=lambda _settings: FakeModel(lambda _request: "ok")) == 0
+
+
+def test_a_run_sends_expanded_text_and_keeps_placeholders_in_its_candidate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_run_suite(tmp_path)
+    (prompt / "harness.py").write_text(HARNESS.replace("Be brief.", "Be brief. Speak plainly."))
+    (prompt / "editable.txt").write_text("Be brief. ${VOICE}")
+    with (prompt / "prompt.toml").open("a") as toml:
+        toml.write('[placeholders]\n"${VOICE}" = "Speak plainly."\n')
+    model = writer()
+    monkeypatch.chdir(tmp_path)
+
+    assert start_run(model, rewriter("Be brief. ${VOICE} Keep it short.")) == 0
+
+    assert model.requests
+    assert all("${VOICE}" not in json.dumps(request) and "Speak plainly." in request["system"] for request in model.requests)
+    assert (run_folder(prompt) / "candidate.txt").read_text() == "Be brief. ${VOICE} Keep it short."
