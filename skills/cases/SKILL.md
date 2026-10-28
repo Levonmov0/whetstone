@@ -29,7 +29,7 @@ Done when the user calls every one realistic. Save the approved examples and the
 
 ## 3. Propose
 
-Write 20 to 30 cases into `cases/proposed/<id>.json`, in the calibrated shape and size, ids in kebab-case that say what the case is (`first-day-no-wearable`). The engine never runs anything in `proposed/`.
+Write 20 to 30 cases into `cases/proposed/<id>.json`, in the calibrated shape and size, ids in kebab-case that say what the case is (`first-day-no-wearable`). `whetstone check` runs a proposed case only when it is named with `--case`; a plain `check`, a baseline or a run never does.
 - About two thirds realistic: the common days, spread across the real range of each field.
 - About one third edge cases: missing or empty data, first and last days, extreme values, conflicting signals, long text, whatever the contracts allow that the prompt might handle badly. Name each one as an edge case in its id and in the review list, never as a typical day.
 - Invented data only. Never copy a real person's data from the repo, logs or a database.

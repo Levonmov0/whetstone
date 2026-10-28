@@ -68,7 +68,7 @@ Agree with the user on the part Whetstone may rewrite: the prompt's own job text
 - Find the file it lives in and record it as `source` in `prompt.toml`, relative to the workspace folder.
 - Write `editable.txt` with the text the way that file writes it: each interpolated constant (`${VOICE_EASY_READ}`) stays a placeholder, so the shared rule stays where it is owned. Per-case values never go in it.
 - For each placeholder, add its built text to `[placeholders]` in `prompt.toml`, copied exactly from a built request.
-- Run `whetstone apply-method <name>` and write what it prints to `prompt.toml` as `apply`. When it says `code-edit`, tell the user up front: a winner will reach the source as a code edit on a branch, not a plain replacement.
+- Run `whetstone apply-method <name>` and write the first line it prints (`exact` or `code-edit`) to `prompt.toml` as `apply`. When it says `code-edit`, tell the user up front: a winner will reach the source as a code edit on a branch, not a plain replacement.
 
 Done when `whetstone check <name>` prints a line per case. With no checks yet, every case passes. It exits 2 first if the expanded text doesn't appear exactly once.
 
