@@ -452,3 +452,13 @@ def test_a_git_failure_exits_2_with_gits_reason(tmp_path: Path, capsys: pytest.C
 
     assert apply(prompt) == 2
     assert "lint failed" in capsys.readouterr().err
+
+
+def test_a_crlf_source_keeps_its_line_endings(tmp_path: Path) -> None:
+    prompt = make_repo(tmp_path, source="PROMPT = `Be brief.`\r\nOTHER = 1\r\n")
+    swiped_run(prompt)
+
+    assert apply(prompt) == 0
+
+    shown = subprocess.run(["git", "show", f"{BRANCH}:src/prompt.txt"], cwd=tmp_path / "repo", capture_output=True, check=True).stdout
+    assert shown == b"PROMPT = `Be brief. Keep it short.`\r\nOTHER = 1\r\n"
