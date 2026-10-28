@@ -208,3 +208,15 @@ def test_apply_leaves_the_users_checkout_alone_and_never_pushes(tmp_path: Path) 
     assert (git(repo, "rev-parse", "HEAD"), git(repo, "status", "--porcelain"), (repo / "src" / "prompt.txt").read_text()) == before
     assert len(git(repo, "worktree", "list").splitlines()) == 1
     assert git(tmp_path / "remote.git", "branch", "--list", "whetstone/*") == ""
+
+
+def test_a_placeholder_prompt_is_applied_in_its_source_form(tmp_path: Path) -> None:
+    prompt = make_repo(tmp_path, editable="Be brief. ${VOICE}", source="PROMPT = `Be brief. ${VOICE}`\n")
+    with (prompt / "prompt.toml").open("a") as toml:
+        toml.write('[placeholders]\n"${VOICE}" = "Speak plainly."\n')
+    git(tmp_path / "repo", "commit", "-qam", "placeholders")
+    swiped_run(prompt, candidate="Be brief. ${VOICE} Keep it short.", original="Be brief. ${VOICE}")
+
+    assert apply(prompt) == 0
+
+    assert git(tmp_path / "repo", "show", f"{BRANCH}:src/prompt.txt") == "PROMPT = `Be brief. ${VOICE} Keep it short.`"
