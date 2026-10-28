@@ -1,10 +1,14 @@
 """Applying a run's candidate to the source: on a branch of its own, in a worktree of its own."""
 
-from whetstone.features.apply.store import candidate_run
+from whetstone.entry.suite import Stop
+from whetstone.features.apply.store import RunError, candidate_run
 from whetstone.features.workspace.load import PromptSettings
 
 
 def apply_candidate(prompt: PromptSettings, run_id: str | None) -> int:
-    folder = candidate_run(prompt.dir, run_id)
+    try:
+        folder = candidate_run(prompt.dir, run_id)
+    except RunError as e:
+        raise Stop(str(e)) from None
     print(f"{folder.name},")
     return 1
