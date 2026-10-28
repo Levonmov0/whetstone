@@ -31,6 +31,8 @@ Apply replaces the text, checks the branch and commits. Tell the user the branch
 
 When it stops because the harness failed on the branch, set up the worktree it names the way the repo sets up a checkout (for a pnpm repo, `pnpm install` there), then run the `--verify` command it prints.
 
+When it says the harness doesn't build the request from the source, the text is assembled somewhere else: apply removed its branch. Tell the user, set `apply = "code-edit"` in `prompt.toml` with their yes, and start again from step 1.
+
 Done when the output says the candidate was committed.
 
 ## 3. `code-edit`
