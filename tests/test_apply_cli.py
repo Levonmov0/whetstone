@@ -17,7 +17,7 @@ OLDER, LATER, NEWEST = "20261027T080000000000Z", "20261028T080000000000Z", "2026
 HARNESS = (
     "import json, sys\n"
     "case = json.load(sys.stdin)\n"
-    "source = open('../src/prompt.txt').read()\n"
+    "source = open('../src/prompt.txt', newline='').read()\n"
     "system = source.split('`')[1].replace('${VOICE}', 'Speak plainly.')\n"
     'print(json.dumps({"model": "prod-model", "max_tokens": 50, "system": system, "messages": [{"role": "user", "content": case["text"]}]}))\n'
 )
@@ -462,3 +462,13 @@ def test_a_crlf_source_keeps_its_line_endings(tmp_path: Path) -> None:
 
     shown = subprocess.run(["git", "show", f"{BRANCH}:src/prompt.txt"], cwd=tmp_path / "repo", capture_output=True, check=True).stdout
     assert shown == b"PROMPT = `Be brief. Keep it short.`\r\nOTHER = 1\r\n"
+
+
+def test_a_crlf_candidate_reaches_editable_txt_byte_for_byte(tmp_path: Path) -> None:
+    prompt = make_repo(tmp_path)
+    swiped_run(prompt, candidate="Be brief.\r\nKeep it short.")
+
+    assert apply(prompt) == 0
+
+    shown = subprocess.run(["git", "show", f"{BRANCH}:whetstone/prompts/daily/editable.txt"], cwd=tmp_path / "repo", capture_output=True, check=True).stdout
+    assert shown == b"Be brief.\r\nKeep it short."
