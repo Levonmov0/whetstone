@@ -159,3 +159,32 @@ def test_a_blind_swipe_that_preferred_the_original_is_warned_about(tmp_path: Pat
 
     assert apply(prompt) == 1
     assert "the blind swipe preferred the original" in capsys.readouterr().out
+
+
+def swiped_run(prompt: Path, **run: Any) -> Path:
+    """A run whose candidate won the blind swipe, so apply has nothing to warn about."""
+    folder = write_run(prompt, LATER, **run)
+    swipe(prompt, LATER, "c1", "good")
+    return folder
+
+
+BRANCH = f"whetstone/daily-{LATER}"
+
+
+def test_an_exact_apply_commits_the_candidate_on_its_own_branch(tmp_path: Path) -> None:
+    prompt = make_repo(tmp_path)
+    repo = tmp_path / "repo"
+    swiped_run(prompt)
+    start = git(repo, "rev-parse", "HEAD")
+
+    assert apply(prompt) == 0
+
+    assert git(repo, "rev-parse", f"{BRANCH}~1") == start
+    assert git(repo, "show", f"{BRANCH}:src/prompt.txt") == "PROMPT = `Be brief. Keep it short.`"
+    assert git(repo, "show", f"{BRANCH}:whetstone/prompts/daily/editable.txt") == "Be brief. Keep it short."
+    assert f"whetstone/prompts/daily/runs/run-{LATER}/report.md" in git(repo, "log", "-1", "--format=%B", BRANCH)
+    checkout = tmp_path / "branch-checkout"
+    git(repo, "worktree", "add", "-q", str(checkout), BRANCH)
+    model = FakeModel(lambda _request: "ok")
+    assert run(["check", "daily", "--workspace", str(checkout / "whetstone")], make_model=lambda _settings: model) == 0
+    assert all(request["system"] == "Be brief. Keep it short." for request in model.requests)
