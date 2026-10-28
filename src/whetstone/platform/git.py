@@ -9,13 +9,18 @@ class GitError(Exception):
 
 
 def _git(cwd: Path, *args: str) -> str:
+    return _raw(cwd, *args).strip()
+
+
+def _raw(cwd: Path, *args: str) -> str:
+    """Git's output as it printed it, every byte kept."""
     try:
         done = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
     except FileNotFoundError:
         raise GitError("git was not found") from None
     if done.returncode != 0:
         raise GitError(f"git {args[0]} failed: {done.stderr.strip()}")
-    return done.stdout.strip()
+    return done.stdout
 
 
 def toplevel(path: Path) -> Path:
@@ -33,7 +38,7 @@ def branch_exists(repo: Path, branch: str) -> bool:
 
 def show(repo: Path, commit: str, path: Path) -> str:
     """A file's text at `commit`; `path` is relative to the repo's root."""
-    return _git(repo, "show", f"{commit}:{path.as_posix()}")
+    return _raw(repo, "show", f"{commit}:{path.as_posix()}")
 
 
 def add_worktree(repo: Path, path: Path, branch: str, commit: str) -> None:
