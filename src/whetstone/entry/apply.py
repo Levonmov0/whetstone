@@ -37,7 +37,7 @@ def _apply(prompt: PromptSettings, run_id: str | None, yes: bool, verify: bool, 
         if found and not yes:
             print("rerun with --yes to apply it anyway")
             return 1
-    candidate = (folder / "candidate.txt").read_text()
+    candidate = (folder / "candidate.txt").read_bytes().decode()
     source = (prompt.workspace / str(prompt.source)).resolve()
     try:
         repo = toplevel(source.parent)
@@ -97,7 +97,7 @@ def commit_verified(prompt: PromptSettings, branch: Branch, candidate: str) -> i
         if problem := verify_branch(prompt, branch.repo, branch.worktree, candidate):
             print(problem)
             return 1
-        (branch.worktree / branch.editable).write_text(candidate)
+        (branch.worktree / branch.editable).write_text(candidate, newline="")
     report = branch.editable.parent / "runs" / branch.run.name / "report.md" if branch.editable else branch.run / "report.md"
     commit_all(branch.worktree, f"whetstone: apply {branch.run.name} to {prompt.dir.name}\n\nReport: {report}")
     remove_worktree(branch.repo, branch.worktree)
