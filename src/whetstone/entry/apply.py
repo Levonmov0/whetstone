@@ -54,6 +54,8 @@ def apply_candidate(prompt: PromptSettings, run_id: str | None, yes: bool, verif
     if editable and not has_file(repo, start, editable):
         raise Stop(f"{editable} isn't committed; commit the workspace first, as the branch starts from your last commit")
     if prompt.apply == "code-edit":
+        if not editable:
+            raise Stop("a code edit needs the workspace in the repo, so its harness can build the request from the branch")
         add_worktree(repo, worktree, branch, start)
         print(f"made branch {branch} at {worktree}; edit the code there so the prompt it builds holds the new text")
         print(f"\nold text:\n{record.original}\n\nnew text:\n{candidate}\n")
