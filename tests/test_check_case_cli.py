@@ -39,3 +39,13 @@ def test_one_case_runs_alone_and_leaves_the_deck(tmp_path: Path, monkeypatch: py
     assert "FAIL case-1: short: Runs long." in out
     assert "case-0" not in out
     assert deck.read_text() == '{"id": "blind", "cards": []}'
+
+
+def test_a_tool_call_output_prints_as_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    case_prompt(tmp_path)
+    (tmp_path / "prompts" / "daily" / "checks" / "short.py").unlink()
+    monkeypatch.chdir(tmp_path)
+
+    run(["check", "daily", "--case", "case-0"], make_model=lambda _settings: FakeModel(lambda _request: {"line": "Rest."}))
+
+    assert '{\n  "line": "Rest."\n}' in capsys.readouterr().out
