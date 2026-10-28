@@ -407,3 +407,22 @@ def test_the_folder_target_leaves_a_patch_and_the_changed_files(tmp_path: Path) 
     assert (out / "whetstone" / "prompts" / "daily" / "editable.txt").read_text() == "Be brief. Keep it short."
     assert apply_branches(prompt) == ""
     assert len(git(repo, "worktree", "list").splitlines()) == 1
+
+
+def test_a_deleted_file_is_in_the_patch_but_not_copied(tmp_path: Path) -> None:
+    prompt = code_edit_repo(tmp_path)
+    repo = tmp_path / "repo"
+    (repo / "src" / "old.txt").write_text("gone soon")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "old file")
+    out = tmp_path / "out"
+    apply(prompt, "--folder", str(out))
+    (tmp_path / WORKTREE / "src" / "prompt.txt").write_text("PROMPT = `Be brief. Keep it short.`\n")
+    (tmp_path / WORKTREE / "src" / "old.txt").unlink()
+
+    assert apply(prompt, "--verify", "--folder", str(out)) == 0
+
+    export = out / f"daily-{LATER}"
+    assert "deleted file mode" in (export / "change.patch").read_text()
+    assert not (export / "src" / "old.txt").exists()
+    assert (export / "src" / "prompt.txt").is_file()
