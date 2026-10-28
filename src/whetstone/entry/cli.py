@@ -63,12 +63,14 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
     optimize.add_argument("--foreground", action="store_true", help="run here instead of in the background")
     optimize.add_argument("--run-id", help=argparse.SUPPRESS)  # given to the background worker
     optimize.add_argument("--lock-fd", type=int, help=argparse.SUPPRESS)  # the run lock the worker inherits
+    applying = commands.add_parser("apply", help="put a run's candidate into the source, on a new branch")
+    applying.add_argument("--run", help="the run to apply, by id; the latest run with a candidate by default")
     method = commands.add_parser("apply-method", help="say whether the editable part is one fixed string in its source file")
-    for command in (check, verify, source, disagree, settle, reasons, agree, baseline, optimize, method):
+    for command in (check, verify, source, disagree, settle, reasons, agree, baseline, optimize, method, applying):
         command.add_argument("prompt")
     serve.add_argument("prompt", nargs="?")
     serve.add_argument("--stop", action="store_true", help="stop the running swipe server")
-    for command in (check, verify, source, disagree, settle, serve, reasons, agree, baseline, optimize, method):
+    for command in (check, verify, source, disagree, settle, serve, reasons, agree, baseline, optimize, method, applying):
         command.add_argument("--workspace", type=Path, help="the workspace folder, when it is not ./ or ./whetstone/")
     serve.add_argument("--host", help="the address to listen on")
     settle.add_argument("card", help="the card id, as disagreements prints it")
