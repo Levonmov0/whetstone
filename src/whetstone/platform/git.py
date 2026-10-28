@@ -41,6 +41,14 @@ def show(repo: Path, commit: str, path: Path) -> str:
     return _raw(repo, "show", f"{commit}:{path.as_posix()}")
 
 
+def has_file(repo: Path, commit: str, path: Path) -> bool:
+    try:
+        _git(repo, "cat-file", "-e", f"{commit}:{path.as_posix()}")
+    except GitError:
+        return False
+    return True
+
+
 def add_worktree(repo: Path, path: Path, branch: str, commit: str) -> None:
     """A new branch at `commit`, checked out at `path`; the repo's own checkout is left as it is."""
     _git(repo, "worktree", "add", "-q", "-b", branch, str(path), commit)

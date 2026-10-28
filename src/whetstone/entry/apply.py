@@ -10,7 +10,7 @@ from whetstone.features.baseline.core import swipe_tally
 from whetstone.features.cases.load import load_cases
 from whetstone.features.grading.store import load_labels
 from whetstone.features.workspace.load import PromptSettings
-from whetstone.platform.git import add_worktree, branch_exists, commit_all, head, remove_worktree, show, toplevel
+from whetstone.platform.git import add_worktree, branch_exists, commit_all, has_file, head, remove_worktree, show, toplevel
 from whetstone.platform.harness import HarnessError, build_request
 
 
@@ -40,9 +40,11 @@ def apply_candidate(prompt: PromptSettings, run_id: str | None, yes: bool) -> in
     applied = replace_once(show(repo, start, source_rel), record.original, candidate)
     if applied is None:
         raise Stop(f"{source_rel} no longer holds the text this run optimized exactly once; rerun the run on today's code")
+    prompt_rel = prompt.dir.resolve().relative_to(repo)
+    if not has_file(repo, start, prompt_rel / "editable.txt"):
+        raise Stop(f"{prompt_rel / 'editable.txt'} isn't committed; commit the workspace first, as the branch starts from your last commit")
     add_worktree(repo, worktree, branch, start)
     (worktree / source_rel).write_text(applied)
-    prompt_rel = prompt.dir.resolve().relative_to(repo)
     (worktree / prompt_rel / "editable.txt").write_text(candidate)
     verify_branch(prompt, repo, worktree)
     commit_all(worktree, f"whetstone: apply {folder.name} to {prompt.dir.name}\n\nReport: {prompt_rel / 'runs' / folder.name / 'report.md'}")
