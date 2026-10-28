@@ -52,6 +52,12 @@ def load_prompt(workspace: Path, name: str) -> PromptSettings:
         raise PromptError(f"{settings_file}: [placeholders] must map each placeholder to its text")
     if raw.get("apply", "exact") not in ("exact", "code-edit"):
         raise PromptError(f'{settings_file}: apply must be "exact" or "code-edit"')
+    editable_file = prompt_dir / "editable.txt"
+    try:
+        # Bytes, decoded as they are: text mode would turn \r\n into \n, and the text must match the request exactly.
+        editable = editable_file.read_bytes().decode() if editable_file.is_file() else None
+    except (OSError, UnicodeDecodeError) as e:
+        raise PromptError(f"{editable_file}: can't read it as UTF-8 text: {e}") from None
     if raw["provider"] != "anthropic":
         raise PromptError(f'{settings_file}: provider "{raw["provider"]}" is not supported yet; Whetstone calls anthropic only')
     return PromptSettings(
@@ -60,7 +66,7 @@ def load_prompt(workspace: Path, name: str) -> PromptSettings:
         harness=raw["harness"],
         provider=raw["provider"],
         model=raw["model"],
-        editable=(prompt_dir / "editable.txt").read_text() if (prompt_dir / "editable.txt").is_file() else None,
+        editable=editable,
         reasons=cast(list[str], reasons),
         placeholders=cast(dict[str, str], placeholders),
         source=raw.get("source"),
