@@ -70,7 +70,7 @@ def _apply(prompt: PromptSettings, run_id: str | None, yes: bool, verify: bool, 
         print(f"\nold text:\n{record.original}\n\nnew text:\n{candidate}\n")
         print(f"then run whetstone apply {prompt.dir.name} --verify")
         return 0
-    applied = replace_once(show(repo, start, source_rel), record.original, candidate)
+    applied = replace_once(show(repo, start, source_rel).decode(), record.original, candidate)
     if applied is None:
         raise Stop(f"{source_rel} no longer holds the text this run optimized exactly once; rerun the run on today's code")
     add_worktree(repo, worktree, branch, start)

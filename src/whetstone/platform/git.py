@@ -9,10 +9,10 @@ class GitError(Exception):
 
 
 def _git(cwd: Path, *args: str) -> str:
-    return _raw(cwd, *args).strip()
+    return _raw(cwd, *args).decode().strip()
 
 
-def _raw(cwd: Path, *args: str) -> str:
+def _raw(cwd: Path, *args: str) -> bytes:
     """Git's output as it printed it, every byte kept."""
     try:
         done = subprocess.run(["git", *args], cwd=cwd, capture_output=True)
@@ -20,7 +20,7 @@ def _raw(cwd: Path, *args: str) -> str:
         raise GitError("git was not found") from None
     if done.returncode != 0:
         raise GitError(f"git {args[0]} failed: {done.stderr.decode(errors='replace').strip()}")
-    return done.stdout.decode()  # bytes decoded as they are: text mode would turn \r\n into \n
+    return done.stdout  # bytes: text mode would turn \r\n into \n, and a changed file may not be text
 
 
 def toplevel(path: Path) -> Path:
@@ -36,8 +36,8 @@ def branch_exists(repo: Path, branch: str) -> bool:
     return bool(_git(repo, "branch", "--list", branch))
 
 
-def show(repo: Path, commit: str, path: Path) -> str:
-    """A file's text at `commit`; `path` is relative to the repo's root."""
+def show(repo: Path, commit: str, path: Path) -> bytes:
+    """A file's bytes at `commit`; `path` is relative to the repo's root."""
     return _raw(repo, "show", f"{commit}:{path.as_posix()}")
 
 
@@ -72,7 +72,7 @@ def remove_worktree(repo: Path, path: Path) -> None:
     _git(repo, "worktree", "remove", "--force", str(path))
 
 
-def diff(repo: Path, base: str, tip: str) -> str:
+def diff(repo: Path, base: str, tip: str) -> bytes:
     """The change from `base` to `tip` as a patch `git apply` takes."""
     return _raw(repo, "diff", "--binary", base, tip)
 

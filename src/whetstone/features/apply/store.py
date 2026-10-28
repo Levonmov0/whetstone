@@ -42,10 +42,10 @@ def run_record(folder: Path) -> RunRecord:
     return RunRecord(record["model"], record["original"], held["cases"], held["original"], held["candidate"], record["within_noise"])
 
 
-def write_export(folder: Path, patch: str, files: dict[str, str]) -> None:
+def write_export(folder: Path, patch: bytes, files: dict[str, bytes]) -> None:
     """A candidate applied to a folder: `change.patch`, and each changed file at its path in the repo."""
     folder.mkdir(parents=True)
-    (folder / "change.patch").write_text(patch)
-    for path, text in files.items():
+    (folder / "change.patch").write_bytes(patch)
+    for path, content in files.items():
         (folder / path).parent.mkdir(parents=True, exist_ok=True)
-        (folder / path).write_text(text)
+        (folder / path).write_bytes(content)
