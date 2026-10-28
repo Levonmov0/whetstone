@@ -32,8 +32,9 @@ def make_run_suite(workspace: Path, cases: int = 10, settings: str = "") -> Path
     (prompt / "checks").mkdir()
     (prompt / "harness.py").write_text(HARNESS)
     (prompt / "checks" / "short.py").write_text(SHORT_CHECK)
-    toml = {"harness": f"{sys.executable} prompts/daily/harness.py", "provider": "anthropic", "model": "prod-model", "editable": "Be brief."}
+    toml = {"harness": f"{sys.executable} prompts/daily/harness.py", "provider": "anthropic", "model": "prod-model"}
     (prompt / "prompt.toml").write_text("".join(f"{k} = {json.dumps(v)}\n" for k, v in toml.items()))
+    (prompt / "editable.txt").write_text("Be brief.")
     for i in range(cases):
         (prompt / "cases" / f"case-{i}.json").write_text(json.dumps({"text": f"Line {i}."}))
     return prompt

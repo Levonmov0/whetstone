@@ -55,11 +55,11 @@ def make_prompt(workspace: Path, harness: str, cases: dict[str, object], name: s
     (prompt / "harness.py").write_text(harness)
     settings = {
         "harness": f"{sys.executable} prompts/{name}/harness.py",
-        "editable": "Be brief.",
         "provider": "anthropic",
         "model": model,
     }
     (prompt / "prompt.toml").write_text("".join(f"{k} = {json.dumps(v)}\n" for k, v in settings.items()))
+    (prompt / "editable.txt").write_text("Be brief.")
     (prompt / "cases").mkdir()
     for case_id, case in cases.items():
         (prompt / "cases" / f"{case_id}.json").write_text(json.dumps(case))
@@ -369,3 +369,12 @@ def test_a_provider_other_than_anthropic_exits_2(tmp_path: Path, monkeypatch: py
 
     assert code == 2
     assert 'provider "openai" is not supported yet; Whetstone calls anthropic only' in capsys.readouterr().err
+
+
+def test_editable_txt_is_the_editable_part_byte_for_byte(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    body = {"model": "fake-model", "system": "Be brief.\nEnd here.", "messages": [{"role": "user", "content": "Day 1."}]}
+    prompt = make_prompt(make_workspace(tmp_path), f"import json; print(json.dumps({body!r}))", {"first-day": {}})
+    (prompt / "editable.txt").write_text("Be brief.\nEnd here.")
+    monkeypatch.chdir(tmp_path)
+
+    assert run(["check", "daily"], make_model=lambda _settings: FakeModel(lambda _request: "ok")) == 0
