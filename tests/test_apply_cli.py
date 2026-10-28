@@ -435,3 +435,14 @@ def test_the_folder_target_defaults_to_the_workspace(tmp_path: Path) -> None:
     assert apply(prompt, "--folder") == 0
 
     assert (tmp_path / "repo" / "whetstone" / ".whetstone" / "applied" / f"daily-{LATER}" / "change.patch").is_file()
+
+
+def test_an_existing_output_folder_is_refused(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_repo(tmp_path)
+    swiped_run(prompt)
+    (tmp_path / "out" / f"daily-{LATER}").mkdir(parents=True)
+
+    assert apply(prompt, "--folder", str(tmp_path / "out")) == 2
+    assert f"daily-{LATER} already exists" in capsys.readouterr().err
+    assert apply_branches(prompt) == ""
+    assert list((tmp_path / "out" / f"daily-{LATER}").iterdir()) == []
