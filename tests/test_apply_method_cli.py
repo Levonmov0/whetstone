@@ -25,3 +25,16 @@ def test_text_found_once_in_the_source_is_applied_exactly(tmp_path: Path, monkey
     assert run(["apply-method", "daily"], make_model=unused_model) == 0
     assert capsys.readouterr().out.splitlines()[0] == "exact"
     assert (prompt / "prompt.toml").read_text() == before
+
+
+@pytest.mark.parametrize(("source_text", "times"), [("PROMPT = [`Be`, `brief.`].join(' ')\n", 0), ("A = `Be brief.`\nB = `Be brief.`\n", 2)])
+def test_text_not_found_once_needs_a_code_edit(
+    source_text: str, times: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sourced_prompt(tmp_path, source_text)
+    monkeypatch.chdir(tmp_path / "whetstone")
+
+    assert run(["apply-method", "daily"], make_model=unused_model) == 0
+    out = capsys.readouterr().out
+    assert out.splitlines()[0] == "code-edit"
+    assert f"found {times} times in ../src/prompt.txt" in out
