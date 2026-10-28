@@ -28,3 +28,8 @@ def warnings(tally: dict[str, dict[str, int]], within_noise: bool) -> list[str]:
     if within_noise:
         found.append("the held-back result is within noise: two runs of the same prompt can differ this much")
     return found
+
+
+def replace_once(text: str, original: str, candidate: str) -> str | None:
+    """`text` with `original` replaced by `candidate`, or None when `original` isn't in it exactly once."""
+    return text.replace(original, candidate) if text.count(original) == 1 else None

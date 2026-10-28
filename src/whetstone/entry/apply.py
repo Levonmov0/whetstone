@@ -3,12 +3,12 @@
 import json
 
 from whetstone.entry.suite import Stop
-from whetstone.features.apply.core import run_line, warnings
+from whetstone.features.apply.core import replace_once, run_line, warnings
 from whetstone.features.apply.store import RunError, candidate_run, run_record
 from whetstone.features.baseline.core import swipe_tally
 from whetstone.features.grading.store import load_labels
 from whetstone.features.workspace.load import PromptSettings
-from whetstone.platform.git import add_worktree, branch_exists, commit_all, head, remove_worktree, toplevel
+from whetstone.platform.git import add_worktree, branch_exists, commit_all, head, remove_worktree, show, toplevel
 
 
 def apply_candidate(prompt: PromptSettings, run_id: str | None, yes: bool) -> int:
@@ -33,9 +33,12 @@ def apply_candidate(prompt: PromptSettings, run_id: str | None, yes: bool) -> in
         raise Stop(f"branch {branch} already exists; delete it or apply another run")
     # Beside the repo, not in it: test runners and compilers at the repo's root would find a nested copy.
     worktree = repo.parent / f"{repo.name}.worktrees" / f"whetstone-{prompt.dir.name}-{run_id}"
-    add_worktree(repo, worktree, branch, head(repo))
-    changed = worktree / source.relative_to(repo)
-    changed.write_text(changed.read_text().replace(record.original, candidate))
+    start, source_rel = head(repo), source.relative_to(repo)
+    applied = replace_once(show(repo, start, source_rel), record.original, candidate)
+    if applied is None:
+        raise Stop(f"{source_rel} no longer holds the text this run optimized exactly once; rerun the run on today's code")
+    add_worktree(repo, worktree, branch, start)
+    (worktree / source_rel).write_text(applied)
     prompt_rel = prompt.dir.resolve().relative_to(repo)
     (worktree / prompt_rel / "editable.txt").write_text(candidate)
     commit_all(worktree, f"whetstone: apply {folder.name} to {prompt.dir.name}\n\nReport: {prompt_rel / 'runs' / folder.name / 'report.md'}")

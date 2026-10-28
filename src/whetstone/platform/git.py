@@ -31,6 +31,11 @@ def branch_exists(repo: Path, branch: str) -> bool:
     return bool(_git(repo, "branch", "--list", branch))
 
 
+def show(repo: Path, commit: str, path: Path) -> str:
+    """A file's text at `commit`; `path` is relative to the repo's root."""
+    return _git(repo, "show", f"{commit}:{path.as_posix()}")
+
+
 def add_worktree(repo: Path, path: Path, branch: str, commit: str) -> None:
     """A new branch at `commit`, checked out at `path`; the repo's own checkout is left as it is."""
     _git(repo, "worktree", "add", "-q", "-b", branch, str(path), commit)
