@@ -31,6 +31,7 @@ class PromptSettings:
     reasons: list[str]  # the swipe app's reason chips
     placeholders: dict[str, str]  # each placeholder in the editable part -> the text it is built as
     source: str | None  # the file the editable part lives in, relative to the workspace
+    apply: str  # how a candidate reaches the source: "exact" or "code-edit"
 
 
 def load_prompt(workspace: Path, name: str) -> PromptSettings:
@@ -63,6 +64,7 @@ def load_prompt(workspace: Path, name: str) -> PromptSettings:
         reasons=cast(list[str], reasons),
         placeholders=cast(dict[str, str], placeholders),
         source=raw.get("source"),
+        apply=raw.get("apply", "exact"),
     )
 
 

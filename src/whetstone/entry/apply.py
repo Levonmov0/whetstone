@@ -40,6 +40,12 @@ def apply_candidate(prompt: PromptSettings, run_id: str | None, yes: bool) -> in
     # Beside the repo, not in it: test runners and compilers at the repo's root would find a nested copy.
     worktree = repo.parent / f"{repo.name}.worktrees" / f"whetstone-{prompt.dir.name}-{run_id}"
     start, source_rel = head(repo), source.relative_to(repo)
+    if prompt.apply == "code-edit":
+        add_worktree(repo, worktree, branch, start)
+        print(f"made branch {branch} at {worktree}; edit the code there so the prompt it builds holds the new text")
+        print(f"\nold text:\n{record.original}\n\nnew text:\n{candidate}\n")
+        print(f"then run whetstone apply {prompt.dir.name} --verify")
+        return 0
     applied = replace_once(show(repo, start, source_rel), record.original, candidate)
     if applied is None:
         raise Stop(f"{source_rel} no longer holds the text this run optimized exactly once; rerun the run on today's code")
