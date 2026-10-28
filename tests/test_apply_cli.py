@@ -272,3 +272,16 @@ def test_a_harness_that_fails_on_the_branch_keeps_the_worktree_for_verify(tmp_pa
     assert "harness exited 1" in err and "then run whetstone apply daily --verify" in err
     assert len(git(repo, "worktree", "list").splitlines()) == 2
     assert git(repo, "rev-parse", BRANCH) == git(repo, "rev-parse", "main")
+
+
+def test_an_uncommitted_workspace_is_refused(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_repo(tmp_path)
+    repo = tmp_path / "repo"
+    git(repo, "rm", "-q", "--cached", "whetstone/prompts/daily/editable.txt")
+    git(repo, "commit", "-qm", "editable not committed yet")
+    swiped_run(prompt)
+
+    assert apply(prompt) == 2
+    assert "commit the workspace first" in capsys.readouterr().err
+    assert apply_branches(prompt) == ""
+    assert len(git(repo, "worktree", "list").splitlines()) == 1
