@@ -188,3 +188,23 @@ def test_an_exact_apply_commits_the_candidate_on_its_own_branch(tmp_path: Path) 
     model = FakeModel(lambda _request: "ok")
     assert run(["check", "daily", "--workspace", str(checkout / "whetstone")], make_model=lambda _settings: model) == 0
     assert all(request["system"] == "Be brief. Keep it short." for request in model.requests)
+
+
+def test_apply_leaves_the_users_checkout_alone_and_never_pushes(tmp_path: Path) -> None:
+    prompt = make_repo(tmp_path)
+    repo = tmp_path / "repo"
+    git(tmp_path, "init", "-q", "--bare", "remote.git")
+    git(repo, "remote", "add", "origin", str(tmp_path / "remote.git"))
+    git(repo, "push", "-q", "origin", "main")
+    git(repo, "switch", "-q", "-c", "my-work")
+    (repo / "src" / "prompt.txt").write_text("PROMPT = `Be brief.`\n// half-done edit\n")
+    (repo / "notes.txt").write_text("untracked")
+    swiped_run(prompt)
+    before = (git(repo, "rev-parse", "HEAD"), git(repo, "status", "--porcelain"), (repo / "src" / "prompt.txt").read_text())
+
+    assert apply(prompt) == 0
+
+    assert git(repo, "branch", "--show-current") == "my-work"
+    assert (git(repo, "rev-parse", "HEAD"), git(repo, "status", "--porcelain"), (repo / "src" / "prompt.txt").read_text()) == before
+    assert len(git(repo, "worktree", "list").splitlines()) == 1
+    assert git(tmp_path / "remote.git", "branch", "--list", "whetstone/*") == ""
