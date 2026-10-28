@@ -98,8 +98,16 @@ def commit_verified(prompt: PromptSettings, branch: Branch, candidate: str) -> i
     """Commits the branch once the request its harness builds holds the candidate; a workspace outside the repo can't
     build from the branch, so its exact replacement is the proof."""
     if branch.editable:
-        if problem := verify_branch(prompt, branch, candidate):
-            print(problem)
+        if missing := verify_branch(prompt, branch, candidate):
+            case_id, times = missing
+            if branch.staged is not None:
+                # The text was replaced where it is written, so the harness builds the request from elsewhere: no edit
+                # in this worktree would fix that, and the branch would only be in the way of the next apply.
+                remove_worktree(branch.repo, branch.worktree)
+                delete_branch(branch.repo, branch.name)
+                source = branch.staged[0]
+                raise Stop(f"candidate found {times} times in the request for case {case_id}, though it replaced the text in {source}: its harness doesn't build the request from {source}; set apply = \"code-edit\" in prompt.toml and apply again")
+            print(f"candidate found {times} times in the request for case {case_id}; edit the code in {branch.worktree} until it is there once")
             return 1
         (branch.worktree / branch.editable).write_text(candidate, newline="")
     report = branch.editable.parent / "runs" / branch.run.name / "report.md" if branch.editable else branch.run / "report.md"
@@ -120,9 +128,9 @@ def commit_verified(prompt: PromptSettings, branch: Branch, candidate: str) -> i
     return 0
 
 
-def verify_branch(prompt: PromptSettings, branch: Branch, candidate: str) -> str | None:
-    """Builds every case's request with the harness from the branch, so it is the branch's code that is checked; why
-    the candidate isn't in one of them exactly once, or None."""
+def verify_branch(prompt: PromptSettings, branch: Branch, candidate: str) -> tuple[str, int] | None:
+    """Builds every case's request with the harness from the branch, so it is the branch's code that is checked; the
+    first case whose request doesn't hold the candidate exactly once, and how many times it does, or None."""
     workspace = branch.worktree / prompt.workspace.resolve().relative_to(branch.repo)
     expanded = expand(candidate, prompt.placeholders)
     try:
@@ -136,5 +144,5 @@ def verify_branch(prompt: PromptSettings, branch: Branch, candidate: str) -> str
             raise Stop(f"case {case_id}: on the branch, {e}\nSet up the worktree at {branch.worktree} (install its dependencies), then run {branch.verify_command}") from None
         times = sum(text.count(expanded) for text in rendered_texts(request))
         if times != 1:
-            return f"candidate found {times} times in the request for case {case_id}; edit the code in {branch.worktree} until it is there once"
+            return case_id, times
     return None
