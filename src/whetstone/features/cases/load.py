@@ -7,12 +7,13 @@ class CaseError(Exception):
     pass
 
 
-def load_cases(prompt_dir: Path) -> list[tuple[str, str]]:
-    """Each case as (id, file contents), in id order. The id is the path under `cases/` without `.json`,
-    so a real-data case in a source folder under the gitignored `cases/private/` is `private/<source>/<name>`."""
+def load_cases(prompt_dir: Path, only: str | None = None) -> list[tuple[str, str]]:
+    """Each case as (id, file contents), in id order, or only the case `only`. The id is the path under `cases/`
+    without `.json`, so a real-data case in a source folder under the gitignored `cases/private/` is
+    `private/<source>/<name>`."""
     cases = prompt_dir / "cases"
     private_root = cases / "private"
-    private = sorted(private_root.rglob("*.json"))
+    private = [f for f in sorted(private_root.rglob("*.json")) if only in (None, _case_id(cases, f))]
     for f in private:
         case_id = _case_id(cases, f)
         source = f.relative_to(private_root).parts[0]
@@ -22,7 +23,8 @@ def load_cases(prompt_dir: Path) -> list[tuple[str, str]]:
         if f.parent == private_root or not consent.is_file():
             raise CaseError(f"real-data case {case_id} has no consent record; run whetstone add-source")
         _check_consent(consent)
-    return sorted((_case_id(cases, f), f.read_text()) for f in [*cases.glob("*.json"), *private])
+    found = [(_case_id(cases, f), f.read_text()) for f in [*cases.glob("*.json"), *private]]
+    return sorted(c for c in found if only in (None, c[0]))
 
 
 def _check_consent(consent: Path) -> None:
