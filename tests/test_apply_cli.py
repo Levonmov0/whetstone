@@ -108,3 +108,13 @@ def test_a_run_made_before_apply_must_be_rerun(tmp_path: Path, capsys: pytest.Ca
 
     assert apply(prompt) == 2
     assert f"run-{LATER} was made before apply existed and has no recorded result; run it again" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(("model", "named"), [("prod-model", "production model"), ("cheap-model", "cheap model cheap-model")])
+def test_apply_names_the_run_first(model: str, named: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_repo(tmp_path)
+    write_run(prompt, LATER, model=model)
+
+    apply(prompt)
+
+    assert capsys.readouterr().out.splitlines()[0] == f"run-{LATER}, {named}, 2/3 held-back passing vs 1/3 original"
