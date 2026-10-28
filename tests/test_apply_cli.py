@@ -90,3 +90,12 @@ def test_apply_picks_the_latest_run_with_a_candidate_unless_told(tmp_path: Path,
     assert capsys.readouterr().out.startswith(f"run-{LATER},")
     apply(prompt, "--run", OLDER)
     assert capsys.readouterr().out.startswith(f"run-{OLDER},")
+
+
+@pytest.mark.parametrize(("extra", "message"), [((), "no run of daily has a candidate"), (("--run", OLDER), f"run-{OLDER} has no candidate")])
+def test_apply_needs_a_run_with_a_candidate(extra: tuple[str, ...], message: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_repo(tmp_path)
+    write_run(prompt, NEWEST, candidate=None)
+
+    assert apply(prompt, *extra) == 2
+    assert message in capsys.readouterr().err
