@@ -295,3 +295,29 @@ def test_a_source_outside_any_git_repo_is_refused(tmp_path: Path, capsys: pytest
 
     assert apply(prompt) == 2
     assert "src/prompt.txt isn't in a git repo" in capsys.readouterr().err
+
+
+def outside_workspace(tmp_path: Path) -> Path:
+    """The repo at tmp_path/repo, its workspace moved out to tmp_path/ws; returns the prompt folder."""
+    make_repo(tmp_path)
+    repo = tmp_path / "repo"
+    shutil.move(repo / "whetstone", tmp_path / "ws")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "workspace lives outside")
+    prompt = tmp_path / "ws" / "prompts" / "daily"
+    for name in ("prompt.toml", "harness.py"):
+        (prompt / name).write_text((prompt / name).read_text().replace("../src/prompt.txt", "../repo/src/prompt.txt"))
+    return prompt
+
+
+def test_a_workspace_outside_the_repo_is_left_alone(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = outside_workspace(tmp_path)
+    repo = tmp_path / "repo"
+    swiped_run(prompt)
+
+    assert apply(prompt) == 0
+
+    assert git(repo, "show", f"{BRANCH}:src/prompt.txt") == "PROMPT = `Be brief. Keep it short.`"
+    assert git(repo, "diff", "--name-only", f"{BRANCH}~1", BRANCH) == "src/prompt.txt"
+    assert (prompt / "editable.txt").read_text() == "Be brief."
+    assert "after merging, rerun /whetstone:init's editable step" in capsys.readouterr().out
