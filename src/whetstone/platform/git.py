@@ -79,7 +79,7 @@ def diff(repo: Path, base: str, tip: str) -> str:
 
 def changed_files(repo: Path, base: str, tip: str) -> list[str]:
     """The paths, relative to the repo's root, that `tip` adds or changes since `base`."""
-    return _git(repo, "diff", "--name-only", base, tip).splitlines()
+    return _git(repo, "diff", "--name-only", "--diff-filter=d", base, tip).splitlines()
 
 
 def delete_branch(repo: Path, branch: str) -> None:
