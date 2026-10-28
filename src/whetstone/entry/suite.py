@@ -96,7 +96,9 @@ def prepare_suite(prompt: PromptSettings, make_model: MakeModel, make_judge: Mak
         cases = [c for c in load_cases(prompt.dir) if case in (None, c[0])]
     except CaseError as e:
         raise Stop(str(e)) from None
-    if case is not None and case.startswith("proposed/") and (proposed := prompt.dir / "cases" / f"{case}.json").is_file():
+    proposed = (prompt.dir / "cases" / f"{case}.json").resolve()
+    # Only a file in proposed/ itself: a real-data case must never be reached around its consent and provider checks.
+    if case is not None and proposed.parent == (prompt.dir / "cases" / "proposed").resolve() and proposed.is_file():
         cases = [(case, proposed.read_text())]
     if case is not None and not cases:
         raise Stop(f"no case named {case}")
