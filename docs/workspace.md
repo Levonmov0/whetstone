@@ -37,10 +37,12 @@ repo_providers = ["anthropic"]   # every model provider the repo already calls; 
 
 [models]
 judge = { provider = "openai", model = "gpt-5.5" }   # another family from the generator; needed once a prompt has a judge
+# or judge = { provider = "cloudflare", model = "@cf/cloudflare/clef" }   (Clef on Workers AI; also "@cf/cloudflare/clef-flash")
 rewrite = { via = "claude-code" }                    # the default; optional model = "<model>"; or { via = "api", model = "<model>" }
 
 [prices]              # dollars per million input and output tokens, per model a run uses
 "claude-haiku-5-5" = [0.10, 0.50]
+"@cf/cloudflare/clef" = [0.24, 0]   # Clef charges input tokens only
 
 [phone]
 access = "lan"        # or "tailscale"; never a public tunnel
@@ -59,7 +61,9 @@ One key per purpose, so a leaked key can only do one thing:
 | Variable | Used for |
 |---|---|
 | `GENERATION_API_KEY` | card generation, on the production provider |
-| `JUDGE_API_KEY` | AI judges, on the judge provider |
+| `JUDGE_API_KEY` | AI judges, when the judge provider is `openai` |
+| `JUDGE_CF_ACCOUNT_ID` | AI judges on Cloudflare: the account id (32 hex characters), which goes in the URL path |
+| `JUDGE_CF_API_TOKEN` | AI judges on Cloudflare: an API token scoped to Workers AI only, sent only as `Authorization: Bearer` |
 | `REWRITE_API_KEY` | rewrites, only when `rewrite.via = "api"` |
 
 The engine reads these from this file only, never from the shell. A key exported in the shell is ignored.
@@ -122,10 +126,12 @@ yes = "assumes whether they did Kin's advice"
 ```
 
 - Put `reasons` above `[fail]`: in TOML, every key after `[fail]` belongs to it.
-- The judge must answer with `pass` or one of the `[fail]` names (the request's JSON schema allows only those). A failing answer fails the case, with its text as the message.
-- It sees the case input and the output. It runs on `[models] judge` in `whetstone.toml`, which must be `provider = "openai"`, with `JUDGE_API_KEY`. That's one call per case per judge.
+- The judge must answer with `pass` or one of the `[fail]` names. A failing answer fails the case, with its text as the message.
+- It sees the case input and the output. It runs on `[models] judge` in `whetstone.toml`. That's one call per case per judge.
+  - `provider = "openai"`, with `JUDGE_API_KEY`: one Responses API call whose strict JSON schema allows only those answers.
+  - `provider = "cloudflare"`, with `JUDGE_CF_ACCOUNT_ID` and `JUDGE_CF_API_TOKEN`: one Clef `choice` question whose options are those answers, each `[fail]` name described by its text. Clef scores only those options, so it can't answer anything else. The output comes first in Clef's `state`, the input after it: Clef truncates a `state` too long for its 64K-token window without saying so, and this way it loses input, never the output it judges.
 - A judge and a code check can't share a name.
-- Real-data cases go to a judge only when `repo_providers` lists `openai`; otherwise `check` exits 2 before any call.
+- Real-data cases go to a judge only when `repo_providers` lists the judge's provider (`openai` or `cloudflare`); otherwise `check` exits 2 before any call.
 
 `whetstone check` reports judges among the code checks, marked `(judge)`. A card's `caught_by` names them without the mark, and its `judges` lists which of them are judges. A bad swipe with no reasons inherits only the code checks' names: on a card only judges caught, the app asks why, because a judge's own catch must never count as a grader agreeing with it.
 

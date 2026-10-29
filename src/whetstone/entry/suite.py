@@ -179,7 +179,7 @@ def prepare_judge(prompt: PromptSettings, providers: list[str] | None, has_priva
 
     def ask(name: str, rubric: Rubric, case_id: str, case_input: Any, output: Any) -> list[str]:
         try:
-            return judge_failures(rubric, judge(judge_request(rubric, judged_by, case_input, output)).output)
+            return judge_failures(rubric, provider, judge(judge_request(rubric, provider, judged_by, case_input, output)).output)
         except ModelError as e:
             raise Stop(f"judge {name} failed on case {case_id}: {e}") from None
         except JudgeAnswerError as e:

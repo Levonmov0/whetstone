@@ -4,6 +4,7 @@ import ipaddress
 import json
 import os
 import random
+import re
 import secrets
 import socket
 import sys
@@ -31,6 +32,7 @@ from whetstone.features.workspace.core import request_differences
 from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, judge_model, load_prompt, phone_access, prompt_names, rewrite_settings
 from whetstone.platform.anthropic import anthropic_model
 from whetstone.platform.claude_code import claude_code_model
+from whetstone.platform.cloudflare import cloudflare_model
 from whetstone.platform.config import MissingKey, load_key
 from whetstone.platform.daemon import command_line, is_running, start_detached, stop, write_private
 from whetstone.platform.model import ModelCall, ModelError
@@ -535,7 +537,13 @@ def production_rewrite(workspace: Path, api: Callable[[str], ModelCall] = anthro
 
 
 def production_judge(workspace: Path) -> ModelCall:
-    return openai_model(load_key(workspace, "JUDGE_API_KEY"))
+    if judge_model(workspace)[0] != "cloudflare":
+        return openai_model(load_key(workspace, "JUDGE_API_KEY"))
+    account = load_key(workspace, "JUDGE_CF_ACCOUNT_ID")
+    # The id goes into the URL path, so it must be only what an account id is.
+    if not re.fullmatch(r"[0-9a-f]{32}", account):
+        raise MissingKey(f"JUDGE_CF_ACCOUNT_ID in {workspace / '.env'} must be a Cloudflare account id: 32 hex characters")
+    return cloudflare_model(account, load_key(workspace, "JUDGE_CF_API_TOKEN"))
 
 
 def main() -> None:

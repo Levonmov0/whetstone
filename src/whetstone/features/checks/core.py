@@ -65,8 +65,15 @@ def covered_reasons(code_checks: dict[str, list[str]], judges: dict[str, Rubric]
 JUDGE_INSTRUCTIONS = "You check one output of a prompt against one rule. Answer the question about the output, using the input only as context."
 
 
-def judge_request(rubric: Rubric, model: str, case_input: Any, output: Any) -> dict[str, Any]:
-    """The judge's request body, for the OpenAI Responses API."""
+def judge_request(rubric: Rubric, provider: str, model: str, case_input: Any, output: Any) -> dict[str, Any]:
+    """The judge's request body: for the OpenAI Responses API, or for Clef on Cloudflare Workers AI."""
+    if provider == "cloudflare":
+        # One choice question whose options are the rubric's answers: Clef scores only those, so it can't reply with
+        # anything else. The output comes first, so a state Clef truncates to fit its window loses input, never output.
+        question = f"{JUDGE_INSTRUCTIONS}\n\nQuestion: {rubric.question}\n\n{rubric.guide}"
+        criteria: dict[str, str | None] = {rubric.passing: None, **rubric.fail}
+        state = {"output": output, "input": case_input}
+        return {"model": model, "state": state, "questions": {"verdict": {"type": "choice", "instructions": question, "criteria": criteria}}}
     text = f"Question: {rubric.question}\n\n{rubric.guide}\n\nInput:\n{json.dumps(case_input, ensure_ascii=False)}\n\nOutput:\n{json.dumps(output, ensure_ascii=False)}"
     # A strict schema whose answer is one of the rubric's choices: the model can't reply with anything else.
     answers = {"type": "string", "enum": [rubric.passing, *rubric.fail]}
@@ -78,18 +85,29 @@ class JudgeAnswerError(Exception):
     """A judge reply that isn't one of the rubric's answers. Its message is the reply, or the answer in it."""
 
 
-def judge_failures(rubric: Rubric, reply: str) -> list[str]:
-    """The judge's reply as a check result: no messages when it gave the passing answer, else that answer's reason."""
-    try:
-        parsed = json.loads(reply)
-    except ValueError:
-        raise JudgeAnswerError(reply) from None
-    answer = cast(dict[str, Any], parsed).get("answer") if isinstance(parsed, dict) else None
+def judge_failures(rubric: Rubric, provider: str, reply: Any) -> list[str]:
+    """The judge's reply as a check result: no messages when it gave the passing answer, else that answer's reason.
+    An OpenAI reply is JSON text; a Clef reply is its result, with the choice under the question's id."""
+    answer = _clef_choice(reply) if provider == "cloudflare" else _openai_answer(reply)
     if answer == rubric.passing:
         return []
     if not isinstance(answer, str) or answer not in rubric.fail:
-        raise JudgeAnswerError(answer if isinstance(answer, str) else reply)
+        raise JudgeAnswerError(answer if isinstance(answer, str) else reply if isinstance(reply, str) else json.dumps(reply))
     return [rubric.fail[answer]]
+
+
+def _openai_answer(reply: Any) -> Any:
+    try:
+        parsed = json.loads(reply)
+    except (TypeError, ValueError):
+        raise JudgeAnswerError(str(reply)) from None
+    return cast(dict[str, Any], parsed).get("answer") if isinstance(parsed, dict) else None
+
+
+def _clef_choice(reply: Any) -> Any:
+    answers = cast(dict[str, Any], reply).get("answers") if isinstance(reply, dict) else None
+    verdict = cast(dict[str, Any], answers).get("verdict") if isinstance(answers, dict) else None
+    return cast(dict[str, Any], verdict).get("choice") if isinstance(verdict, dict) else None
 
 
 @dataclass(frozen=True)
