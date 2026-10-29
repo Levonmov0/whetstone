@@ -291,7 +291,21 @@ def test_a_cloudflare_judge_asks_clef_one_choice_question(tmp_path: Path, monkey
     [question] = request["questions"].values()
     assert question["type"] == "choice"
     assert "What is wrong with this line, if anything?" in question["instructions"]
-    assert question["criteria"] == {"none": None, "device": "asks about something a watch measures", "instruction": "tells them what to do"}
+    assert question["criteria"] == {"none": "the output is fine on this rule", "device": "asks about something a watch measures", "instruction": "tells them what to do"}
+
+
+def test_every_clef_option_carries_a_description(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Clef leans toward the one option that has a description, so a bare passing option fails good outputs.
+    make_judged_suite(tmp_path, {"a": "Rest today."})
+    (tmp_path / "whetstone.toml").write_text(CLOUDFLARE_SETTINGS)
+    judge = clef_choosing("yes")
+    monkeypatch.chdir(tmp_path)
+
+    run(["check", "daily"], make_model=lambda _settings: echo_model(), make_judge=lambda _workspace: judge)
+
+    [question] = judge.requests[0]["questions"].values()
+    assert list(question["criteria"]) == ["no", "yes"]
+    assert all(isinstance(text, str) and text for text in question["criteria"].values())
 
 
 def test_a_clef_choice_outside_the_rubric_exits_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

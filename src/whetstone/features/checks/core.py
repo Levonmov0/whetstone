@@ -65,13 +65,17 @@ def covered_reasons(code_checks: dict[str, list[str]], judges: dict[str, Rubric]
 JUDGE_INSTRUCTIONS = "You check one output of a prompt against one rule. Answer the question about the output, using the input only as context."
 
 
+CLEF_PASSING = "the output is fine on this rule"
+
+
 def judge_request(rubric: Rubric, provider: str, model: str, case_input: Any, output: Any) -> dict[str, Any]:
     """The judge's request body: for the OpenAI Responses API, or for Clef on Cloudflare Workers AI."""
     if provider == "cloudflare":
         # One choice question whose options are the rubric's answers: Clef scores only those, so it can't reply with
         # anything else. The output comes first, so a state Clef truncates to fit its window loses input, never output.
         question = f"{JUDGE_INSTRUCTIONS}\n\nQuestion: {rubric.question}\n\n{rubric.guide}"
-        criteria: dict[str, str | None] = {rubric.passing: None, **rubric.fail}
+        # Every option described alike: Clef leans toward the one option that has a description.
+        criteria = {rubric.passing: CLEF_PASSING, **rubric.fail}
         state = {"output": output, "input": case_input}
         return {"model": model, "state": state, "questions": {"verdict": {"type": "choice", "instructions": question, "criteria": criteria}}}
     text = f"Question: {rubric.question}\n\n{rubric.guide}\n\nInput:\n{json.dumps(case_input, ensure_ascii=False)}\n\nOutput:\n{json.dumps(output, ensure_ascii=False)}"

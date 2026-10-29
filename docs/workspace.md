@@ -144,7 +144,7 @@ yes = "assumes whether they did Kin's advice"
 - The judge must answer with `pass` or one of the `[fail]` names. A failing answer fails the case, with its text as the message.
 - It sees the case input and the output. It runs on `[models] judge` in `whetstone.toml`. That's one call per case per judge.
   - `provider = "openai"`, with `JUDGE_API_KEY`: one Responses API call whose strict JSON schema allows only those answers.
-  - `provider = "cloudflare"`, with `JUDGE_CF_ACCOUNT_ID` and `JUDGE_CF_API_TOKEN`: one Clef `choice` question whose options are those answers, each `[fail]` name described by its text. Clef scores only those options, so it can't answer anything else. The output comes first in Clef's `state`, the input after it: Clef truncates a `state` too long for its 64K-token window without saying so, and this way it loses input, never the output it judges.
+  - `provider = "cloudflare"`, with `JUDGE_CF_ACCOUNT_ID` and `JUDGE_CF_API_TOKEN`: one Clef `choice` question whose options are those answers, each `[fail]` name described by its text and `pass` as "the output is fine on this rule". Every option needs a description: Clef leans toward the one that has one. Clef scores only those options, so it can't answer anything else. The output comes first in Clef's `state`, the input after it: Clef truncates a `state` too long for its 64K-token window without saying so, and this way it loses input, never the output it judges.
 - A judge and a code check can't share a name.
 - Real-data cases go to a judge only when `repo_providers` lists the judge's provider (`openai` or `cloudflare`); otherwise `check` exits 2 before any call.
 
