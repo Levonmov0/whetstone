@@ -34,14 +34,15 @@ Write 20 to 30 cases into `cases/proposed/<id>.json`, in the calibrated shape an
 - About one third edge cases: missing or empty data, first and last days, extreme values, conflicting signals, long text, whatever the contracts allow that the prompt might handle badly. Name each one as an edge case in its id and in the review list, never as a typical day.
 - Invented data only. Never copy a real person's data from the repo, logs or a database.
 - Skip any case already in `cases/`.
+- Give each case an `_about` as its first key: two or three plain sentences on what the input holds and what the case tests, ending with `Tests: …`. Name the detail the grader must check the output against (the open thread in the journal, what the latest read said), so the card can be judged without reading the full input. See Case summaries in `workspace.md`.
 
-Run each through the harness once to prove it builds (`whetstone check` would also call the model, so instead pipe one file into the harness command from `prompt.toml`, from the workspace folder). Fix any case it rejects.
+Run each through the harness once to prove it builds (`whetstone check` would also call the model, so instead pipe one file, without its `_about`, into the harness command from `prompt.toml`, from the workspace folder: `jq 'del(._about)' cases/proposed/<id>.json | <harness>`). Fix any case it rejects.
 
 ## 4. Review with the user
 
-Show the proposals as a numbered list, one line each: the id and what it tests. Then ask the user to keep, edit or delete each one, and whether to add their own. Accept answers like "keep all but 4 and 9" or "make 12 a rest day".
+Show the proposals as a numbered list, one line each: the id and its `_about`. Then ask the user to keep, edit or delete each one, and whether to add their own. Accept answers like "keep all but 4 and 9" or "make 12 a rest day".
 - **Keep:** move the file from `cases/proposed/` to `cases/`.
-- **Edit:** change it as asked, show the result, then move it.
+- **Edit:** change it as asked, and its `_about` to match, show the result, then move it.
 - **Delete:** delete the file.
 - **Add:** write the user's case to `cases/<id>.json` after showing it.
 

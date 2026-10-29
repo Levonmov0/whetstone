@@ -120,6 +120,19 @@ def test_a_bad_swipe_on_a_caught_card_takes_its_checks_as_reasons(tmp_path: Path
     assert [label["reasons"] for label in stored_labels(tmp_path)] == [["banned"]]
 
 
+def test_a_swipe_keeps_the_case_summary_in_its_label(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_suite(tmp_path, {"a": "Rest today."})
+    (prompt / "cases" / "a.json").write_text(json.dumps({"text": "Rest today.", "_about": "Tests: does it say rest?"}))
+    monkeypatch.chdir(tmp_path)
+    run(["check", "daily"], make_model=lambda _settings: echo_model())
+    client = TestClient(make_app(load_prompt(tmp_path, "daily"), TOKEN))
+    [card] = client.get("/api/cards", headers={**AUTH, "X-Grader": "Levon"}).json()["cards"]
+
+    client.post("/api/swipes", headers=AUTH, json={"card_id": card["card_id"], "grader": "Levon", "verdict": "good", "reasons": [], "note": ""})
+
+    assert [label["about"] for label in stored_labels(tmp_path)] == ["Tests: does it say rest?"]
+
+
 GOOD_SWIPE = {"grader": "Levon", "verdict": "bad", "reasons": ["too long"], "note": ""}
 
 

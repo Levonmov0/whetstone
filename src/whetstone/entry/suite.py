@@ -3,12 +3,12 @@
 import json
 from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import repeat
 from pathlib import Path
 from typing import Any, cast
 
-from whetstone.features.cases.core import provider_refusal
+from whetstone.features.cases.core import provider_refusal, split_about, without_about
 from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.checks.core import JudgeAnswerError, Rubric, judge_failures, judge_request
 from whetstone.features.checks.load import Check, CheckLoadError, load_checks, load_judges
@@ -30,7 +30,7 @@ class Stop(Exception):
 
 def build(prompt: PromptSettings, case_id: str, case_json: str) -> Any:
     try:
-        return build_request(prompt.harness, prompt.workspace, case_json)
+        return build_request(prompt.harness, prompt.workspace, without_about(case_json))
     except HarnessError as e:
         raise Stop(f"case {case_id}: {e}") from None
 
@@ -44,6 +44,7 @@ class Suite:
     judges: dict[str, Rubric]
     ask: Ask | None
     model: ModelCall
+    about: dict[str, str] = field(default_factory=dict[str, str])  # case id -> its `_about`, for cases that have one
 
     def check_names(self) -> list[str]:
         return [*self.checks, *(f"{name} (judge)" for name in self.judges)]
@@ -109,11 +110,16 @@ def prepare_suite(prompt: PromptSettings, make_model: MakeModel, make_judge: Mak
     if refusal := provider_refusal(prompt.provider, providers, has_private):
         raise Stop(refusal)
     requests: list[tuple[str, Any, Any]] = []
+    about: dict[str, str] = {}
     for case_id, case_json in cases:
         try:
-            case_input = json.loads(case_json)
+            case_input, summary = split_about(json.loads(case_json))
         except ValueError as e:
             raise Stop(f"case {case_id} is not valid JSON: {e}") from None
+        if summary is not None:
+            if not isinstance(summary, str):
+                raise Stop(f"case {case_id}: _about must be text, the grader's summary of the case")
+            about[case_id] = summary
         request = build(prompt, case_id, case_json)
         if problem := request_problem(request, case_id, prompt.model, expand(editable, prompt.placeholders)):
             raise Stop(problem)
@@ -129,13 +135,14 @@ def prepare_suite(prompt: PromptSettings, make_model: MakeModel, make_judge: Mak
         model = make_model(prompt)
     except MissingKey as e:
         raise Stop(str(e)) from None
-    return Suite(requests, checks, judges, ask, model)
+    return Suite(requests, checks, judges, ask, model, about)
 
 
-def card(case_id: str, case_input: Any, output: Any, failures: dict[str, list[str]]) -> dict[str, Any]:
-    """An output as a card: the checks that caught it, and, when any are judges, which ones. A judge's catch is never
-    taken as the grader's reason, or agreement would count the judge as agreeing with itself."""
-    made: dict[str, Any] = {"case_id": case_id, "input": case_input, "output": output}
+def card(case_id: str, case_input: Any, output: Any, failures: dict[str, list[str]], about: str | None = None) -> dict[str, Any]:
+    """An output as a card: the case's summary when it has one, the checks that caught it, and, when any are judges,
+    which ones. A judge's catch is never taken as the grader's reason, or agreement would count the judge as agreeing
+    with itself."""
+    made: dict[str, Any] = {"case_id": case_id} | ({"about": about} if about is not None else {}) | {"input": case_input, "output": output}
     made["caught_by"] = [name.removesuffix(" (judge)") for name, messages in failures.items() if messages]
     judges = [name.removesuffix(" (judge)") for name, messages in failures.items() if messages and name.endswith(" (judge)")]
     return made | ({"judges": judges} if judges else {})

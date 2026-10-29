@@ -177,7 +177,7 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
                 held_failures[version][case_id] = failures
                 totals[version] += value
                 tag = secrets.token_hex(4)
-                cards.append(card(case_id, case_input, output, failures) | {"tag": tag})
+                cards.append(card(case_id, case_input, output, failures, suite.about.get(case_id)) | {"tag": tag})
                 versions_by_tag[tag] = version
         random.shuffle(cards)
         average = {version: total / len(held) for version, total in totals.items()}

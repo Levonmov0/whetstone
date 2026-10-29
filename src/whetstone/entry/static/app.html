@@ -48,6 +48,7 @@
   .field-name { display: block; color: var(--ws-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
   pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; color: var(--ws-muted); margin: 0; }
   .caught { color: var(--ws-bad); font-size: 13px; margin: 0 0 12px; }
+  .about { font-size: 15px; line-height: 1.45; margin: 0 0 14px; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--ws-muted) 12%, transparent); }
   details { margin-top: 18px; border-top: 1px solid color-mix(in srgb, var(--ws-muted) 30%, transparent); padding-top: 10px; }
   summary { color: var(--ws-accent); cursor: pointer; padding: 6px 0; }
   .actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; padding: var(--ws-space) 0; }
@@ -218,6 +219,7 @@ function render() {
   const node = el("article", { class: "card", "aria-label": "Output to grade" },
     stamp,
     card.caught_by.length ? el("p", { class: "caught" }, `Already caught by: ${card.caught_by.join(", ")}`) : "",
+    card.about ? el("p", { class: "about text" }, card.about) : "",
     renderOutput(card.output),
     el("details", {}, el("summary", {}, "Show input"), el("div", { class: "input" }, renderValue(card.input))));
   const actions = el("div", { class: "actions" },

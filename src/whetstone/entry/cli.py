@@ -173,7 +173,7 @@ def check_prompt(prompt: PromptSettings, make_model: MakeModel, make_judge: Make
             raise Stop(f"model call failed on case {case_id}: {e}") from None
         failures = suite.score(case_id, case_input, output)
         results.append(CaseResult(case_id, failures))
-        cards.append(card(case_id, case_input, output, failures))
+        cards.append(card(case_id, case_input, output, failures, suite.about.get(case_id)))
         if case is not None:
             print(output if isinstance(output, str) else json.dumps(output, indent=2, ensure_ascii=False))
     # One case is a look at its output, not a round of swipes: a one-card deck would replace a blind swipe's.
@@ -219,7 +219,7 @@ def run_baseline(prompt: PromptSettings, others: list[str], make_model: MakeMode
             failures = suite.score(case_id, case_input, result.output)
             runs[model][case_id] = failures
             tag = secrets.token_hex(4)
-            cards.append(card(case_id, case_input, result.output, failures) | {"tag": tag})
+            cards.append(card(case_id, case_input, result.output, failures, suite.about.get(case_id)) | {"tag": tag})
             sources[tag] = model
     random.shuffle(cards)
     # The run folder first: a deck whose cards can't be traced to their models must never replace the last one.

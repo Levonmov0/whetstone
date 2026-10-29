@@ -98,11 +98,24 @@ reasons = ["too long", "sounds like a robot"]  # the swipe app's reason chips; o
 
 ## The harness contract
 
-- **In:** one case file's JSON on stdin.
+- **In:** one case file's JSON on stdin, without its `_about` (see Case summaries).
 - **Out:** the exact request production sends, as JSON on stdout. That means the provider SDK's request body as-is: for Anthropic, `model`, `system`, `messages`, `max_tokens`, `temperature`, `tools`, `tool_choice` and so on.
 - **Never:** call a model. Whetstone makes every model call itself, so it controls cost and which model runs.
 
 It calls the repo's real prompt builder, so a change to the builder shows up in Whetstone without editing the harness.
+
+## Case summaries
+
+A case that is an object may carry `_about`: a few plain sentences on what the case holds and what it tests, so a grader can judge the card without reading the whole input.
+
+```json
+{"_about": "Athlete went to bed early and wrote they can't wait to wake up. Kin's latest read said their sleep is improving. Tests: does the line pick up the open thread?",
+ "journal": "…", "reads": […]}
+```
+
+- It is text; anything else stops `check` before any model call.
+- No harness, model or judge ever gets it: the engine removes it before the case reaches the harness, and a card's `input` is the case without it. A case without `_about` reaches the harness byte for byte.
+- The card and every swipe on it carry it as `about`. The app shows it above the output; the full input stays behind "Show input".
 
 ## Code checks
 
@@ -211,7 +224,7 @@ consented_on = 2026-10-26
 
 ## Grading
 
-Every case file must be JSON; one that isn't stops `check` before any model call. `whetstone check` saves its outputs as the prompt's deck, `.whetstone/decks/<prompt>.json`, replacing the last one: each card's id (`<deck-id>:<case-id>`), case id, input, output, and the checks that caught it.
+Every case file must be JSON; one that isn't stops `check` before any model call. `whetstone check` saves its outputs as the prompt's deck, `.whetstone/decks/<prompt>.json`, replacing the last one: each card's id (`<deck-id>:<case-id>`), case id, `about` when the case has a summary, input, output, and the checks that caught it.
 
 `whetstone serve <prompt>` starts the swipe server in the background and prints its link and QR code. The server:
 - listens on the LAN address, the Tailscale address when `phone.access = "tailscale"`, or `--host`; never on every interface, never through a public tunnel;
@@ -224,11 +237,11 @@ Every case file must be JSON; one that isn't stops `check` before any model call
 Each line of `labels.jsonl` is one swipe, self-contained so it outlives the deck:
 
 ```json
-{"card_id": "…:first-day", "deck_id": "…", "case_id": "first-day", "input": {…}, "output": …, "caught_by": [],
+{"card_id": "…:first-day", "deck_id": "…", "case_id": "first-day", "about": "…", "input": {…}, "output": …, "caught_by": [],
  "grader": "Levon", "verdict": "bad", "reasons": ["too long"], "note": "…", "at": "2026-10-26T08:00:00+00:00"}
 ```
 
-`verdict` is `good`, `bad` or `skip`. A bad swipe with no reasons on a card a code check caught takes those checks' names as reasons. `whetstone settle` adds a line with `"settled": true`, carrying the reasons of the latest swipe it sides with.
+`about` is there only when the case has a summary. `verdict` is `good`, `bad` or `skip`. A bad swipe with no reasons on a card a code check caught takes those checks' names as reasons. `whetstone settle` adds a line with `"settled": true`, carrying the reasons of the latest swipe it sides with.
 
 `whetstone disagreements <prompt>` lists cards where one grader's latest swipe is good and another's is bad, until `whetstone settle <prompt> <card> good|bad --grader <name> [--note <rule>]` records the call.
 

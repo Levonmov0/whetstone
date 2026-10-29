@@ -7,6 +7,7 @@ from pathlib import Path
 from whetstone.entry.suite import Stop, source_file
 from whetstone.features.apply.core import replace_once, run_line, warnings
 from whetstone.features.apply.store import RunError, candidate_run, run_record, write_export
+from whetstone.features.cases.core import without_about
 from whetstone.features.baseline.core import swipe_tally
 from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.grading.store import load_labels
@@ -139,7 +140,7 @@ def verify_branch(prompt: PromptSettings, branch: Branch, candidate: str) -> tup
         raise Stop(f"{e}\nThen run {branch.verify_command}") from None
     for case_id, case_json in cases:
         try:
-            request = build_request(prompt.harness, workspace, case_json)
+            request = build_request(prompt.harness, workspace, without_about(case_json))
         except HarnessError as e:
             raise Stop(f"case {case_id}: on the branch, {e}\nSet up the worktree at {branch.worktree} (install its dependencies), then run {branch.verify_command}") from None
         times = sum(text.count(expanded) for text in rendered_texts(request))
