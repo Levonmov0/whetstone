@@ -106,12 +106,14 @@ It calls the repo's real prompt builder, so a change to the builder shows up in 
 
 ## Case summaries
 
-A case that is an object may carry `_about`: a few plain sentences on what the case holds and what it tests, so a grader can judge the card without reading the whole input.
+A case that is an object may carry `_about`: a few plain sentences on what happened in the input, so a grader can judge the card without reading the whole input.
 
 ```json
-{"_about": "Athlete went to bed early and wrote they can't wait to wake up. Kin's latest read said their sleep is improving. Tests: does the line pick up the open thread?",
+{"_about": "Athlete went to bed early last night and wrote they can't wait to wake up. Kin's latest read said their sleep has improved for a week. Their last two journal lines mention a race on Saturday.",
  "journal": "…", "reads": […]}
 ```
+
+- Facts only: what the athlete wrote, what Kin said, what a later entry closed, the recent lines. Never a hint at the verdict: no "Good line: …", no "a good output would …", no expected answer, no "Tests: does it …?". A hint anchors the grader, and the anchored swipes become the labels the judges are measured against, so the hint leaks into the judges' score too.
 
 - It is text; anything else stops `check` before any model call.
 - No harness, model or judge ever gets it: the engine removes it before the case reaches the harness, and a card's `input` is the case without it. A case without `_about` reaches the harness byte for byte.
