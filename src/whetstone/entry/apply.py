@@ -33,7 +33,7 @@ def _apply(prompt: PromptSettings, run_id: str | None, yes: bool, verify: bool, 
     print(run_line(folder.name, record.model, prompt.model, record.cases, record.original_clean, record.candidate_clean))
     if not verify:
         tally = swipe_tally(load_labels(prompt.dir), folder.name.removeprefix("run-"), json.loads((folder / "cards.json").read_text()))
-        found = warnings(tally, record.within_noise)
+        found = warnings(tally, record.within_noise, record.unmeasured_judges)
         print("".join(f"warning: {line}\n" for line in found), end="")
         if found and not yes:
             print("rerun with --yes to apply it anyway")

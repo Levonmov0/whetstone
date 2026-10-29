@@ -246,13 +246,14 @@ def refresh_baseline_report(prompt: PromptSettings) -> int:
 
 def start_run(prompt: PromptSettings, model: str, budget: int, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite, cap: float | None, run_id: str) -> int:
     meter = Meter(prices_or_stop(prompt))
-    suite, rewrite, rewrite_model = vet_run(prompt, meter, make_model, make_judge, make_rewrite)
-    return run_optimize(suite, prompt, model, rewrite, rewrite_model, budget, run_id, meter, cap)
+    suite, rewrite, rewrite_model, unmeasured = vet_run(prompt, meter, make_model, make_judge, make_rewrite)
+    return run_optimize(suite, prompt, model, rewrite, rewrite_model, budget, run_id, meter, cap, unmeasured)
 
 
-def vet_run(prompt: PromptSettings, meter: Meter, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite) -> tuple[Suite, ModelCall, str | None]:
-    """Everything that can stop a run before it optimizes: the suite, the split, the rewriter and the judge gate. The
-    starting command and the worker both run it, so a broken setup is said before "started"."""
+def vet_run(prompt: PromptSettings, meter: Meter, make_model: MakeModel, make_judge: MakeJudge, make_rewrite: MakeRewrite) -> tuple[Suite, ModelCall, str | None, list[str]]:
+    """Everything that can stop a run before it optimizes: the suite, the split, the rewriter and the judge gate; also
+    the unmeasured judges, which the run records for apply. The starting command and the worker both run it, so a
+    broken setup is said before "started"."""
     # The suite first: it is vetted without a model call, and the judge gate then spends judge calls.
     suite = prepare_suite(prompt, make_model, lambda workspace: meter.wrap("judge", make_judge(workspace)))
     try:
@@ -266,7 +267,7 @@ def vet_run(prompt: PromptSettings, meter: Meter, make_model: MakeModel, make_ju
     if not allowed:
         raise Stop("\n".join(advice))
     print("".join(f"{line}\n" for line in advice), end="")
-    return suite, rewrite, rewrite_model
+    return suite, rewrite, rewrite_model, [name for name, (_rows, status, _lines) in gates.items() if status == "unmeasured"]
 
 
 def production_cap(prompt: PromptSettings, budget: int, yes: bool) -> float | None:

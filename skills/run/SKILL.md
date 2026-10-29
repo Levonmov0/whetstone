@@ -10,7 +10,7 @@ The engine is `whetstone` on the Bash tool's PATH. Run it from the workspace fol
 
 ## 1. Before a run
 
-- The prompt needs at least 3 approved cases and its checks. Every judge must be trusted or warned by `whetstone agreement <prompt>`; the run refuses an untrusted one and says how to fix it (see `/whetstone:checks`).
+- The prompt needs at least 3 approved cases and its checks. Every judge must be trusted, warned or unmeasured by `whetstone agreement <prompt>`; the run refuses an untrusted one and says how to fix it (see `/whetstone:checks`). An unmeasured judge has never been seen catching its rule: tell the user it guards the run untested before starting, and that `apply` will warn about it.
 - If the user's swipes are old or few, offer a fresh round of `/whetstone:grade` first, then `whetstone agreement` again. A judge calibrated on more swipes is a judge the optimizer can't game as easily.
 - `whetstone.toml` needs a `[prices]` entry for every model the run uses, in dollars per million input and output tokens, or the cost record says "unknown" (and a production run refuses to start). Fill it from the provider's price page and show the user what you wrote.
 - Rewrites run through Claude Code's headless mode by default, on the user's own login. For the API instead, set `rewrite = { via = "api", model = "…" }` under `[models]` and ask the user to paste `REWRITE_API_KEY` into `<ws>/.env` themselves. Never read, print or write its value; check it's there with `grep -cE '^(export )?REWRITE_API_KEY *= *[^ ]' <ws>/.env`.

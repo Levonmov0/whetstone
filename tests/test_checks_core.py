@@ -71,11 +71,22 @@ NO_ADVICE: list[str] = []
         (rows((10, 10), (17, 20)), ("warn", ["agrees with Levon on 85% of bad cards for this rule; below 90% is a warning"])),
         (rows((7, 10), (5, 5)), ("untrusted", ["fails outputs Levon called good (70%); sharpen the rubric"])),
         (rows((10, 10), (3, 5)), ("untrusted", ["misses problems Levon flagged (60%); sharpen the rubric or swipe more examples"])),
-        (rows((10, 10), (3, 3)), ("untrusted", ["only 3 bad swipes for this rule; swipe at least 2 more"])),
+        (rows((10, 10), (3, 3)), ("unmeasured", ["only 3 bad swipes for this rule, so it guards the run untested; swipe at least 2 more to measure it"])),
+        (rows((17, 20), (0, 0)), ("unmeasured", [
+            "agrees with Levon on 85% of good cards; below 90% is a warning",
+            "only 0 bad swipes for this rule, so it guards the run untested; swipe at least 5 more to measure it",
+        ])),
+        (rows((7, 10), (2, 2)), ("untrusted", [
+            "fails outputs Levon called good (70%); sharpen the rubric",
+            "only 2 bad swipes for this rule, so it guards the run untested; swipe at least 3 more to measure it",
+        ])),
         (rows((3, 3), (5, 5)), ("untrusted", ["only 3 good swipes; swipe at least 2 more"])),
         (rows((10, 10), (5, 5), Hampus=((0, 2), (0, 0))), ("trusted", NO_ADVICE)),
         (rows((10, 10), (5, 5), Hampus=((6, 10), (5, 5))), ("untrusted", ["fails outputs Hampus called good (60%); sharpen the rubric"])),
-        (rows_none(), ("untrusted", ["only 0 good swipes; swipe at least 5 more", "only 0 bad swipes for this rule; swipe at least 5 more"])),
+        (rows_none(), ("untrusted", [
+            "only 0 good swipes; swipe at least 5 more",
+            "only 0 bad swipes for this rule, so it guards the run untested; swipe at least 5 more to measure it",
+        ])),
     ],
 )
 def test_judge_gate(agreements: dict[str, Agreement], gate: tuple[str, list[str]]) -> None:
@@ -95,6 +106,7 @@ def no_gates() -> dict[str, tuple[str, list[str]]]:
          (True, ["voice: agrees with Levon on 85% of good cards; below 90% is a warning"])),
         ({"assumes": ("untrusted", ["fails outputs Levon called good (70%); sharpen the rubric"]), "voice": ("warn", ["w"])},
          (False, ["assumes: fails outputs Levon called good (70%); sharpen the rubric"])),
+        ({"assumes": ("unmeasured", ["u"]), "voice": ("warn", ["w"])}, (True, ["assumes: u", "voice: w"])),
     ],
 )
 def test_optimize_gate(gates: dict[str, tuple[str, list[str]]], decision: tuple[bool, list[str]]) -> None:

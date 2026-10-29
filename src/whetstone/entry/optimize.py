@@ -69,7 +69,10 @@ class CapReached(Exception):
     pass
 
 
-def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: ModelCall, rewrite_model: str | None, budget: int, run_id: str, meter: Meter, cap: float | None = None) -> int:
+def run_optimize(
+    suite: Suite, prompt: PromptSettings, model: str, rewrite: ModelCall, rewrite_model: str | None, budget: int, run_id: str, meter: Meter, cap: float | None = None,
+    unmeasured: list[str] | None = None,
+) -> int:
     """`suite`'s model and judges are already metered by `meter`. With a `cap`, GEPA stops while the held-back
     scoring still fits under it, and the best version so far is kept."""
     prompt_dir, editable = prompt.dir, prompt.editable
@@ -184,7 +187,12 @@ def run_optimize(suite: Suite, prompt: PromptSettings, model: str, rewrite: Mode
 
         (folder / "candidate.txt").write_text(best)
         clean = {version: sum(not any(f.values()) for f in cases.values()) for version, cases in held_failures.items()}
-        result = {"original": editable, "held_back": {"cases": len(held), **clean}, "within_noise": within_noise(average["original"], average["candidate"])}
+        result = {
+            "original": editable,
+            "held_back": {"cases": len(held), **clean},
+            "within_noise": within_noise(average["original"], average["candidate"]),
+            "unmeasured_judges": unmeasured or [],
+        }
         (folder / "run.json").write_text(json.dumps({"model": model, **result}))
         save_cost()
         (folder / "cards.json").write_text(json.dumps(versions_by_tag, indent=2))

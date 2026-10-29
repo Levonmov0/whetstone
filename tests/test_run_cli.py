@@ -203,6 +203,19 @@ def test_a_warned_judge_is_shown_and_the_run_goes_on(tmp_path: Path, monkeypatch
     assert "assumes: agrees with Levon on 80% of good cards; below 90% is a warning" in capsys.readouterr().out
 
 
+def test_an_unmeasured_judge_is_named_and_the_run_goes_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = judged_run_suite(tmp_path, good_failed=0)
+    write_labels(prompt / "labels.jsonl", swipes(0)[:12])  # 10 good, only 2 bad
+    monkeypatch.chdir(tmp_path)
+
+    code = start_run(writer(), rewriter(), judge=lambda _workspace: judging("yes"))
+
+    assert code == 0
+    assert "assumes: only 2 bad swipes for this rule, so it guards the run untested; swipe at least 3 more to measure it" in capsys.readouterr().out
+    [folder] = (prompt / "runs").glob("run-*")
+    assert json.loads((folder / "run.json").read_text())["unmeasured_judges"] == ["assumes"]
+
+
 def test_a_run_needs_three_cases(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     make_run_suite(tmp_path, cases=2)
     model = writer()
@@ -619,5 +632,5 @@ def test_a_run_with_a_winner_records_its_result_for_apply(tmp_path: Path, monkey
     folder = run_folder(prompt)
     held = len(json.loads((folder / "split.json").read_text())["held_back"])
     recorded = json.loads((folder / "run.json").read_text())
-    expected = {"model": "cheap-model", "original": "Be brief.", "held_back": {"cases": held, "original": 0, "candidate": held}, "within_noise": False}
+    expected: dict[str, Any] = {"model": "cheap-model", "original": "Be brief.", "held_back": {"cases": held, "original": 0, "candidate": held}, "within_noise": False, "unmeasured_judges": []}
     assert recorded == expected

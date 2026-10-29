@@ -59,11 +59,16 @@ whetstone agreement <prompt>
 It judges every swiped card once (one OpenAI call per card per judge, printed before it starts). For each judge and each grader, it shows how often the judge agreed: on cards they called good, and on cards they called bad for that judge's rule.
 - **trusted:** 90% or more on both sides.
 - **warn:** 80% to 90%.
-- **untrusted:** below 80% on either side, or fewer than 5 swipes on a side. The optimizer (`/whetstone:run`) refuses to run against an untrusted judge.
+- **unmeasured:** the good side is measured (5 or more swipes, at least 80%), but the bad side has fewer than 5 swipes. The prompt rarely breaks this rule, so nobody has seen the judge catch it. The optimizer runs against it and warns that it guards the run untested.
+- **untrusted:** below 80% on a side with 5 or more swipes, or fewer than 5 good swipes. The optimizer (`/whetstone:run`) refuses to run against an untrusted judge.
+
+A side with fewer than 5 swipes is unmeasured, not failed.
 
 For each untrusted judge, follow its advice:
 - "fails outputs … called good": the judge is too strict. Read the good outputs it failed side by side. If what they share has nothing to do with the question (they are all yes/no, all long), the guide carries a second rule: remove it as in step 2, and propose that rule as its own check. Otherwise sharpen `guide` with those outputs. Then run `agreement` again.
 - "misses problems … flagged": the judge is too lenient. Sharpen `guide` with the bad outputs it passed, or swipe more examples.
-- "only N … swipes": run `whetstone check <prompt>` and `/whetstone:grade` for more swipes, tapping the judge's reason on bad cards.
+- "only N good swipes": run `whetstone check <prompt>` and `/whetstone:grade` for more swipes.
 
-Done when every judge is trusted or warned, or the user decides to drop the ones that aren't.
+For each unmeasured judge, tell the user it guards the run untested. Offer cases built to tempt the prompt into breaking the rule (`/whetstone:cases`), then a round of swipes tapping the judge's reason on bad cards. If the prompt still never breaks it, the user may run anyway: the run and `apply` name the judge.
+
+Done when every judge is trusted, warned or unmeasured with the user's go-ahead, or the user decides to drop the ones that aren't.

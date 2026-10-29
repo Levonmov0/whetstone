@@ -146,6 +146,19 @@ def test_a_gain_within_noise_is_warned_about(tmp_path: Path, capsys: pytest.Capt
     assert "within noise" in capsys.readouterr().out
 
 
+def test_a_run_against_an_unmeasured_judge_is_warned_about(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_repo(tmp_path)
+    folder = write_run(prompt, LATER)
+    record = json.loads((folder / "run.json").read_text())
+    (folder / "run.json").write_text(json.dumps(record | {"unmeasured_judges": ["assumes", "voice"]}))
+    swipe(prompt, LATER, "c1", "good")
+
+    assert apply(prompt) == 1
+    out = capsys.readouterr().out.splitlines()
+    assert "warning: judge assumes was never measured on bad swipes for its rule; the candidate was optimized against it untested" in out
+    assert "warning: judge voice was never measured on bad swipes for its rule; the candidate was optimized against it untested" in out
+
+
 def test_a_blind_swipe_that_preferred_the_original_is_warned_about(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     prompt = make_repo(tmp_path)
     write_run(prompt, LATER)

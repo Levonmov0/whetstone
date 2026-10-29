@@ -16,9 +16,9 @@ def run_line(run: str, model: str, production_model: str, cases: int, original_c
     return f"{run}, {on}, {candidate_clean}/{cases} held-back passing vs {original_clean}/{cases} original"
 
 
-def warnings(tally: dict[str, dict[str, int]], within_noise: bool) -> list[str]:
+def warnings(tally: dict[str, dict[str, int]], within_noise: bool, unmeasured_judges: list[str]) -> list[str]:
     """What the user should hear before a candidate reaches the source. `tally` is each version's good, bad and skip
-    swipes on the run's blind deck."""
+    swipes on the run's blind deck; `unmeasured_judges`, the judges the run optimized against untested."""
     found: list[str] = []
     if not any(sum(counts.values()) for counts in tally.values()):
         found.append("no blind swipe yet: nobody has compared the candidate with the original without knowing which is which")
@@ -27,6 +27,7 @@ def warnings(tally: dict[str, dict[str, int]], within_noise: bool) -> list[str]:
         found.append(f"the blind swipe preferred the original: {original} good swipes against the candidate's {candidate}")
     if within_noise:
         found.append("the held-back result is within noise: two runs of the same prompt can differ this much")
+    found += [f"judge {name} was never measured on bad swipes for its rule; the candidate was optimized against it untested" for name in unmeasured_judges]
     return found
 
 

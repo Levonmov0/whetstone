@@ -33,6 +33,7 @@ class RunRecord:
     original_clean: int  # held-back cases the original passed every check on
     candidate_clean: int
     within_noise: bool
+    unmeasured_judges: list[str]  # judges never measured on bad swipes, which the candidate was optimized against untested
 
 
 def run_record(folder: Path) -> RunRecord:
@@ -40,7 +41,8 @@ def run_record(folder: Path) -> RunRecord:
     if "held_back" not in record:
         raise RunError(f"{folder.name} was made before apply existed and has no recorded result; run it again")
     held = record["held_back"]
-    return RunRecord(record["model"], record["original"], held["cases"], held["original"], held["candidate"], record["within_noise"])
+    # A run made before unmeasured judges existed had none: it couldn't start against a judge short of bad swipes.
+    return RunRecord(record["model"], record["original"], held["cases"], held["original"], held["candidate"], record["within_noise"], record.get("unmeasured_judges", []))
 
 
 def write_export(folder: Path, patch: bytes, files: dict[str, bytes]) -> None:

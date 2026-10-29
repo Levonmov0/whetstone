@@ -150,17 +150,22 @@ MINIMUM = 5  # swipes a side needs from some grader before its percentage means 
 
 
 def judge_gate(agreements: dict[str, Agreement]) -> tuple[str, list[str]]:
-    """Whether a judge can be optimized against: "trusted", "warn" or "untrusted", with advice for each shortfall.
-    Each side counts on its own, so a judge that passes everything can't look accurate. Every grader with at least
-    MINIMUM swipes on a side must clear the bar there, and some grader must have that many."""
+    """Whether a judge can be optimized against: "trusted", "warn", "unmeasured" or "untrusted", with advice for each
+    shortfall. Each side counts on its own, so a judge that passes everything can't look accurate. A side is measured
+    once some grader has MINIMUM swipes on it, and then every grader with that many must clear the bar there. An
+    unmeasured bad side is "unmeasured": the prompt may rarely break the rule, so the judge guards the run untested. An
+    unmeasured good side is "untrusted": a judge nobody has seen pass anything is unsafe to optimize against."""
     untrusted: list[str] = []
     warned: list[str] = []
+    unmeasured: list[str] = []
     for side, cards in (("good", "good cards"), ("bad", "bad cards for this rule")):
         counted = {grader: getattr(row, side) for grader, row in agreements.items() if getattr(row, side).total >= MINIMUM}
         if not counted:
             most = max((getattr(row, side).total for row in agreements.values()), default=0)
-            swipes = "good swipes" if side == "good" else "bad swipes for this rule"
-            untrusted.append(f"only {most} {swipes}; swipe at least {MINIMUM - most} more")
+            if side == "good":
+                untrusted.append(f"only {most} good swipes; swipe at least {MINIMUM - most} more")
+            else:
+                unmeasured.append(f"only {most} bad swipes for this rule, so it guards the run untested; swipe at least {MINIMUM - most} more to measure it")
         for grader, s in counted.items():
             percent = round(100 * s.agreed / s.total)
             if 100 * s.agreed < WARNED * s.total:
@@ -172,14 +177,16 @@ def judge_gate(agreements: dict[str, Agreement]) -> tuple[str, list[str]]:
             elif 100 * s.agreed < TRUSTED * s.total:
                 warned.append(f"agrees with {grader} on {percent}% of {cards}; below {TRUSTED}% is a warning")
     if untrusted:
-        return "untrusted", untrusted
+        return "untrusted", untrusted + unmeasured
+    if unmeasured:
+        return "unmeasured", warned + unmeasured
     return ("warn", warned) if warned else ("trusted", [])
 
 
 def optimize_gate(gates: dict[str, tuple[str, list[str]]]) -> tuple[bool, list[str]]:
     """Whether optimizing may start against these judges' gates, and what to tell the user: every untrusted judge's
-    advice when it may not, else every warned judge's."""
+    advice when it may not, else every warned and unmeasured judge's."""
     refused = [f"{name}: {advice}" for name, (status, advices) in gates.items() if status == "untrusted" for advice in advices]
     if refused:
         return False, refused
-    return True, [f"{name}: {advice}" for name, (status, advices) in gates.items() if status == "warn" for advice in advices]
+    return True, [f"{name}: {advice}" for name, (status, advices) in gates.items() if status in ("warn", "unmeasured") for advice in advices]

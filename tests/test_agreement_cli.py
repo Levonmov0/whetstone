@@ -52,6 +52,22 @@ def test_agreement_explains_an_untrusted_judge(tmp_path: Path, monkeypatch: pyte
     assert "  fails outputs Levon called good (70%); sharpen the rubric" in out
 
 
+def test_agreement_names_a_judge_never_shown_its_rule_broken(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."}, 'reasons = ["assumes the outcome"]\n' + RUBRIC_TAIL)
+    write_labels(prompt / "labels.jsonl", swipes(good_failed=0)[:12])  # 10 good, only 2 bad
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judging("yes"))
+
+    out = capsys.readouterr().out.splitlines()
+    assert code == 0
+    assert out[out.index("assumes: unmeasured"):] == [
+        "assumes: unmeasured",
+        "  Levon: good 10/10 (100%), bad 2/2 (100%)",
+        "  only 2 bad swipes for this rule, so it guards the run untested; swipe at least 3 more to measure it",
+    ]
+
+
 def test_agreement_without_judges(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     make_suite(tmp_path, {"a": "Rest today."})
     monkeypatch.chdir(tmp_path)
