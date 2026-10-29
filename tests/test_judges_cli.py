@@ -1,6 +1,7 @@
 import json
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -154,7 +155,7 @@ def test_judge_named_like_a_code_check_stops(tmp_path: Path, monkeypatch: pytest
         '[models]\njudge = "gpt"\n',
     ],
 )
-def test_judges_need_an_openai_judge_model(settings: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_judges_need_a_known_judge_provider_and_model(settings: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     make_judged_suite(tmp_path, {"a": "Rest today."})
     (tmp_path / "whetstone.toml").write_text(settings)
     monkeypatch.chdir(tmp_path)
@@ -162,7 +163,7 @@ def test_judges_need_an_openai_judge_model(settings: str, tmp_path: Path, monkey
     code = run(["check", "daily"], make_model=unused_model, make_judge=unused_model)
 
     assert code == 2
-    assert 'whetstone.toml: [models] judge needs provider = "openai" and a model' in capsys.readouterr().err
+    assert 'whetstone.toml: [models] judge needs provider = "openai" or "cloudflare", and a model' in capsys.readouterr().err
 
 
 def test_missing_judge_key_stops_before_any_model_call(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -259,3 +260,84 @@ def test_call_count_without_judges(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     run(["check", "daily"], make_model=lambda _settings: echo_model())
 
     assert capsys.readouterr().out.splitlines()[0] == "1 generation call"
+
+
+CLOUDFLARE_SETTINGS = '[models]\njudge = { provider = "cloudflare", model = "@cf/cloudflare/clef" }\n'
+
+
+def clef_choosing(answer: str) -> FakeModel:
+    """A Clef judge choosing `answer` on outputs that mention skipping, else "none"."""
+    def choose(request: dict[str, Any]) -> dict[str, Any]:
+        choice = answer if "skip" in json.dumps(request["state"]) else "none"
+        return {"model": "clef", "answers": {"verdict": {"type": "choice", "choice": choice, "probabilities": {choice: 1.0}, "confidence": 1.0}}, "usage": {"input_tokens": 1, "output_tokens": 0}}
+    return FakeModel(choose)
+
+
+def test_a_cloudflare_judge_asks_clef_one_choice_question(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_judged_suite(tmp_path, {"a": "Rest today.", "b": "Go skip less."}, MULTIPLE_CHOICE)
+    (tmp_path / "whetstone.toml").write_text(CLOUDFLARE_SETTINGS)
+    judge = clef_choosing("instruction")
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=lambda _settings: echo_model(), make_judge=lambda _workspace: judge)
+
+    assert code == 1
+    assert "FAIL b: assumes (judge): tells them what to do" in capsys.readouterr().out.splitlines()
+    request = judge.requests[0]
+    assert request["model"] == "@cf/cloudflare/clef"
+    # The output first, so a state Clef truncates to fit its window loses input, never the output it judges.
+    assert list(request["state"]) == ["output", "input"]
+    assert request["state"] == {"output": "Rest today.", "input": {"text": "Rest today."}}
+    [question] = request["questions"].values()
+    assert question["type"] == "choice"
+    assert "What is wrong with this line, if anything?" in question["instructions"]
+    assert question["criteria"] == {"none": None, "device": "asks about something a watch measures", "instruction": "tells them what to do"}
+
+
+def test_a_clef_choice_outside_the_rubric_exits_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_judged_suite(tmp_path, {"b": "Go skip less."})
+    (tmp_path / "whetstone.toml").write_text(CLOUDFLARE_SETTINGS)
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=lambda _settings: echo_model(), make_judge=lambda _workspace: clef_choosing("maybe"))
+
+    assert code == 2
+    assert 'judge assumes answered "maybe" on case b; expected one of: no, yes' in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("env", "message"),
+    [
+        ("JUDGE_API_KEY=sk-openai\n", "JUDGE_CF_ACCOUNT_ID is not set in"),
+        ("JUDGE_CF_ACCOUNT_ID=0123456789abcdef0123456789abcdef\n", "JUDGE_CF_API_TOKEN is not set in"),
+        ("JUDGE_CF_ACCOUNT_ID=../../evil\nJUDGE_CF_API_TOKEN=t\n", "JUDGE_CF_ACCOUNT_ID in"),
+    ],
+)
+def test_a_cloudflare_judge_needs_its_own_keys(env: str, message: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    make_judged_suite(tmp_path, {"a": "Rest today."})
+    (tmp_path / "whetstone.toml").write_text(CLOUDFLARE_SETTINGS)
+    (tmp_path / ".env").write_text(env)
+    model = echo_model()
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=lambda _settings: model, make_judge=production_judge)
+
+    assert code == 2
+    assert message in capsys.readouterr().err
+    assert model.requests == []
+
+
+def test_real_data_reaches_a_cloudflare_judge_only_when_the_repo_uses_cloudflare(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    add_private_case(prompt)
+    (tmp_path / "whetstone.toml").write_text('repo_providers = ["anthropic", "openai"]\n' + CLOUDFLARE_SETTINGS)
+    judge = clef_choosing("yes")
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["check", "daily"], make_model=lambda _settings: echo_model(), make_judge=lambda _workspace: judge)
+
+    assert code == 2
+    assert "real-data cases go only to providers this repo already uses (anthropic, openai); cloudflare is not one" in capsys.readouterr().err
+    assert judge.requests == []
