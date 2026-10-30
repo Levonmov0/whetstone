@@ -170,6 +170,28 @@ def test_a_rewrite_that_drops_a_placeholder_is_never_generated_and_never_wins(tm
     assert all(request["system"] == "Be brief, {{name}}." for request in model.requests)
 
 
+def test_the_rewriter_is_told_to_keep_placeholders_and_retried_when_it_drops_one(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Regression: GEPA's own reflection prompt never mentions placeholders and asks for every fact to be written out, so
+    # a rewriter replaced ${VOICE_NO_EM_DASH} and the like with its own wording, and every such version scored 0.
+    prompt = make_run_suite(tmp_path)
+    (prompt / "harness.py").write_text(HARNESS.replace("Be brief.", "Be brief, warm."))  # the request holds the expanded text
+    (prompt / "editable.txt").write_text("Be brief, ${VOICE}.")
+    (prompt / "prompt.toml").write_text((prompt / "prompt.toml").read_text() + '[placeholders]\n"${VOICE}" = "warm"\n')
+    model = FakeModel(lambda r: r["messages"][0]["content"] + ("" if "short" in r["system"] else " LONG"))
+    # Writes the placeholder's rule out in its own words, unless told its last version was thrown away.
+    rewrite = FakeModel(lambda r: "```\nBe brief, ${VOICE}. Keep it short.\n```" if "Your last new instruction" in r["messages"][0]["content"] else "```\nBe brief and warm. Keep it short.\n```")
+    monkeypatch.chdir(tmp_path)
+
+    code = start_run(model, rewrite)
+
+    first, retry = (request["messages"][0]["content"] for request in rewrite.requests[:2])
+    assert "- ${VOICE}: 1 time" in first and "verbatim" in first
+    assert "it drops placeholder ${VOICE}" in retry
+    assert code == 0
+    assert (run_folder(prompt) / "candidate.txt").read_text() == "Be brief, ${VOICE}. Keep it short."
+    assert any(request["system"] == "Be brief, warm. Keep it short." for request in model.requests)
+
+
 def judged_run_suite(workspace: Path, good_failed: int) -> Path:
     """A run suite with the "assumes" judge, swiped so it fails `good_failed` of 10 good cards and all 5 bad ones."""
     prompt = make_run_suite(workspace, settings=JUDGE_SETTINGS)

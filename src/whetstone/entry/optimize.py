@@ -12,7 +12,7 @@ from typing import Any
 from whetstone.entry.suite import Stop, Suite, card
 from whetstone.features.cases.load import CaseError, load_cases
 from whetstone.features.grading.store import save_deck
-from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, length_factor, placeholder_problem, progress_line, run_report, split_cases, stop_for_cap, stuck_reasons, swap_editable, within_noise
+from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, length_factor, placeholder_problem, placeholder_retry, placeholder_rules, progress_line, run_report, split_cases, stop_for_cap, stuck_reasons, swap_editable, within_noise
 from whetstone.features.workspace.core import expand
 from whetstone.features.workspace.load import PromptSettings
 from whetstone.platform.gepa import optimize
@@ -159,7 +159,12 @@ def run_optimize(
     try:
         gepa_running = True
         try:
-            optimize(editable, train, select, evaluate, reflect, budget, stop=over_cap)
+            named = list(prompt.placeholders)
+            optimize(
+                editable, train, select, evaluate, reflect, budget, stop=over_cap,
+                rules=placeholder_rules(editable, named),
+                check=lambda text: placeholder_retry(problem) if (problem := placeholder_problem(editable, text, named)) else None,
+            )
             capped = over_cap()  # GEPA also stops itself for the cap, between rounds
         except CapReached:
             capped = True

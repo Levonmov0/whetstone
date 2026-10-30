@@ -1,6 +1,6 @@
 import pytest
 
-from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, progress_line, run_report, stop_for_cap, stuck_reasons, length_factor, placeholder_problem, split_cases
+from whetstone.features.optimize.core import EstimateError, RoleCost, SplitError, case_score, estimate, progress_line, run_report, stop_for_cap, stuck_reasons, length_factor, placeholder_problem, placeholder_rules, split_cases
 
 
 def test_split_cases_is_about_40_25_35_disjoint_and_stable() -> None:
@@ -154,3 +154,16 @@ def test_run_report_explains_why_a_run_may_be_stuck() -> None:
 
     assert "## Why it may be stuck" in lines
     assert "- no_number never passed on case b in any version: …" in lines
+
+
+def test_placeholder_rules_name_each_placeholder_and_how_often() -> None:
+    rules = placeholder_rules("Hi {{name}}, {{name}}. See you ${day}.")
+
+    assert rules is not None
+    assert "- {{name}}: 2 times" in rules
+    assert "- ${day}: 1 time\n" in rules
+    assert "verbatim" in rules and "can't see" in rules
+
+
+def test_no_placeholder_rules_without_placeholders() -> None:
+    assert placeholder_rules('Return { "ask": null }.') is None

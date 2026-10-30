@@ -45,16 +45,39 @@ def length_factor(original: int, length: int) -> float:
 PLACEHOLDER = re.compile(r"\{\{[^{}]+\}\}|\$\{[^{}]+\}")
 
 
+def _placeholders(text: str, named: list[str] | None) -> Counter[str]:
+    """Each placeholder in `text` and how often. `named` are the prompt's own placeholders, from its table, whatever
+    form they take."""
+    return Counter(PLACEHOLDER.findall(text)) + Counter({name: text.count(name) for name in named or [] if not PLACEHOLDER.fullmatch(name)})
+
+
 def placeholder_problem(original: str, candidate: str, named: list[str] | None = None) -> str | None:
-    """Why a version can't be applied to the source because it dropped or changed a placeholder, or None. `named` are
-    the prompt's own placeholders, from its table, whatever form they take."""
-
-    def found(text: str) -> Counter[str]:
-        return Counter(PLACEHOLDER.findall(text)) + Counter({name: text.count(name) for name in named or [] if not PLACEHOLDER.fullmatch(name)})
-
-    before, after = found(original), found(candidate)
+    """Why a version can't be applied to the source because it dropped or changed a placeholder, or None."""
+    before, after = _placeholders(original, named), _placeholders(candidate, named)
     problems = [f"drops placeholder {p}" for p in before - after] + [f"adds placeholder {p}" for p in after - before]
     return "; ".join(problems) or None
+
+
+def placeholder_rules(original: str, named: list[str] | None = None) -> str | None:
+    """What the rewriter is told about the original's placeholders, or None when it has none. Without it, a rewriter
+    sees an unexplained ${…}, is asked to write every fact out, and writes its own guess in the placeholder's place."""
+    counts = _placeholders(original, named)
+    if not counts:
+        return None
+    listed = "".join(f"- {p}: {n} time{'' if n == 1 else 's'}\n" for p, n in counts.items())
+    return (
+        "The instructions contain placeholders. Each one is filled in with fixed text before the assistant reads the "
+        "instructions; you can't see that text and you can't change it. Copy every placeholder into your new "
+        "instruction verbatim, exactly as often as it appears in the instructions above:\n"
+        f"{listed}"
+        "Never drop, rename or reword a placeholder, and never write out what you guess it says in its place: write "
+        "your own text around it. A new instruction missing a placeholder is thrown away."
+    )
+
+
+def placeholder_retry(problem: str) -> str:
+    """Added to the rewrite prompt when the rewriter's last new instruction broke a placeholder."""
+    return f"Your last new instruction was thrown away: it {problem}. Write it again, with every placeholder exactly as often as in the instructions above."
 
 
 def case_score(failures: dict[str, list[str]], factor: float) -> tuple[float, str]:
