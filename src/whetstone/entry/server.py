@@ -20,7 +20,7 @@ from whetstone.features.checks.load import CheckLoadError, code_check_reasons, l
 from whetstone.features.grading.core import swipe_problem, swipe_reasons
 from whetstone.features.grading.store import add_label, load_deck, load_labels
 from whetstone.features.matching.core import Refusal, answer, case_of, said, answer_problem, pending, sure_items, undo
-from whetstone.features.matching.store import add_event, load_events
+from whetstone.features.matching.store import add_event, snapshot
 from whetstone.features.workspace.load import PromptSettings
 
 Handler = Callable[[Request], Awaitable[Response]]
@@ -107,7 +107,7 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
     async def matches(request: Request) -> Response:
         grader = unquote(request.headers.get("x-grader", ""))
         reasons = covered()
-        labels, events = load_labels(prompt.dir), load_events(prompt.dir)
+        events, labels = snapshot(prompt.dir)
         # Every reason a check stands for: the Different chip sheet offers only reasons that can count.
         return JSONResponse({"items": pending(labels, events, reasons, grader), "reasons": sorted(reasons), "sure": sure_items(labels, events, reasons, grader)})
 
@@ -120,7 +120,8 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
             return refuse(problem)
         grader = unquote(request.headers.get("x-grader", ""))
         match = request.path_params["match"]
-        labels, events, reasons = load_labels(prompt.dir), load_events(prompt.dir), covered()
+        reasons = covered()
+        events, labels = snapshot(prompt.dir)
         now = datetime.now(UTC).isoformat()
         undoing = body["answer"] in ("undo", "redo")
         if undoing:
