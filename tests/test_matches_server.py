@@ -11,6 +11,7 @@ from tests.test_judges_cli import judging, make_judged_suite
 from tests.test_matching_cli import read_lines, swiped, write_labels
 from tests.test_server import AUTH, TOKEN
 from whetstone.entry.cli import run
+from whetstone.entry import server
 from whetstone.entry.server import make_app
 from whetstone.features.matching.core import swipe_id
 from whetstone.features.workspace.load import load_prompt
@@ -307,3 +308,18 @@ def test_a_different_chip_left_by_a_crash_is_said_on_the_next_answer(tmp_path: P
     again = client.post(f"/api/matches/{match_of(NOTE)}", headers=HAMPUS, json={"answer": "no"})
 
     assert again.json() == {"answer": "different", "reason": "assumes"}
+
+
+def test_a_different_chip_claude_also_suggested_is_said_as_different_after_a_crash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _prompt, client = asked_suite(tmp_path, monkeypatch)
+
+    def died(*_args: object) -> None:
+        raise OSError("killed")
+
+    with monkeypatch.context() as crash:
+        crash.setattr(server, "add_event", died)
+        TestClient(client.app, raise_server_exceptions=False).post(f"/api/matches/{match_of(NOTE)}", headers=HAMPUS, json={"answer": "different", "reason": "banned"})
+
+    again = client.post(f"/api/matches/{match_of(NOTE)}", headers=HAMPUS, json={"answer": "no"})
+
+    assert again.json() == {"answer": "different", "reason": "banned"}
