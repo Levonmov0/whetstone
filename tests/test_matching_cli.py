@@ -138,3 +138,19 @@ def test_map_refuses_and_writes_nothing(swipe: str, reasons: list[str], refusal:
     assert code == 1
     assert capsys.readouterr().out.splitlines() == [f"refused  {swipe} · {refusal}"]
     assert ((prompt / "labels.jsonl").read_text(), (prompt / "matches.jsonl").read_text()) == before
+
+
+def test_a_real_data_match_stays_in_its_private_source_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    private = prompt / "cases" / "private" / "diary"
+    noted = swiped("private/diary/day1")
+    write_labels(private / "labels.jsonl", [noted])
+    monkeypatch.chdir(tmp_path)
+
+    run(["map", "daily", swipe_id(noted), "--reasons", "banned", "--sure", "--why", "Quotes HRV"], make_model=unused_model)
+    run(["notes", "daily"], make_model=unused_model)
+
+    assert capsys.readouterr().out.splitlines() == ["counted  d:private/diary/day1 · Hampus · banned (sure)"]
+    assert [event["swipe"] for event in read_lines(private / "matches.jsonl")] == [swipe_id(noted)]
+    assert len(read_lines(private / "labels.jsonl")) == 2
+    assert not (prompt / "matches.jsonl").exists() and not (prompt / "labels.jsonl").exists()
