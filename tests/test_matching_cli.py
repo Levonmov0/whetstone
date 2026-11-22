@@ -318,3 +318,16 @@ def test_settling_a_card_claude_matched_is_a_call_not_a_match(tmp_path: Path, mo
     settled = read_lines(prompt / "labels.jsonl")[-1]
     assert (settled["grader"], settled["verdict"], settled["settled"]) == ("Levon", "good", True)
     assert "matched_by" not in settled and "swipe" not in settled
+
+
+def test_a_check_that_fails_to_load_stops_agreement_before_any_judge_call(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    write_labels(prompt / "labels.jsonl", [swiped("c17")])
+    (prompt / "checks" / "half_written.py").write_text("REASONS = [\n")
+    monkeypatch.chdir(tmp_path)
+    judge = judging("yes")
+
+    code = run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judge)
+
+    assert code != 0
+    assert judge.requests == []
