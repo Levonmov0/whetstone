@@ -39,9 +39,9 @@ def current(labels: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(lines.values())
 
 
-def propose(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], swipe: str, reasons: list[str], why: str, at: str) -> str | tuple[dict[str, Any], dict[str, Any]]:
-    """Claude's match of one swipe's note to reasons: the refusal, or the `proposed` event and the matched label line
-    to append. Only a grader's latest bad swipe can be matched, once, and only to reasons some check stands for."""
+def propose(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], swipe: str, reasons: list[str], why: str, at: str, kind: str = "sure") -> str | tuple[dict[str, Any], dict[str, Any] | None]:
+    """Claude's match of one swipe's note to reasons: the refusal, or the `proposed` event and, for a sure match, the
+    matched label line to append; an ask match waits for the grader. Only a grader's latest bad swipe can be matched, once, and only to reasons some check stands for."""
     source = next((label for label in labels if "matched_by" not in label and swipe_id(label) == swipe), None)
     if source is None:
         return f"no swipe {swipe}"
@@ -54,7 +54,9 @@ def propose(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered:
     if any(event["event"] == "proposed" and event["swipe"] == swipe for event in events):
         return "already matched"
     match = "m_" + swipe.removeprefix("s_")  # a swipe has at most one proposal
-    event = {"event": "proposed", "id": match, "swipe": swipe, "grader": source["grader"], "card_id": source["card_id"], "kind": "sure", "reasons": reasons, "why": why, "at": at}
+    event = {"event": "proposed", "id": match, "swipe": swipe, "grader": source["grader"], "card_id": source["card_id"], "kind": kind, "reasons": reasons, "why": why, "at": at}
+    if kind == "ask":
+        return event, None
     line = {**source, "reasons": list(dict.fromkeys(source["reasons"] + reasons)), "matched_by": "claude", "swipe": swipe, "match": match, "counted": "sure", "at": at}
     return event, line
 

@@ -546,6 +546,7 @@ def map_note(prompt: PromptSettings, swipe: str, reasons: list[str], why: str) -
             print(f"refused  {swipe} · {proposal}")
             return 1
         event, line = proposal
+        assert line is not None  # only sure matches are made here
         # The line first: a crash before the event leaves a swipe that counts and is listed again, never a lost count.
         add_label(prompt.dir, line)
         add_event(prompt.dir, line["case_id"], event)
