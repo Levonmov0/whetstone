@@ -81,8 +81,12 @@ def propose(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered:
     if uncovered := [reason for reason in reasons if reason not in covered]:
         return f'no check stands for "{uncovered[0]}"'
     earlier = [item for item in _items(labels, events, covered) if item["swipe"] == swipe]
-    if any(not item["stale"] for item in earlier):
+    # A note the grader answered No to is an idea, so a judge written from it may match it again, on other reasons.
+    said_no = [item for item in earlier if not item["stale"] and item["answer"] and item["answer"]["answer"] == "no"]
+    if any(not item["stale"] and item not in said_no for item in earlier):
         return "already matched"
+    if rejected := [reason for reason in reasons if any(reason in item["reasons"] for item in said_no)]:
+        return f'{source["grader"]} answered No to "{rejected[0]}"'
     # A swipe has one live proposal at a time; one made after its earlier ones went stale gets its own id.
     match = "m_" + swipe.removeprefix("s_") + (f"_{len(earlier) + 1}" if earlier else "")
     event = {"event": "proposed", "id": match, "swipe": swipe, "grader": source["grader"], "card_id": source["card_id"], "kind": kind, "reasons": reasons, "why": why, "at": at}
@@ -102,7 +106,9 @@ def idea_lines(labels: list[dict[str, Any]], events: list[dict[str, Any]], cover
             continue
         item = items.get(swipe_id(line))
         if item and (item["undone"] or item["answer"] and item["answer"]["answer"] == "no"):  # an undo says Claude was wrong, as a No does
-            line = {**line, "reasons": [reason for reason in line["reasons"] if reason not in covered]}
+            # A No'd note is named by its swipe, so a judge written from it can match it again; an undone one can't be yet.
+            named = {} if item["undone"] else {"idea_of": swipe_id(line)}
+            line = {**line, "reasons": [reason for reason in line["reasons"] if reason not in covered], **named}
         elif item:
             line = {**line, "note": ""}
         lines.append(line)
@@ -112,7 +118,8 @@ def idea_lines(labels: list[dict[str, Any]], events: list[dict[str, Any]], cover
 def kept_and_waiting(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str]) -> tuple[int, dict[str, int]]:
     """How many notes graders answered No to, kept as ideas for a new check, and how many asks wait on each grader."""
     items = [item for item in _items(labels, events, covered) if not item["stale"]]
-    kept = sum(1 for item in items if item["answer"] and item["answer"]["answer"] == "no")
+    latest = {item["swipe"]: item for item in items}.values()  # a note matched again after a No is no longer kept
+    kept = sum(1 for item in latest if item["answer"] and item["answer"]["answer"] == "no")
     waiting: dict[str, int] = {}
     for item in items:
         if item["kind"] == "ask" and not item["answer"]:

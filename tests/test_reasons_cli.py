@@ -66,7 +66,7 @@ def test_reasons_lists_notes_answered_no_and_leaves_out_matched_ones(tmp_path: P
     code = run(["reasons", "daily"], make_model=unused_model)
 
     assert code == 0
-    assert capsys.readouterr().out.splitlines() == ['1  note: "Reads like a horoscope"']
+    assert capsys.readouterr().out.splitlines() == [f'1  note: "Reads like a horoscope" · {swipe_id(said_no)}']
 
 
 def test_a_matched_line_does_not_count_a_tapped_reason_twice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

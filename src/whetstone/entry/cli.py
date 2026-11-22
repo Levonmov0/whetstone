@@ -8,6 +8,7 @@ import re
 import secrets
 import socket
 import sys
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -56,6 +57,7 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
     agree = commands.add_parser("agreement", help="measure each judge against the swipes and say whether it can be trusted")
     reasons = commands.add_parser("reasons", help="list left-swipe reasons that no check stands for yet")
     notes = commands.add_parser("notes", help="list the latest bad swipes whose note nothing has matched yet, as JSON lines")
+    notes.add_argument("--follow", action="store_true", help="after the backlog, keep watching and print each new note as it lands")
     mapping = commands.add_parser("map", help="record Claude's match of one swipe's note to reasons checks stand for")
     disagree = commands.add_parser("disagreements", help="list the cards graders disagree on")
     settle = commands.add_parser("settle", help="record your call on a card graders disagree on")
@@ -138,7 +140,7 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
         if args.command == "reasons":
             return list_reasons(prompt)
         if args.command == "notes":
-            return list_notes(prompt)
+            return list_notes(prompt, args.follow)
         if args.command == "map":
             return map_note(prompt, args.swipe, args.reasons, args.why, args.kind)
         if args.command == "disagreements":
@@ -536,12 +538,27 @@ def list_reasons(prompt: PromptSettings) -> int:
     return 0
 
 
-def list_notes(prompt: PromptSettings) -> int:
-    covered = covered_reasons(code_checks_or_stop(prompt), judges_or_stop(prompt))
-    for label in unmatched_notes(load_labels(prompt.dir), load_events(prompt.dir), covered):
-        note = {"swipe": swipe_id(label), "grader": label["grader"], "card": label["card_id"], "note": label["note"], "reasons": label["reasons"], "excerpt": excerpt(label["output"])}
-        print(json.dumps(note, ensure_ascii=False))
-    return 0
+def list_notes(prompt: PromptSettings, follow: bool = False) -> int:
+    printed: set[str] = set()
+    covered: set[str] | None = None
+    while True:
+        # Read each time: a judge deleted while following frees the notes that waited on it. A check caught mid-edit
+        # keeps the last set that loaded; only the first read stops the command.
+        try:
+            covered = covered_reasons(code_checks_or_stop(prompt), judges_or_stop(prompt))
+        except Stop:
+            if covered is None:
+                raise
+        for label in unmatched_notes(load_labels(prompt.dir), load_events(prompt.dir), covered):
+            if swipe_id(label) in printed:
+                continue
+            printed.add(swipe_id(label))
+            note = {"swipe": swipe_id(label), "grader": label["grader"], "card": label["card_id"], "note": label["note"], "reasons": label["reasons"], "excerpt": excerpt(label["output"])}
+            print(json.dumps(note, ensure_ascii=False), flush=True)  # the Monitor tool reads each line as it comes
+        if not follow:
+            return 0
+        # ponytail: re-reads every label each poll; fine for thousands of swipes, watch the files' size if it isn't.
+        time.sleep(0.5)
 
 
 def map_note(prompt: PromptSettings, swipe: str, reasons: list[str], why: str, kind: str) -> int:

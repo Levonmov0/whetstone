@@ -31,9 +31,33 @@ Show the user the QR code and the link from its output, in a code block so the Q
 
 If it exits 2, show the message and fix what it names. With no Wi-Fi address, ask whether to use Tailscale; never suggest a public tunnel.
 
-## 4. Settle disagreements
+## 4. Match notes as they land
 
-When the user says grading is done, run `whetstone disagreements <prompt>`. For each card it lists, show the output (from the labels, or `.whetstone/decks/<prompt>.json`), each grader's verdict, reasons and note, and ask the user for their call. Then record it:
+Graders mostly say what's wrong in a note instead of tapping a chip, and a note counts toward a check only once it is matched to that check's reason. Right after the server is up, without asking, start the live matching with the Monitor tool:
+
+```bash
+whetstone notes <prompt> --follow
+```
+
+It prints every unmatched note first, then each new one about a second after the grader saves it, one JSON line each: `swipe`, `grader`, `card`, `note`, the `reasons` already tapped, and an `excerpt` of the output. It runs until stopped. For each line, compare the note with the reasons the checks stand for: each code check's `REASONS`, and each judge's `question`, `guide`, `[fail]` answers and `reasons` (in `checks/`). Then record one match, or none:
+
+```bash
+whetstone map <prompt> <swipe> --reasons "<reason>" ["<reason>" …] --sure|--ask --why "<one line>"
+```
+
+- **Sure** (`--sure`): the note names the exact thing a judge's question, guide or failing answer describes, or a code check's reason ("Says HRV and sleep latency" when banned terms list HRV). It counts at once. The grader sees it under "Claude matched N more on its own" and can undo it.
+- **Ask** (`--ask`): anything that needs interpretation, such as a paraphrase, an inference, or a note that could mean two things ("Tells me to take it easy, but I said I slept great" for "ignores check-in"). It goes to the grader's phone, and only the grader answers it. Never answer an ask for the grader, and never tell the user what the grader meant.
+- **No match:** the note says something no check stands for. Record nothing. `/whetstone:checks` turns it into a new check later.
+- A note that names two problems gets both reasons in one `map`, if both are sure. If either one is a judgement call, use `--ask`.
+- `--reasons` takes reasons exactly as the checks spell them. `--why` is one line the grader will read beside the suggested chip.
+
+`map` prints `counted`, `waiting` or `refused` with why. A refusal is not an error. `swiped … again` means a newer swipe replaced the note, and its note arrives as its own line. `already matched` means another session got there first. Go on to the next line. Don't print each match to the user. When grading ends, say how many notes were counted, how many wait on graders and how many matched nothing.
+
+If undos pile up on sure matches (`whetstone agreement` shows the undone column), be stricter about sure.
+
+## 5. Settle disagreements
+
+When the user says grading is done, stop the Monitor, then run `whetstone disagreements <prompt>`. For each card it lists, show the output (from the labels, or `.whetstone/decks/<prompt>.json`), each grader's verdict, reasons and note, and ask the user for their call. Then record it:
 
 ```bash
 whetstone settle <prompt> <card-id> good|bad --grader "<user's name>" --note "<the rule, in their words>"
