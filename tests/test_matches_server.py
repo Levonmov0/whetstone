@@ -233,3 +233,37 @@ def test_undo_and_redo_a_sure_match(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert [(e["event"], e["id"]) for e in read_lines(prompt / "matches.jsonl")][-1] == ("redone", match_of(SURE))
     assert len(read_lines(prompt / "labels.jsonl")) == lines + 2
     assert client.get("/api/matches", headers=HAMPUS).json()["sure"][0]["undone"] is False
+
+
+def test_a_second_undo_writes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt, client = sure_suite(tmp_path, monkeypatch)
+    client.post(f"/api/matches/{match_of(SURE)}", headers=HAMPUS, json={"answer": "undo"})
+    before = ((prompt / "labels.jsonl").read_text(), (prompt / "matches.jsonl").read_text())
+
+    again = client.post(f"/api/matches/{match_of(SURE)}", headers=HAMPUS, json={"answer": "undo"})
+
+    assert again.status_code == 200
+    assert ((prompt / "labels.jsonl").read_text(), (prompt / "matches.jsonl").read_text()) == before
+
+
+@pytest.mark.parametrize(
+    ("change", "match", "body", "status", "error"),
+    [
+        ("", THEIR_SURE, {"answer": "undo"}, 404, "no match {}"),
+        ("reswipe", SURE, {"answer": "undo"}, 409, STALE),
+        ("", SURE, {"answer": "yes"}, 404, "no match {}"),
+        ("", NOTE, {"answer": "undo"}, 404, "no match {}"),
+    ],
+)
+def test_an_undo_is_refused(change: str, match: dict[str, Any], body: dict[str, Any], status: int, error: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt, client = sure_suite(tmp_path, monkeypatch)
+    if change == "reswipe":
+        with (prompt / "labels.jsonl").open("a") as f:
+            f.write(json.dumps(swiped("c19", verdict="good", note="", at="2026-11-20T09:00:00+00:00")) + "\n")
+    before = ((prompt / "labels.jsonl").read_text(), (prompt / "matches.jsonl").read_text())
+
+    response = client.post(f"/api/matches/{match_of(match)}", headers=HAMPUS, json=body)
+
+    assert response.status_code == status
+    assert response.json() == {"error": error.format(match_of(match))}
+    assert ((prompt / "labels.jsonl").read_text(), (prompt / "matches.jsonl").read_text()) == before
