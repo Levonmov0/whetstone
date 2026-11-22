@@ -15,7 +15,7 @@ from whetstone.entry.cli import run
 from whetstone.entry.server import make_app
 from whetstone.features.workspace.load import load_prompt
 from whetstone.features.grading.store import add_label, load_labels
-from whetstone.features.matching.core import Refusal, answer, swipe_id
+from whetstone.features.matching.core import Refusal, answer, case_of, swipe_id
 from whetstone.features.matching.store import add_event, load_events
 from whetstone.platform import jsonl
 
@@ -226,13 +226,13 @@ def test_map_needs_sure_or_ask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 
 def answered_in_app(prompt: Path, match: str, choice: str, grader: str = "Hampus", reason: str | None = None, covered: frozenset[str] = frozenset({"banned", "assumes", "assumes the outcome"})) -> None:
     """The grader's answer, written as the swipe server writes it."""
-    labels = load_labels(prompt)
-    writes = answer(labels, load_events(prompt), set(covered), grader, match, choice, reason, "2026-11-21T10:00:00+00:00")
+    labels, events = load_labels(prompt), load_events(prompt)
+    writes = answer(labels, events, set(covered), grader, match, choice, reason, "2026-11-21T10:00:00+00:00")
     assert writes is not None and not isinstance(writes, Refusal)
     event, line = writes
     if line is not None:
         add_label(prompt, line)
-    add_event(prompt, next(label["case_id"] for label in labels if "m_" + swipe_id(label).removeprefix("s_") == match), event)
+    add_event(prompt, case_of(labels, events, event), event)
 
 
 def test_a_yes_counts_under_confirmed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
