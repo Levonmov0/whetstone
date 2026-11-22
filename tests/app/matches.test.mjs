@@ -62,3 +62,26 @@ test("a 401 from the Why is it bad? sheet closes it over the token message", asy
   assert.equal(w.document.querySelector(".sheet-backdrop"), null);
   w.close();
 });
+
+test("an item another phone answered No says so, whatever this phone tapped", async () => {
+  const w = await boot((path, _grader, options) => path === "/api/cards" ? { status: 200, body: { cards: [], reasons: [] } }
+    : options?.method === "POST" ? { status: 200, body: { answer: "no" } } : matches([ask("m_1")]));
+  w.eval("openMatching()");
+  await tick();
+  button(w, "Yes").click();
+  await tick(60);
+  assert.equal(w.document.getElementById("status").textContent, "Kept as an idea for a new check");
+  assert.match(w.document.querySelector("main").textContent, /0 now count toward a check\. 1 kept as an idea/);
+  w.close();
+});
+
+test("an item another phone answered with a different chip counts as that chip", async () => {
+  const w = await boot((path, _grader, options) => path === "/api/cards" ? { status: 200, body: { cards: [], reasons: [] } }
+    : options?.method === "POST" ? { status: 200, body: { answer: "different", reason: "jargon" } } : matches([ask("m_1")]));
+  w.eval("openMatching()");
+  await tick();
+  button(w, "Yes").click();
+  await tick(60);
+  assert.equal(w.document.getElementById("status").textContent, "✓ Counts as jargon");
+  w.close();
+});
