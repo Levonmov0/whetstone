@@ -16,7 +16,7 @@ from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Route
 
 from whetstone.features.checks.core import covered_reasons
-from whetstone.features.checks.load import code_check_reasons, load_judges
+from whetstone.features.checks.load import CheckLoadError, code_check_reasons, load_judges
 from whetstone.features.grading.core import swipe_problem, swipe_reasons
 from whetstone.features.grading.store import add_label, load_deck, load_labels
 from whetstone.features.matching.core import Refusal, answer, answer_problem, pending
@@ -145,7 +145,11 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
         css = (STATIC / "default.css").read_text() + (workspace_theme.read_text() if workspace_theme.is_file() else "")
         return Response(css, media_type="text/css")
 
-    return Starlette(lifespan=lifespan, routes=[
+    async def broken_check(_request: Request, error: Exception) -> Response:
+        # A check file that doesn't load is the session runner's to fix; the grader's answer waits until it's fixed.
+        return JSONResponse({"error": str(error)}, status_code=500)
+
+    return Starlette(lifespan=lifespan, exception_handlers={CheckLoadError: broken_check}, routes=[
         Route("/", app_page), Route("/theme.css", theme), Route("/api/cards", guarded(cards)), Route("/api/swipes", guarded(swipes), methods=["POST"]),
         Route("/api/matches", guarded(matches)), Route("/api/matches/{match}", guarded(answer_match), methods=["POST"]),
     ])
