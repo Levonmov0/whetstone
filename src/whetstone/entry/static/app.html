@@ -529,8 +529,9 @@ async function pollMatches() {
   const deckDone = () => screen === "deck-end" || screen === "all-graded";
   while (deckDone()) {
     await new Promise((wake) => setTimeout(wake, POLL_MS));
+    const before = matches.map((item) => item.id).join();
     await loadMatches();
-    if (deckDone()) render();
+    if (deckDone() && matches.map((item) => item.id).join() !== before) render();  // a redraw would take focus
   }
   polling = false;
 }
