@@ -184,3 +184,24 @@ test("round 3 A2: a save that fails never drops a badge refresh sent before it",
   assert.equal(w.document.getElementById("badge-text").textContent, "1 to check");
   w.close();
 });
+
+test("round 3 A3: of two loads in flight, the older deck never replaces the newer one", async () => {
+  let calls = 0;
+  const swiped = [];
+  const deck = (output) => ({ status: 200, body: { cards: [{ ...card(output), output }], reasons: [] } });
+  const w = await boot((path, _grader, options) => {
+    if (path === "/api/swipes") { swiped.push(JSON.parse(options.body).card_id); return { status: 201, body: {} }; }
+    if (path !== "/api/cards") return matches([]);
+    calls += 1;
+    return calls === 2 ? { ...deck("old deck"), delay: 150 } : deck(calls === 1 ? "first deck" : "new deck");
+  });
+  w.eval("load()");
+  await tick();
+  w.eval("load()");
+  await tick(300);
+  assert.match(w.document.querySelector("main .card").textContent, /new deck/);
+  button(w, "✓ Good").click();
+  await tick(60);
+  assert.deepEqual(swiped, ["d:new deck"]);
+  w.close();
+});
