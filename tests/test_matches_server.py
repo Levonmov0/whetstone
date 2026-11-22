@@ -83,3 +83,14 @@ def test_no_writes_only_the_answer_and_different_counts_the_picked_reason(tmp_pa
     [*_, line] = read_lines(prompt / "labels.jsonl")
     assert (line["swipe"], line["reasons"], line["counted"]) == (swipe_id(THEIRS), ["length"], "confirmed")
     assert len(read_lines(prompt / "labels.jsonl")) == 3
+
+
+def test_a_second_answer_writes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt, client = asked_suite(tmp_path, monkeypatch)
+    client.post(f"/api/matches/{match_of(NOTE)}", headers=HAMPUS, json={"answer": "yes"})
+    before = ((prompt / "labels.jsonl").read_text(), (prompt / "matches.jsonl").read_text())
+
+    again = client.post(f"/api/matches/{match_of(NOTE)}", headers=HAMPUS, json={"answer": "no"})
+
+    assert again.status_code == 200
+    assert ((prompt / "labels.jsonl").read_text(), (prompt / "matches.jsonl").read_text()) == before
