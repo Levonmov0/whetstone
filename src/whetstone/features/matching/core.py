@@ -63,7 +63,7 @@ def current(labels: list[dict[str, Any]]) -> list[dict[str, Any]]:
     lines = dict(latest)
     for label in sorted(labels, key=lambda label: str(label.get("at", ""))):
         key = label["grader"], label["card_id"]
-        if "matched_by" in label and label["swipe"] == swipe_id(latest[key]):
+        if "matched_by" in label and key in latest and label["swipe"] == swipe_id(latest[key]):
             lines[key] = label
     return list(lines.values())
 
