@@ -285,3 +285,25 @@ def test_a_real_data_undo_stays_in_its_private_source_folder(tmp_path: Path, mon
     assert [e["event"] for e in read_lines(private / "matches.jsonl")] == ["proposed", "undone"]
     assert [line.get("counted") for line in read_lines(private / "labels.jsonl")] == [None, "sure", "undone"]
     assert not (prompt / "matches.jsonl").exists() and not (prompt / "labels.jsonl").exists()
+
+
+@pytest.mark.parametrize("first", [{"answer": "yes"}, {"answer": "no"}, {"answer": "different", "reason": "assumes"}])
+def test_an_answer_says_what_was_stored_even_on_a_repeat(first: dict[str, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _prompt, client = asked_suite(tmp_path, monkeypatch)
+
+    answered = client.post(f"/api/matches/{match_of(NOTE)}", headers=HAMPUS, json=first)
+    again = client.post(f"/api/matches/{match_of(NOTE)}", headers=HAMPUS, json={"answer": "yes"} if first["answer"] != "yes" else {"answer": "no"})
+
+    assert answered.json() == first
+    assert again.json() == first  # the other phone's answer, which is the one that counts
+
+
+def test_a_different_chip_left_by_a_crash_is_said_on_the_next_answer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt, client = asked_suite(tmp_path, monkeypatch)
+    client.post(f"/api/matches/{match_of(NOTE)}", headers=HAMPUS, json={"answer": "different", "reason": "assumes"})
+    events = (prompt / "matches.jsonl").read_text().splitlines()
+    (prompt / "matches.jsonl").write_text("".join(line + "\n" for line in events[:-1]))  # died before the event
+
+    again = client.post(f"/api/matches/{match_of(NOTE)}", headers=HAMPUS, json={"answer": "no"})
+
+    assert again.json() == {"answer": "different", "reason": "assumes"}
