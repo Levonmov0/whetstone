@@ -44,15 +44,17 @@ def _items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
             answers.setdefault(event["id"], event)  # the first answer wins
         elif event["event"] in ("undone", "redone"):
             undone[event["id"]] = event["event"] == "undone"  # the latest undo or redo wins
+    proposals = [event for event in events if event["event"] == "proposed"]
     items: list[dict[str, Any]] = []
-    for event in events:
-        if event["event"] != "proposed":
-            continue
+    for n, event in enumerate(proposals):
         source = swipes[event["swipe"]]
         answer = answers.get(event["id"])
+        said_no = bool(answer and answer["answer"] == "no")
         replaced = latest[source["grader"], source["card_id"]] is not source
-        dead = not (answer and answer["answer"] == "no") and not covered & set(event["reasons"])
-        items.append({**event, "source": source, "answer": answer, "undone": undone.get(event["id"], False), "stale": replaced or dead})
+        dead = not said_no and not covered & set(event["reasons"])
+        # Matched again since: one live proposal per swipe, even once a deleted check comes back.
+        superseded = not said_no and any(later["swipe"] == event["swipe"] for later in proposals[n + 1:])
+        items.append({**event, "source": source, "answer": answer, "undone": undone.get(event["id"], False), "stale": replaced or dead or superseded})
     return items
 
 
