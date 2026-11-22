@@ -94,3 +94,34 @@ def test_a_second_answer_writes_nothing(tmp_path: Path, monkeypatch: pytest.Monk
 
     assert again.status_code == 200
     assert ((prompt / "labels.jsonl").read_text(), (prompt / "matches.jsonl").read_text()) == before
+
+
+STALE = "out of date: the card was swiped again, or no check stands for its reasons"
+
+
+@pytest.mark.parametrize(
+    ("change", "match", "body", "status", "error"),
+    [
+        ("", "theirs", {"answer": "yes"}, 404, "no match {}"),
+        ("", "m_nope", {"answer": "yes"}, 404, "no match m_nope"),
+        ("reswipe", "mine", {"answer": "yes"}, 409, STALE),
+        ("delete check", "mine", {"answer": "yes"}, 409, STALE),
+        ("", "mine", {"answer": "different", "reason": "vague"}, 400, 'no check stands for "vague"'),
+    ],
+)
+def test_an_answer_is_refused(change: str, match: str, body: dict[str, Any], status: int, error: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt, client = asked_suite(tmp_path, monkeypatch)
+    if change == "reswipe":
+        with (prompt / "labels.jsonl").open("a") as f:
+            f.write(json.dumps(swiped("c17", verdict="good", note="", at="2026-11-20T09:00:00+00:00")) + "\n")
+    if change == "delete check":
+        (prompt / "checks" / "banned.py").unlink()
+    match = {"mine": match_of(NOTE), "theirs": match_of(THEIRS)}.get(match, match)
+    before = ((prompt / "labels.jsonl").read_text(), (prompt / "matches.jsonl").read_text())
+
+    response = client.post(f"/api/matches/{match}", headers=HAMPUS, json=body)
+
+    assert response.status_code == status
+    assert response.json() == {"error": error.format(match)}
+    assert ((prompt / "labels.jsonl").read_text(), (prompt / "matches.jsonl").read_text()) == before
+    assert (client.get("/api/matches", headers=HAMPUS).json()["items"] == []) == bool(change)  # a stale item is hidden too
