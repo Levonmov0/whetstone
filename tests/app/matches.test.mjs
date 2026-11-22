@@ -142,3 +142,19 @@ test("A8: a Yes in flight when Back is tapped is saved and leaves the badge", as
   assert.equal(w.document.getElementById("badge").hidden, true);
   w.close();
 });
+
+test("A9: a refresh sent before an answer never brings the answered item back", async () => {
+  let slow = false;
+  const w = await boot((path, _grader, options) => path === "/api/cards" ? { status: 200, body: { cards: [card("1")], reasons: [] } }
+    : options?.method === "POST" ? { status: 200, body: { answer: "yes" } } : { ...matches([ask("m_1"), ask("m_2")]), delay: slow ? 200 : 0 });
+  slow = true;
+  w.eval("loadMatches()");
+  w.document.getElementById("badge").click();
+  await tick();
+  button(w, "Yes").click();
+  await tick(300);
+  w.document.getElementById("back").click();
+  await tick();
+  assert.equal(w.document.getElementById("badge-text").textContent, "1 to check");
+  w.close();
+});
