@@ -65,7 +65,7 @@ def _items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
     items: list[dict[str, Any]] = []
     for n, event in enumerate(proposals):
         source = swipes[event["swipe"]]
-        answer = answers.get(event["id"]) or (_answer_of(leftovers[event["id"]], event) if event["id"] in leftovers else None)
+        answer = answers.get(event["id"]) or (_answer_of(leftovers[event["id"]], source, event) if event["id"] in leftovers else None)
         said_no = bool(answer and answer["answer"] == "no")
         replaced = latest[source["grader"], source["card_id"]] is not source
         dead = not said_no and not covered & set(event["reasons"])
@@ -75,8 +75,11 @@ def _items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
     return items
 
 
-def _answer_of(line: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
-    """The answer a confirmed line stands for."""
+def _answer_of(line: dict[str, Any], source: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
+    """The answer a confirmed line stands for: Yes, or the one different chip it added."""
+    added = [reason for reason in line["reasons"] if reason not in source["reasons"]]
+    if len(added) == 1 and added[0] not in event["reasons"]:
+        return {"event": "answered", "id": event["id"], "answer": "different", "reason": added[0], "at": line["at"]}
     return {"event": "answered", "id": event["id"], "answer": "yes", "at": line["at"]}
 
 
@@ -222,6 +225,12 @@ def answer(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
     source = item["source"]
     counted = [reason] if reason is not None else [r for r in item["reasons"] if r in covered]
     return event, _matched_line(source, match, list(dict.fromkeys(source["reasons"] + counted)), "confirmed", at)
+
+
+def said(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], match: str) -> dict[str, str]:
+    """The answer stored for a match, as the app shows it: what counts is the first answer, from whichever phone."""
+    stored = next(item["answer"] for item in _items(labels, events, covered) if item["id"] == match)
+    return {"answer": stored["answer"], **({"reason": stored["reason"]} if "reason" in stored else {})}
 
 
 def answer_problem(body: object) -> str | None:

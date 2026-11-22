@@ -19,7 +19,7 @@ from whetstone.features.checks.core import covered_reasons
 from whetstone.features.checks.load import CheckLoadError, code_check_reasons, load_judges
 from whetstone.features.grading.core import swipe_problem, swipe_reasons
 from whetstone.features.grading.store import add_label, load_deck, load_labels
-from whetstone.features.matching.core import Refusal, answer, case_of, answer_problem, pending, sure_items, undo
+from whetstone.features.matching.core import Refusal, answer, case_of, said, answer_problem, pending, sure_items, undo
 from whetstone.features.matching.store import add_event, load_events
 from whetstone.features.workspace.load import PromptSettings
 
@@ -120,14 +120,15 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
             return refuse(problem)
         grader = unquote(request.headers.get("x-grader", ""))
         match = request.path_params["match"]
-        labels, events = load_labels(prompt.dir), load_events(prompt.dir)
+        labels, events, reasons = load_labels(prompt.dir), load_events(prompt.dir), covered()
         now = datetime.now(UTC).isoformat()
-        if body["answer"] in ("undo", "redo"):
-            writes = undo(labels, events, covered(), grader, match, body["answer"], now)
+        undoing = body["answer"] in ("undo", "redo")
+        if undoing:
+            writes = undo(labels, events, reasons, grader, match, body["answer"], now)
         else:
-            writes = answer(labels, events, covered(), grader, match, body["answer"], body.get("reason"), now)
-        if writes is None:  # answered already, from a double tap or another phone: it counts once
-            return JSONResponse({})
+            writes = answer(labels, events, reasons, grader, match, body["answer"], body.get("reason"), now)
+        if writes is None:  # answered already, from a double tap or another phone: it counts once, as first answered
+            return JSONResponse({} if undoing else said(labels, events, reasons, match))
         if isinstance(writes, Refusal):
             # A stale item gets its own status, so the app can drop it.
             return JSONResponse({"error": writes.message}, status_code={"missing": 404, "stale": 409}.get(writes.kind, 400))
@@ -136,7 +137,7 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
         if line is not None:
             add_label(prompt.dir, line)
         add_event(prompt.dir, case_of(labels, events, event), event)
-        return JSONResponse({})
+        return JSONResponse({} if undoing else said(labels, [*events, event], reasons, match))
 
     async def app_page(request: Request) -> Response:
         return HTMLResponse((STATIC / "app.html").read_text())
