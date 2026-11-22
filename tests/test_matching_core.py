@@ -258,3 +258,13 @@ def test_redo_writes_the_matched_reasons_again() -> None:
         {"event": "redone", "id": match, "at": "2026-11-21T12:00:00+00:00"},
         {**source, "reasons": ["generic", "jargon"], "matched_by": "claude", "swipe": swipe_id(source), "match": match, "counted": "sure", "at": "2026-11-21T12:00:00+00:00"},
     )
+
+
+def test_a_repeat_undo_or_redo_writes_nothing() -> None:
+    labels, events = sure_match(label())
+    match = events[0]["id"]
+    undone = undo(labels, events, {"jargon"}, "Hampus", match, "undo", LATER)
+    assert isinstance(undone, tuple)
+
+    assert undo(labels, events, {"jargon"}, "Hampus", match, "redo", LATER) is None
+    assert undo([*labels, undone[1]], [*events, undone[0]], {"jargon"}, "Hampus", match, "undo", LATER) is None
