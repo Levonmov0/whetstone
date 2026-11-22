@@ -36,7 +36,8 @@ def uncovered_reasons(labels: list[dict[str, Any]], covered: set[str]) -> list[t
     for label in labels:
         if label["verdict"] != "bad":
             continue
-        for reason in label["reasons"] or ([f'note: "{label["note"]}"'] if label["note"] else []):
+        named = f' · {label["idea_of"]}' if "idea_of" in label else ""
+        for reason in label["reasons"] or ([f'note: "{label["note"]}"{named}'] if label["note"] else []):
             if reason not in covered:
                 counts[reason] = counts.get(reason, 0) + 1
     return sorted(counts.items(), key=lambda item: -item[1])

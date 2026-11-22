@@ -103,7 +103,8 @@ def idea_lines(labels: list[dict[str, Any]], events: list[dict[str, Any]], cover
             continue
         item = items.get(swipe_id(line))
         if item and item["answer"] and item["answer"]["answer"] == "no":
-            line = {**line, "reasons": [reason for reason in line["reasons"] if reason not in covered]}
+            # Named by its swipe, so a judge written from it can match it again.
+            line = {**line, "reasons": [reason for reason in line["reasons"] if reason not in covered], "idea_of": swipe_id(line)}
         elif item:
             line = {**line, "note": ""}
         lines.append(line)
