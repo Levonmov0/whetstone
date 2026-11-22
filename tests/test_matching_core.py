@@ -73,7 +73,10 @@ def test_propose_appends_an_event_and_a_matched_line_that_keeps_the_verdict() ->
     source = label(reasons=["generic"])
     swipe = swipe_id(source)
 
-    event, line = propose([source], [], {"jargon", "generic", "tone"}, swipe, ["jargon", "generic", "tone"], "Quotes HRV", NOW)  # type: ignore[misc]
+    proposal = propose([source], [], {"jargon", "generic", "tone"}, swipe, ["jargon", "generic", "tone"], "Quotes HRV", NOW)
+
+    assert not isinstance(proposal, str)
+    event, line = proposal
 
     match = "m_" + swipe.removeprefix("s_")
     assert event == {"event": "proposed", "id": match, "swipe": swipe, "grader": "Hampus", "card_id": "d:c17", "kind": "sure", "reasons": ["jargon", "generic", "tone"], "why": "Quotes HRV", "at": NOW}
