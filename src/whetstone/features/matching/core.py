@@ -58,11 +58,14 @@ def _items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
             answers.setdefault(event["id"], event)  # the first answer wins
         elif event["event"] in ("undone", "redone"):
             undone[event["id"]] = event["event"] == "undone"  # the latest undo or redo wins
+    # A confirmed line with no `answered` event: the server wrote the line, then stopped before the event. The line
+    # already counts, so it is the grader's answer.
+    leftovers = {line["match"]: line for line in labels if line.get("counted") == "confirmed"}
     proposals = [event for event in events if event["event"] == "proposed"]
     items: list[dict[str, Any]] = []
     for n, event in enumerate(proposals):
         source = swipes[event["swipe"]]
-        answer = answers.get(event["id"])
+        answer = answers.get(event["id"]) or (_answer_of(leftovers[event["id"]], event) if event["id"] in leftovers else None)
         said_no = bool(answer and answer["answer"] == "no")
         replaced = latest[source["grader"], source["card_id"]] is not source
         dead = not said_no and not covered & set(event["reasons"])
@@ -70,6 +73,11 @@ def _items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
         superseded = not said_no and any(later["swipe"] == event["swipe"] for later in proposals[n + 1:])
         items.append({**event, "source": source, "answer": answer, "said_no": said_no, "undone": undone.get(event["id"], False), "stale": replaced or dead or superseded})
     return items
+
+
+def _answer_of(line: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
+    """The answer a confirmed line stands for."""
+    return {"event": "answered", "id": event["id"], "answer": "yes", "at": line["at"]}
 
 
 def current(labels: list[dict[str, Any]]) -> list[dict[str, Any]]:
