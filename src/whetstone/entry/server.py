@@ -109,7 +109,9 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
         match = request.path_params["match"]
         labels, events = load_labels(prompt.dir), load_events(prompt.dir)
         writes = answer(labels, events, covered(), grader, match, body["answer"], body.get("reason"), datetime.now(UTC).isoformat())
-        assert writes is not None and not isinstance(writes, Refusal)
+        if writes is None:  # answered already, from a double tap or another phone: it counts once
+            return JSONResponse({})
+        assert not isinstance(writes, Refusal)
         event, line = writes
         # The line first, as map writes: a crash in between leaves a swipe that counts and still asks, never a lost count.
         if line is not None:
