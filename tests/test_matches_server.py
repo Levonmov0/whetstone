@@ -55,3 +55,15 @@ def test_a_grader_gets_only_their_own_waiting_matches(tmp_path: Path, monkeypatc
         "reasons": ["assumes", "assumes whether they did Kin's advice", "banned", "length"],
     }
     assert [item["id"] for item in client.get("/api/matches", headers={**AUTH, "X-Grader": "Levon"}).json()["items"]] == [match_of(THEIRS)]
+
+
+def test_yes_makes_the_swipe_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt, client = asked_suite(tmp_path, monkeypatch)
+
+    response = client.post(f"/api/matches/{match_of(NOTE)}", headers=HAMPUS, json={"answer": "yes"})
+
+    assert response.status_code == 200
+    line = read_lines(prompt / "labels.jsonl")[-1]
+    assert (line["swipe"], line["reasons"], line["verdict"], line["counted"]) == (swipe_id(NOTE), ["banned"], "bad", "confirmed")
+    assert [(e["event"], e["id"], e.get("answer")) for e in read_lines(prompt / "matches.jsonl")][-1] == ("answered", match_of(NOTE), "yes")
+    assert client.get("/api/matches", headers=HAMPUS).json()["items"] == []
