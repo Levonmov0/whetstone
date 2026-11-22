@@ -99,3 +99,12 @@ def test_evidence_splits_counted_bad_swipes_into_tapped_and_claude_sure() -> Non
     ]
 
     assert evidence(labels, {"jargon", "biometric jargon"}) == (2, 1)
+
+
+def test_an_ask_proposal_waits_for_the_grader_and_writes_no_line() -> None:
+    source = label()
+    swipe = swipe_id(source)
+
+    proposal = propose([source], [], {"jargon"}, swipe, ["jargon"], "Sounds like jargon", NOW, kind="ask")
+
+    assert proposal == ({"event": "proposed", "id": "m_" + swipe.removeprefix("s_"), "swipe": swipe, "grader": "Hampus", "card_id": "d:c17", "kind": "ask", "reasons": ["jargon"], "why": "Sounds like jargon", "at": NOW}, None)
