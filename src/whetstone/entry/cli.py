@@ -545,7 +545,7 @@ def map_note(prompt: PromptSettings, swipe: str, reasons: list[str], why: str) -
         event, line = proposal
         # The line first: a crash before the event leaves a swipe that counts and is listed again, never a lost count.
         add_label(prompt.dir, line)
-        add_event(prompt.dir, event)
+        add_event(prompt.dir, line["case_id"], event)
     print(f"counted  {line['card_id']} · {line['grader']} · {', '.join(reasons)} (sure)")
     return 0
 
