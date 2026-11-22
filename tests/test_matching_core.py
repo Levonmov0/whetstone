@@ -225,8 +225,9 @@ LATER = "2026-11-21T11:00:00+00:00"
 def sure_match(source: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Claude was sure the source's note means jargon: the labels with its matched line, and the events."""
     proposal = propose([source], [], {"jargon"}, swipe_id(source), ["jargon"], "Quotes HRV", NOW)
-    assert not isinstance(proposal, str) and proposal[1] is not None
+    assert not isinstance(proposal, str)
     event, line = proposal
+    assert line is not None
     return [source, line], [event]
 
 
@@ -241,7 +242,7 @@ def test_undo_writes_the_swipes_own_reasons_back() -> None:
         {"event": "undone", "id": match, "at": LATER},
         {**source, "reasons": ["generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": match, "counted": "undone", "at": LATER},
     )
-    assert isinstance(writes, tuple)
+    assert writes is not None and not isinstance(writes, Refusal)
     assert current([*labels, writes[1]]) == [writes[1]]
 
 
@@ -250,7 +251,7 @@ def test_redo_writes_the_matched_reasons_again() -> None:
     labels, events = sure_match(source)
     match = events[0]["id"]
     undone = undo(labels, events, {"jargon"}, "Hampus", match, "undo", LATER)
-    assert isinstance(undone, tuple)
+    assert undone is not None and not isinstance(undone, Refusal)
 
     writes = undo([*labels, undone[1]], [*events, undone[0]], {"jargon"}, "Hampus", match, "redo", "2026-11-21T12:00:00+00:00")
 
@@ -264,7 +265,7 @@ def test_a_repeat_undo_or_redo_writes_nothing() -> None:
     labels, events = sure_match(label())
     match = events[0]["id"]
     undone = undo(labels, events, {"jargon"}, "Hampus", match, "undo", LATER)
-    assert isinstance(undone, tuple)
+    assert undone is not None and not isinstance(undone, Refusal)
 
     assert undo(labels, events, {"jargon"}, "Hampus", match, "redo", LATER) is None
     assert undo([*labels, undone[1]], [*events, undone[0]], {"jargon"}, "Hampus", match, "undo", LATER) is None
