@@ -302,3 +302,19 @@ def test_agreement_counts_an_undone_match_until_redone(tmp_path: Path, monkeypat
     ]
     assert phone.post(f"/api/matches/{match}", headers=levon, json={"answer": "redo"}).status_code == 200
     assert table()[1] == "assumes            5        4             1           0        0   100% / 100%   trusted"
+
+
+def test_settling_a_card_claude_matched_is_a_call_not_a_match(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    noted = swiped("c17")
+    write_labels(prompt / "labels.jsonl", [noted])
+    monkeypatch.chdir(tmp_path)
+    run(["map", "daily", swipe_id(noted), "--reasons", "banned", "--sure", "--why", "Quotes HRV, a banned term"], make_model=unused_model)
+
+    run(["settle", "daily", "d:c17", "good", "--grader", "Levon"], make_model=unused_model)
+    code = run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judging("yes"))
+
+    assert code in (0, 1)
+    settled = read_lines(prompt / "labels.jsonl")[-1]
+    assert (settled["grader"], settled["verdict"], settled["settled"]) == ("Levon", "good", True)
+    assert "matched_by" not in settled and "swipe" not in settled
