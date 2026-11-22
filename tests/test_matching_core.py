@@ -242,6 +242,13 @@ def sure_match(source: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[
     return [source, line], [event]
 
 
+def toggled(labels: list[dict[str, Any]], events: list[dict[str, Any]], match: str, choice: str, at: str, covered: set[str] | None = None) -> dict[str, Any]:
+    """The line the grader's undo or redo writes."""
+    line = undo(labels, events, covered or {"jargon"}, "Hampus", match, choice, at)
+    assert isinstance(line, dict)
+    return line
+
+
 def test_undo_writes_the_swipes_own_reasons_back() -> None:
     source = label(reasons=["generic"])
     labels, events = sure_match(source)
@@ -249,12 +256,9 @@ def test_undo_writes_the_swipes_own_reasons_back() -> None:
 
     writes = undo(labels, events, {"jargon"}, "Hampus", match, "undo", LATER)
 
-    assert writes == (
-        {"event": "undone", "id": match, "at": LATER},
-        {**source, "reasons": ["generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": match, "counted": "undone", "at": LATER},
-    )
+    assert writes == {**source, "reasons": ["generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": match, "counted": "undone", "at": LATER}
     assert writes is not None and not isinstance(writes, Refusal)
-    assert current([*labels, writes[1]], events) == [writes[1]]
+    assert current([*labels, writes], events) == [writes]
 
 
 def test_redo_writes_the_matched_reasons_again() -> None:
@@ -264,12 +268,9 @@ def test_redo_writes_the_matched_reasons_again() -> None:
     undone = undo(labels, events, {"jargon"}, "Hampus", match, "undo", LATER)
     assert undone is not None and not isinstance(undone, Refusal)
 
-    writes = undo([*labels, undone[1]], [*events, undone[0]], {"jargon"}, "Hampus", match, "redo", "2026-11-21T12:00:00+00:00")
+    writes = undo([*labels, undone], events, {"jargon"}, "Hampus", match, "redo", "2026-11-21T12:00:00+00:00")
 
-    assert writes == (
-        {"event": "redone", "id": match, "at": "2026-11-21T12:00:00+00:00"},
-        {**source, "reasons": ["generic", "jargon"], "matched_by": "claude", "swipe": swipe_id(source), "match": match, "counted": "sure", "at": "2026-11-21T12:00:00+00:00"},
-    )
+    assert writes == {**source, "reasons": ["generic", "jargon"], "matched_by": "claude", "swipe": swipe_id(source), "match": match, "counted": "sure", "at": "2026-11-21T12:00:00+00:00"}
 
 
 def test_a_repeat_undo_or_redo_writes_nothing() -> None:
@@ -279,7 +280,7 @@ def test_a_repeat_undo_or_redo_writes_nothing() -> None:
     assert undone is not None and not isinstance(undone, Refusal)
 
     assert undo(labels, events, {"jargon"}, "Hampus", match, "redo", LATER) is None
-    assert undo([*labels, undone[1]], [*events, undone[0]], {"jargon"}, "Hampus", match, "undo", LATER) is None
+    assert undo([*labels, undone], events, {"jargon"}, "Hampus", match, "undo", LATER) is None
 
 
 def test_undo_refuses_another_graders_match_an_ask_and_a_stale_match() -> None:
@@ -310,22 +311,22 @@ def test_sure_items_list_the_graders_live_sure_matches_and_whether_undone() -> N
     listed = {"id": events[0]["id"], "card_id": "d:c1", "note": "Says HRV", "reasons": ["jargon"], "undone": False}
 
     assert sure_items(labels, events, {"jargon"}, "Hampus") == [listed]
-    undone = [*events, {"event": "undone", "id": events[0]["id"], "at": LATER}]
-    assert sure_items(labels, undone, {"jargon"}, "Hampus") == [{**listed, "undone": True}]
-    redone = [*undone, {"event": "redone", "id": events[0]["id"], "at": LATER}]
-    assert sure_items(labels, redone, {"jargon"}, "Hampus") == [listed]
+    undone = [*labels, toggled(labels, events, events[0]["id"], "undo", LATER)]
+    assert sure_items(undone, events, {"jargon"}, "Hampus") == [{**listed, "undone": True}]
+    redone = [*undone, toggled(undone, events, events[0]["id"], "redo", "2026-11-21T12:00:00+00:00")]
+    assert sure_items(redone, events, {"jargon"}, "Hampus") == [listed]
 
 
 def test_an_undone_note_is_an_idea_until_redone() -> None:
     source = label(reasons=["generic"], note="Says HRV")
     labels, events = sure_match(source)
     match = events[0]["id"]
-    undone = [*events, {"event": "undone", "id": match, "at": LATER}]
     covered = {"jargon", "generic"}
+    undone = [*labels, toggled(labels, events, match, "undo", LATER, covered)]
 
     assert idea_lines(labels, events, covered) == [{**source, "note": ""}]
-    assert idea_lines(labels, undone, covered) == [{**source, "reasons": []}]
-    assert idea_lines(labels, [*undone, {"event": "redone", "id": match, "at": LATER}], covered) == [{**source, "note": ""}]
+    assert idea_lines(undone, events, covered) == [{**source, "reasons": []}]
+    assert idea_lines([*undone, toggled(undone, events, match, "redo", "2026-11-21T12:00:00+00:00", covered)], events, covered) == [{**source, "note": ""}]
 
 
 def test_undone_count_counts_the_rules_sure_matches_undone_now() -> None:
@@ -333,13 +334,13 @@ def test_undone_count_counts_the_rules_sure_matches_undone_now() -> None:
     for card in ("d:c2", "d:c3"):
         more_labels, more_events = sure_match(label(card=card))
         labels, events = [*labels, *more_labels], [*events, *more_events]
-    undone = [{"event": "undone", "id": event["id"], "at": LATER} for event in events]
-    redone = {"event": "redone", "id": events[2]["id"], "at": LATER}
-    stale = label(card="d:c1", at=LATER, verdict="good", note="")
+    undone = [*labels, *(toggled(labels, events, event["id"], "undo", LATER) for event in events)]
+    redone = toggled(undone, events, events[2]["id"], "redo", "2026-11-21T12:00:00+00:00")
+    stale = label(card="d:c1", at="2026-11-21T12:00:00+00:00", verdict="good", note="")
 
     assert undone_count(labels, events, {"jargon"}, {"jargon"}) == 0
-    assert undone_count([*labels, stale], [*events, *undone, redone], {"jargon"}, {"jargon"}) == 1
-    assert undone_count(labels, [*events, *undone], {"jargon"}, {"tone"}) == 0
+    assert undone_count([*undone, redone, stale], events, {"jargon"}, {"jargon"}) == 1
+    assert undone_count(undone, events, {"jargon"}, {"tone"}) == 0
 
 
 def test_a_check_brought_back_does_not_revive_a_match_made_again_since() -> None:
@@ -367,7 +368,7 @@ def test_a_counting_line_left_by_a_crash_is_the_answer() -> None:
 
 def test_an_undo_line_left_by_a_crash_is_the_undo() -> None:
     labels, events = sure_match(label())
-    # The server wrote the undo's line, then died before its `undone` event.
+    # An undo writes only its line: nothing else for a crash to lose.
     leftover = {**label(), "matched_by": "claude", "swipe": swipe_id(label()), "match": events[0]["id"], "counted": "undone", "at": "2026-11-21T11:00:00+00:00"}
 
     assert [item["undone"] for item in sure_items([*labels, leftover], events, {"jargon"}, "Hampus")] == [True]
@@ -376,8 +377,8 @@ def test_an_undo_line_left_by_a_crash_is_the_undo() -> None:
 
 def test_a_redo_line_left_by_a_crash_is_the_redo() -> None:
     labels, events = sure_match(label())
-    events = [*events, {"event": "undone", "id": events[0]["id"], "at": "2026-11-21T11:00:00+00:00"}]
-    # The redo's line, written before a server stopped short of its `redone` event.
+    labels = [*labels, toggled(labels, events, events[0]["id"], "undo", "2026-11-21T11:00:00+00:00")]
+    # A redo writes only its line: nothing else for a crash to lose.
     leftover = {**label(), "reasons": ["jargon"], "matched_by": "claude", "swipe": swipe_id(label()), "match": events[0]["id"], "counted": "sure", "at": "2026-11-21T12:00:00+00:00"}
 
     assert [item["undone"] for item in sure_items([*labels, leftover], events, {"jargon"}, "Hampus")] == [False]

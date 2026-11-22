@@ -222,7 +222,7 @@ def test_undo_and_redo_a_sure_match(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert undone.status_code == 200
     line = read_lines(prompt / "labels.jsonl")[-1]
     assert (line["swipe"], line["reasons"], line["verdict"], line["counted"]) == (swipe_id(SURE), [], "bad", "undone")
-    assert [(e["event"], e["id"]) for e in read_lines(prompt / "matches.jsonl")][-1] == ("undone", match_of(SURE))
+    assert [e["event"] for e in read_lines(prompt / "matches.jsonl")] == ["proposed"] * 4
     assert client.get("/api/matches", headers=HAMPUS).json()["sure"][0]["undone"] is True
 
     redone = client.post(f"/api/matches/{match_of(SURE)}", headers=HAMPUS, json={"answer": "redo"})
@@ -230,7 +230,7 @@ def test_undo_and_redo_a_sure_match(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert redone.status_code == 200
     line = read_lines(prompt / "labels.jsonl")[-1]
     assert (line["reasons"], line["counted"]) == (["banned"], "sure")
-    assert [(e["event"], e["id"]) for e in read_lines(prompt / "matches.jsonl")][-1] == ("redone", match_of(SURE))
+    assert [e["event"] for e in read_lines(prompt / "matches.jsonl")] == ["proposed"] * 4
     assert len(read_lines(prompt / "labels.jsonl")) == lines + 2
     assert client.get("/api/matches", headers=HAMPUS).json()["sure"][0]["undone"] is False
 
@@ -280,7 +280,7 @@ def test_a_real_data_undo_stays_in_its_private_source_folder(tmp_path: Path, mon
 
     client.post(f"/api/matches/{match_of(noted)}", headers=HAMPUS, json={"answer": "undo"})
 
-    assert [e["event"] for e in read_lines(private / "matches.jsonl")] == ["proposed", "undone"]
+    assert [e["event"] for e in read_lines(private / "matches.jsonl")] == ["proposed"]
     assert [line.get("counted") for line in read_lines(private / "labels.jsonl")] == [None, "sure", "undone"]
     assert not (prompt / "matches.jsonl").exists() and not (prompt / "labels.jsonl").exists()
 
