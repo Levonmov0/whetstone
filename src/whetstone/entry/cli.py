@@ -11,7 +11,7 @@ import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import IO, Any, cast
+from typing import IO, Any
 
 import qrcode
 
@@ -539,7 +539,10 @@ def map_note(prompt: PromptSettings, swipe: str, reasons: list[str], why: str) -
     with (private_dir(prompt.workspace) / f"{prompt.dir.name}.matches.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         proposal = propose(load_labels(prompt.dir), load_events(prompt.dir), covered, swipe, reasons, why, datetime.now(UTC).isoformat())
-        event, line = cast(tuple[dict[str, Any], dict[str, Any]], proposal)
+        if isinstance(proposal, str):
+            print(f"refused  {swipe} · {proposal}")
+            return 1
+        event, line = proposal
         # The line first: a crash before the event leaves a swipe that counts and is listed again, never a lost count.
         add_label(prompt.dir, line)
         add_event(prompt.dir, event)
