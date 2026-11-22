@@ -107,14 +107,15 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
         body = await request.json()
         grader = unquote(request.headers.get("x-grader", ""))
         match = request.path_params["match"]
-        labels = load_labels(prompt.dir)
-        writes = answer(labels, load_events(prompt.dir), covered(), grader, match, body["answer"], body.get("reason"), datetime.now(UTC).isoformat())
+        labels, events = load_labels(prompt.dir), load_events(prompt.dir)
+        writes = answer(labels, events, covered(), grader, match, body["answer"], body.get("reason"), datetime.now(UTC).isoformat())
         assert writes is not None and not isinstance(writes, Refusal)
         event, line = writes
         # The line first, as map writes: a crash in between leaves a swipe that counts and still asks, never a lost count.
         if line is not None:
             add_label(prompt.dir, line)
-            add_event(prompt.dir, line["case_id"], event)
+        card = next(e["card_id"] for e in events if e["event"] == "proposed" and e["id"] == match)
+        add_event(prompt.dir, next(label["case_id"] for label in labels if label["card_id"] == card), event)
         return JSONResponse({})
 
     async def app_page(request: Request) -> Response:
