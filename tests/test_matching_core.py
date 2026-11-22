@@ -361,3 +361,12 @@ def test_a_counting_line_left_by_a_crash_is_the_answer() -> None:
     assert pending([source, leftover], [item], {"generic"}, "Hampus") == []
     assert answer([source, leftover], [item], {"generic"}, "Hampus", item["id"], "no", None, NOW) is None
     assert kept_and_waiting([source, leftover], [item], {"generic"}) == (0, {})
+
+
+def test_an_undo_line_left_by_a_crash_is_the_undo() -> None:
+    labels, events = sure_match(label())
+    # The server wrote the undo's line, then died before its `undone` event.
+    leftover = {**label(), "matched_by": "claude", "swipe": swipe_id(label()), "match": events[0]["id"], "counted": "undone", "at": "2026-11-21T08:00:00+00:00"}
+
+    assert [item["undone"] for item in sure_items([*labels, leftover], events, {"jargon"}, "Hampus")] == [True]
+    assert undo([*labels, leftover], events, {"jargon"}, "Hampus", events[0]["id"], "undo", NOW) is None
