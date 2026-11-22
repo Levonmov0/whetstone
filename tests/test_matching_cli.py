@@ -16,6 +16,7 @@ from whetstone.features.workspace.load import load_prompt
 from whetstone.features.grading.store import add_label, load_labels
 from whetstone.features.matching.core import Refusal, answer, swipe_id
 from whetstone.features.matching.store import add_event, load_events
+from whetstone.platform import jsonl
 
 LONG = "Your HRV dipped and your sleep latency rose, so today is a recovery day. " * 4
 
@@ -361,3 +362,32 @@ def test_a_judge_deleted_while_agreement_judges_still_gets_its_row(tmp_path: Pat
 
     assert code in (0, 1)
     assert [line.split()[0] for line in capsys.readouterr().out.splitlines()[1:4]] == ["judge", "assumes", "jargon"]
+
+
+def mapped_between_reads(monkeypatch: pytest.MonkeyPatch, prompt: Path) -> None:
+    """Right after the first read of the labels file, a grader swipes and `map` asks about it, as the server and Claude
+    do while a command runs."""
+    read = jsonl.read
+    late = swiped("c99", note="Swiped while the command ran", at="2026-11-20T10:00:00+00:00")
+    pending = [late]
+
+    def racing(path: Path) -> list[dict[str, Any]]:
+        records = read(path)
+        if path.name == "labels.jsonl" and pending:
+            jsonl.append(prompt / "labels.jsonl", pending.pop())
+            jsonl.append(prompt / "matches.jsonl", {"event": "proposed", "id": "m_" + swipe_id(late).removeprefix("s_"), "swipe": swipe_id(late), "grader": "Hampus", "card_id": "d:c99", "kind": "ask", "reasons": ["banned"], "why": "Maybe", "at": late["at"]})
+        return records
+
+    monkeypatch.setattr(jsonl, "read", racing)
+
+
+def test_a_swipe_mapped_while_agreement_judges_does_not_crash_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    write_labels(prompt / "labels.jsonl", [swiped("c17")])
+    monkeypatch.chdir(tmp_path)
+    mapped_between_reads(monkeypatch, prompt)
+
+    code = run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judging("yes"))
+
+    assert code in (0, 1)
+    assert capsys.readouterr().out.splitlines()[1].startswith("judge ")
