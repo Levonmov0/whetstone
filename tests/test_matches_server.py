@@ -67,3 +67,19 @@ def test_yes_makes_the_swipe_count(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     assert (line["swipe"], line["reasons"], line["verdict"], line["counted"]) == (swipe_id(NOTE), ["banned"], "bad", "confirmed")
     assert [(e["event"], e["id"], e.get("answer")) for e in read_lines(prompt / "matches.jsonl")][-1] == ("answered", match_of(NOTE), "yes")
     assert client.get("/api/matches", headers=HAMPUS).json()["items"] == []
+
+
+def test_no_writes_only_the_answer_and_different_counts_the_picked_reason(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt, client = asked_suite(tmp_path, monkeypatch)
+
+    said_no = client.post(f"/api/matches/{match_of(NOTE)}", headers=HAMPUS, json={"answer": "no"})
+    picked = client.post(f"/api/matches/{match_of(THEIRS)}", headers={**AUTH, "X-Grader": "Levon"}, json={"answer": "different", "reason": "length"})
+
+    assert (said_no.status_code, picked.status_code) == (200, 200)
+    assert [(e["event"], e["id"], e.get("answer"), e.get("reason")) for e in read_lines(prompt / "matches.jsonl")][2:] == [
+        ("answered", match_of(NOTE), "no", None),
+        ("answered", match_of(THEIRS), "different", "length"),
+    ]
+    [*_, line] = read_lines(prompt / "labels.jsonl")
+    assert (line["swipe"], line["reasons"], line["counted"]) == (swipe_id(THEIRS), ["length"], "confirmed")
+    assert len(read_lines(prompt / "labels.jsonl")) == 3
