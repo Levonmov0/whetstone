@@ -29,7 +29,7 @@ from whetstone.features.checks.load import CheckLoadError, code_check_reasons
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
 from whetstone.features.matching.core import Refusal, case_of, current, evidence, excerpt, idea_lines, kept_and_waiting, propose, swipe_id, undone_count, unmatched_notes
-from whetstone.features.matching.store import Snapshot, add_event, load_events, snapshot
+from whetstone.features.matching.store import Snapshot, add_event, snapshot
 from whetstone.features.optimize.core import SplitError, split_cases
 from whetstone.features.workspace.core import request_differences
 from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, judge_model, load_prompt, phone_access, prompt_names, rewrite_settings
@@ -533,7 +533,8 @@ def _side(side: Side) -> str:
 
 def list_reasons(prompt: PromptSettings) -> int:
     covered = covered_reasons(code_checks_or_stop(prompt), judges_or_stop(prompt))
-    uncovered = uncovered_reasons(idea_lines(load_labels(prompt.dir), load_events(prompt.dir), covered), covered)
+    events, labels = snapshot(prompt.dir)
+    uncovered = uncovered_reasons(idea_lines(labels, events, covered), covered)
     print("\n".join(f"{count}  {reason}" for reason, count in uncovered) if uncovered else "every reason has a check")
     return 0
 
@@ -549,7 +550,8 @@ def list_notes(prompt: PromptSettings, follow: bool) -> int:
         except Stop:
             if covered is None:
                 raise
-        unmatched = unmatched_notes(load_labels(prompt.dir), load_events(prompt.dir), covered)
+        events, labels = snapshot(prompt.dir)
+        unmatched = unmatched_notes(labels, events, covered)
         printed &= {swipe_id(label) for label in unmatched}  # one matched since, whose match goes stale, prints again
         for label in unmatched:
             if swipe_id(label) in printed:
@@ -568,8 +570,8 @@ def map_note(prompt: PromptSettings, swipe: str, reasons: list[str], why: str, k
     # One map at a time per prompt, so two can't both find no proposal and both count the swipe.
     with (private_dir(prompt.workspace) / f"{prompt.dir.name}.matches.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        labels = load_labels(prompt.dir)
-        proposal = propose(labels, load_events(prompt.dir), covered, swipe, reasons, why, datetime.now(UTC).isoformat(), kind)
+        events, labels = snapshot(prompt.dir)
+        proposal = propose(labels, events, covered, swipe, reasons, why, datetime.now(UTC).isoformat(), kind)
         if isinstance(proposal, Refusal):
             print(f"refused  {swipe} · {proposal.message}")
             return 1
