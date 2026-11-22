@@ -40,4 +40,17 @@ def current(labels: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def propose(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], swipe: str, reasons: list[str], why: str, at: str) -> str | tuple[dict[str, Any], dict[str, Any]]:
+    """Claude's match of one swipe's note to reasons: the refusal, or the `proposed` event and the matched label line
+    to append. Only a grader's latest bad swipe can be matched, once, and only to reasons some check stands for."""
+    source = next((label for label in labels if "matched_by" not in label and swipe_id(label) == swipe), None)
+    if source is None:
+        return f"no swipe {swipe}"
+    if source["verdict"] != "bad":
+        return "not a bad swipe"
+    if latest_swipes(labels)[source["grader"], source["card_id"]] is not source:
+        return f"{source['grader']} swiped {source['card_id']} again, matching the new note instead"
+    if uncovered := [reason for reason in reasons if reason not in covered]:
+        return f'no check stands for "{uncovered[0]}"'
+    if any(event["event"] == "proposed" and event["swipe"] == swipe for event in events):
+        return "already matched"
     raise NotImplementedError
