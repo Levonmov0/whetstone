@@ -482,7 +482,8 @@ def agreement_table(prompt: PromptSettings, gates: dict[str, tuple[dict[str, Agr
 
 
 def _pooled(sides: list[Side]) -> str:
-    return f"{round(100 * sum(s.agreed for s in sides) / sum(s.total for s in sides))}%"
+    total = sum(s.total for s in sides)
+    return f"{round(100 * sum(s.agreed for s in sides) / total)}%" if total else "—"
 
 
 def judge_gates(prompt: PromptSettings, make_judge: MakeJudge) -> dict[str, tuple[dict[str, Agreement], str, list[str]]] | None:
