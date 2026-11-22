@@ -89,6 +89,12 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
         add_label(prompt.dir, {**card, "deck_id": deck["id"], **swipe, "at": datetime.now(UTC).isoformat()})
         return JSONResponse({}, status_code=201)
 
+    async def matches(request: Request) -> Response:
+        return JSONResponse({})
+
+    async def answer_match(request: Request) -> Response:
+        return JSONResponse({})
+
     async def app_page(request: Request) -> Response:
         return HTMLResponse((STATIC / "app.html").read_text())
 
@@ -99,4 +105,7 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
         css = (STATIC / "default.css").read_text() + (workspace_theme.read_text() if workspace_theme.is_file() else "")
         return Response(css, media_type="text/css")
 
-    return Starlette(lifespan=lifespan, routes=[Route("/", app_page), Route("/theme.css", theme), Route("/api/cards", guarded(cards)), Route("/api/swipes", guarded(swipes), methods=["POST"])])
+    return Starlette(lifespan=lifespan, routes=[
+        Route("/", app_page), Route("/theme.css", theme), Route("/api/cards", guarded(cards)), Route("/api/swipes", guarded(swipes), methods=["POST"]),
+        Route("/api/matches", guarded(matches)), Route("/api/matches/{match}", guarded(answer_match), methods=["POST"]),
+    ])
