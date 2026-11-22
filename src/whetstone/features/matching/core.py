@@ -60,4 +60,15 @@ def propose(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered:
 
 
 def evidence(labels: list[dict[str, Any]], rule: set[str]) -> tuple[int, int]:
-    raise NotImplementedError
+    """Of the bad swipes that count for a rule, how many the grader tapped it on, and how many count only because
+    Claude was sure of their note."""
+    swipes = {swipe_id(label): label for label in labels if "matched_by" not in label}
+    tapped = sure = 0
+    for line in current(labels):
+        if line["verdict"] != "bad" or not rule & set(line["reasons"]):
+            continue
+        if "matched_by" in line and not rule & set(swipes[line["swipe"]]["reasons"]):
+            sure += 1
+        else:
+            tapped += 1
+    return tapped, sure
