@@ -156,6 +156,9 @@ def pending(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered:
     ]
 
 
+STALE = Refusal("stale", "out of date: the card was swiped again, or no check stands for its reasons")
+
+
 def answer(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str, match: str, choice: str, reason: str | None, at: str) -> Refusal | tuple[dict[str, Any], dict[str, Any] | None] | None:
     """The grader's answer to their own ask match: the refusal, nothing to write when it was already answered (the first answer wins, so a
     double tap or a second phone counts once), else the `answered` event and the matched label line that makes the swipe count,
@@ -165,7 +168,7 @@ def answer(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
     if item is None:
         return Refusal("missing", f"no match {match}")  # another grader's match looks the same as no match at all
     if item["stale"]:
-        return Refusal("stale", "out of date: the card was swiped again, or no check stands for its reasons")
+        return STALE
     if item["answer"]:
         return None
     if reason is not None and reason not in covered:
@@ -194,7 +197,11 @@ def answer_problem(body: object) -> str | None:
 def undo(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str, match: str, choice: str, at: str) -> Refusal | tuple[dict[str, Any], dict[str, Any]] | None:
     """The grader's undo or redo of Claude's sure match of their note. Undo makes the swipe count as it did before the
     match, redo as matched again."""
-    item = next(item for item in _items(labels, events, covered) if item["id"] == match)
+    item = next((item for item in _items(labels, events, covered) if item["id"] == match and item["kind"] == "sure" and item["grader"] == grader), None)
+    if item is None:
+        return Refusal("missing", f"no match {match}")  # another grader's, or an ask: only one's own sure matches undo
+    if item["stale"]:
+        return STALE
     if item["undone"] == (choice == "undo"):
         return None  # already so: a double tap or a second phone writes once
     source = item["source"]
