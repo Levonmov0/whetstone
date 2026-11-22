@@ -189,4 +189,9 @@ def answer_problem(body: object) -> str | None:
 
 
 def undo(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str, match: str, choice: str, at: str) -> Refusal | tuple[dict[str, Any], dict[str, Any]] | None:
-    raise NotImplementedError
+    """The grader's undo or redo of Claude's sure match of their note. Undo makes the swipe count as it did before the
+    match, redo as matched again."""
+    item = next(item for item in _items(labels, events, covered) if item["id"] == match)
+    source = item["source"]
+    line = {**source, "matched_by": "claude", "swipe": item["swipe"], "match": match, "counted": "undone", "at": at}
+    return {"event": "undone", "id": match, "at": at}, line
