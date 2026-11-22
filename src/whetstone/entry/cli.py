@@ -456,11 +456,13 @@ def show_link(url: str) -> None:
 
 
 def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
+    # Before the judge calls: a check that doesn't load stops the table, and it should stop it before they're paid for.
+    covered = covered_reasons(code_checks_or_stop(prompt), judges_or_stop(prompt))
     gates = judge_gates(prompt, make_judge)
     if gates is None:
         print("no judges in checks/")
         return 0
-    print("\n".join(agreement_table(prompt, gates)) + "\n")
+    print("\n".join(agreement_table(prompt, gates, covered)) + "\n")
     code = 0
     for name, (rows, status, advice) in gates.items():
         print(f"{name}: {status}")
@@ -471,12 +473,12 @@ def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
     return code
 
 
-def agreement_table(prompt: PromptSettings, gates: dict[str, tuple[dict[str, Agreement], str, list[str]]]) -> list[str]:
+def agreement_table(prompt: PromptSettings, gates: dict[str, tuple[dict[str, Agreement], str, list[str]]], covered: set[str]) -> list[str]:
     """One row per judge: its counted bad swipes split by who gave the reason, and both sides pooled over graders."""
     judges = judges_or_stop(prompt)
     labels = load_labels(prompt.dir)
     width = max(len(name) for name in ["judge", *gates]) + 3
-    events, covered = load_events(prompt.dir), covered_reasons(code_checks_or_stop(prompt), judges)
+    events = load_events(prompt.dir)
     lines = [f"{'judge':<{width}}bad swipes   tapped   claude sure   confirmed   undone   {'good / bad':<11}   gate"]
     for name, (rows, status, _advice) in gates.items():
         rule = covered_reasons({}, {name: judges[name]})
