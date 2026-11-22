@@ -259,3 +259,17 @@ def test_agreement_says_what_was_kept_and_what_waits(tmp_path: Path, monkeypatch
     run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judging("yes"))
 
     assert capsys.readouterr().out.splitlines()[3] == "1 note kept as an idea for a new check · 1 waiting on Hampus · 1 waiting on Levon"
+
+
+def test_deleting_the_judge_lists_an_asked_note_again(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    noted = swiped("c17", note="It guessed what I did")
+    write_labels(prompt / "labels.jsonl", [noted])
+    monkeypatch.chdir(tmp_path)
+    run(["map", "daily", swipe_id(noted), "--reasons", "assumes", "--ask", "--why", "Guessing is assuming"], make_model=unused_model)
+    (prompt / "checks" / "assumes.judge.toml").unlink()
+    capsys.readouterr()
+
+    run(["notes", "daily"], make_model=unused_model)
+
+    assert [json.loads(line)["swipe"] for line in capsys.readouterr().out.splitlines()] == [swipe_id(noted)]
