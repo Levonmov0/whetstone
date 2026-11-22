@@ -53,4 +53,7 @@ def propose(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered:
         return f'no check stands for "{uncovered[0]}"'
     if any(event["event"] == "proposed" and event["swipe"] == swipe for event in events):
         return "already matched"
-    raise NotImplementedError
+    match = "m_" + swipe.removeprefix("s_")  # a swipe has at most one proposal
+    event = {"event": "proposed", "id": match, "swipe": swipe, "grader": source["grader"], "card_id": source["card_id"], "kind": "sure", "reasons": reasons, "why": why, "at": at}
+    line = {**source, "reasons": list(dict.fromkeys(source["reasons"] + reasons)), "matched_by": "claude", "swipe": swipe, "match": match, "counted": "sure", "at": at}
+    return event, line
