@@ -205,3 +205,22 @@ test("round 3 A3: of two loads in flight, the older deck never replaces the newe
   assert.deepEqual(swiped, ["d:new deck"]);
   w.close();
 });
+
+test("round 3 A4: badge then Back from a load error returns to the error and its Try again", async () => {
+  let down = false;
+  const w = await boot((path) => {
+    if (path === "/api/cards" && down) throw new Error("offline");
+    return path === "/api/cards" ? { status: 200, body: { cards: [card("1")], reasons: [] } } : matches([ask("m_1")]);
+  });
+  down = true;
+  w.eval("load()");
+  await tick(60);
+  assert.equal(w.document.querySelector("main h1").textContent, "Can't reach the server");
+  w.document.getElementById("badge").click();
+  await tick();
+  w.document.getElementById("back").click();
+  await tick();
+  assert.equal(w.document.querySelector("main h1").textContent, "Can't reach the server");
+  assert.ok(button(w, "Try again"));
+  w.close();
+});
