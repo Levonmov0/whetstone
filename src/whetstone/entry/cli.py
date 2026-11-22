@@ -551,7 +551,9 @@ def list_notes(prompt: PromptSettings, follow: bool = False) -> int:
         except Stop:
             if covered is None:
                 raise
-        for label in unmatched_notes(load_labels(prompt.dir), load_events(prompt.dir), covered):
+        unmatched = unmatched_notes(load_labels(prompt.dir), load_events(prompt.dir), covered)
+        printed &= {swipe_id(label) for label in unmatched}  # one matched since, whose match goes stale, prints again
+        for label in unmatched:
             if swipe_id(label) in printed:
                 continue
             printed.add(swipe_id(label))
