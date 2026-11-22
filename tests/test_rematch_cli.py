@@ -31,3 +31,17 @@ def test_a_note_answered_no_can_be_matched_to_a_new_judge(tmp_path: Path, monkey
         "every reason has a check",
     ]
     assert kept_and_waiting(load_labels(prompt), load_events(prompt), {"banned", "assumes"}) == (0, {})
+
+
+def test_reasons_names_the_swipe_of_a_note_answered_no(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    noted, fresh = swiped("c17", note="It guessed what I did"), swiped("c18", note="Too clinical")
+    write_labels(prompt / "labels.jsonl", [noted, fresh])
+    monkeypatch.chdir(tmp_path)
+    run(["map", "daily", swipe_id(noted), "--reasons", "banned", "--ask", "--why", "Maybe"], make_model=unused_model)
+    answered_in_app(prompt, "m_" + swipe_id(noted).removeprefix("s_"), "no")
+    capsys.readouterr()
+
+    run(["reasons", "daily"], make_model=unused_model)
+
+    assert capsys.readouterr().out.splitlines() == [f'1  note: "It guessed what I did" · {swipe_id(noted)}', '1  note: "Too clinical"']
