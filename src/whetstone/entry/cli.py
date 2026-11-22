@@ -27,7 +27,7 @@ from whetstone.features.checks.core import Agreement, CaseResult, Side, agreemen
 from whetstone.features.checks.load import CheckLoadError, code_check_reasons
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
-from whetstone.features.matching.core import excerpt, propose, swipe_id, unmatched_notes
+from whetstone.features.matching.core import evidence, excerpt, propose, swipe_id, unmatched_notes
 from whetstone.features.matching.store import add_event, load_events
 from whetstone.features.optimize.core import SplitError, split_cases
 from whetstone.features.workspace.core import request_differences
@@ -456,6 +456,7 @@ def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
     if gates is None:
         print("no judges in checks/")
         return 0
+    print("\n".join(agreement_table(prompt, gates)) + "\n")
     code = 0
     for name, (rows, status, advice) in gates.items():
         print(f"{name}: {status}")
@@ -464,6 +465,24 @@ def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
         print("".join(f"  {line}\n" for line in advice), end="")
         code = 1 if status == "untrusted" else code
     return code
+
+
+def agreement_table(prompt: PromptSettings, gates: dict[str, tuple[dict[str, Agreement], str, list[str]]]) -> list[str]:
+    """One row per judge: its counted bad swipes split by who gave the reason, and both sides pooled over graders."""
+    judges = judges_or_stop(prompt)
+    labels = load_labels(prompt.dir)
+    width = max(len(name) for name in ["judge", *gates]) + 3
+    lines = [f"{'judge':<{width}}bad swipes   tapped   claude sure   {'good / bad':<11}   gate"]
+    for name, (rows, status, _advice) in gates.items():
+        tapped, sure = evidence(labels, covered_reasons({}, {name: judges[name]}))
+        good = _pooled([row.good for row in rows.values()])
+        bad = _pooled([row.bad for row in rows.values()])
+        lines.append(f"{name:<{width}}{tapped + sure:>10}   {tapped:>6}   {sure:>11}   {good + ' / ' + bad:<11}   {status}")
+    return lines
+
+
+def _pooled(sides: list[Side]) -> str:
+    return f"{round(100 * sum(s.agreed for s in sides) / sum(s.total for s in sides))}%"
 
 
 def judge_gates(prompt: PromptSettings, make_judge: MakeJudge) -> dict[str, tuple[dict[str, Agreement], str, list[str]]] | None:
