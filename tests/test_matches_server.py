@@ -125,3 +125,24 @@ def test_an_answer_is_refused(change: str, match: str, body: dict[str, Any], sta
     assert response.json() == {"error": error.format(match)}
     assert ((prompt / "labels.jsonl").read_text(), (prompt / "matches.jsonl").read_text()) == before
     assert (client.get("/api/matches", headers=HAMPUS).json()["items"] == []) == bool(change)  # a stale item is hidden too
+
+
+@pytest.mark.parametrize(
+    ("content", "error"),
+    [
+        ("not json", "body must be a JSON object"),
+        ("[1]", "body must be a JSON object"),
+        ('{"answer": "maybe"}', "answer must be yes, no or different"),
+        ('{"answer": "different"}', "a different chip needs the reason picked"),
+        ('{"reason": "' + "x" * 70_000 + '"}', "body is over 64 KB"),
+    ],
+)
+def test_a_bad_answer_body_is_refused(content: str, error: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt, client = asked_suite(tmp_path, monkeypatch)
+    before = (prompt / "matches.jsonl").read_text()
+
+    response = client.post(f"/api/matches/{match_of(NOTE)}", headers={**HAMPUS, "Content-Type": "application/json"}, content=content)
+
+    assert response.status_code == 400
+    assert response.json() == {"error": error}
+    assert (prompt / "matches.jsonl").read_text() == before
