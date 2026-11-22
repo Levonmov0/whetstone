@@ -210,13 +210,18 @@ let checking = null;    // on the matching screen: the items left, and what the 
 let view = 0;           // bumped on every move to another screen: a reply redraws only the screen it was asked from
 
 // A request's token: who asked, from which screen.
-function take() { return { grader, view }; }
+let seq = 0, settled = 0;  // request numbers: a read sent before the last applied reply is older than what we know
+
+// A request's token: who asked, from which screen, in what order.
+function take(read = false) { return { grader, view, seq: ++seq, read }; }
 const showing = (token) => token.grader === grader && token.view === view;
 
-// Every server reply changes state here. A reply for another grader is dropped; any other updates the data,
-// and says whether its screen is still showing, the only case in which the caller may draw.
+// Every server reply changes state here. A reply for another grader is dropped, and so is a read sent before a
+// reply already applied. Any other updates the data, and says whether its screen is still showing, the only case
+// in which the caller may draw. A write's reply always applies: the server stored it.
 function commit(token, change) {
-  if (token.grader !== grader) return false;
+  if (token.grader !== grader || (token.read && token.seq <= settled)) return false;
+  settled = token.read ? token.seq : seq;
   change();
   updateBadge();
   return token.view === view;
@@ -291,15 +296,12 @@ async function load() {
 
 // The badge is a quiet extra: when the matches can't be fetched, grading goes on and the badge keeps what it had.
 async function loadMatches() {
-  const asked = grader;
+  const asked = take(true);
   try {
     const result = await api("/api/matches");
-    if (!result.ok || grader !== asked) return;  // a reply for the grader before "Not you?" is theirs, not this one's
-    matches = result.body.items;
-    matchReasons = result.body.reasons;
-    sure = result.body.sure;
+    if (!result.ok) return;
+    commit(asked, () => ({ items: matches, reasons: matchReasons, sure } = result.body));
   } catch { return; }
-  updateBadge();
 }
 
 // Asks pending: "N to check". Nothing to check but Claude's sure matches: a quiet "N matched", the way to undo them.
