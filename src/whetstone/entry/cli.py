@@ -29,7 +29,7 @@ from whetstone.features.checks.load import CheckLoadError, code_check_reasons
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
 from whetstone.features.matching.core import Refusal, case_of, current, evidence, excerpt, idea_lines, kept_and_waiting, propose, swipe_id, undone_count, unmatched_notes
-from whetstone.features.matching.store import add_event, load_events
+from whetstone.features.matching.store import Snapshot, add_event, load_events, snapshot
 from whetstone.features.optimize.core import SplitError, split_cases
 from whetstone.features.workspace.core import request_differences
 from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, judge_model, load_prompt, phone_access, prompt_names, rewrite_settings
@@ -458,13 +458,13 @@ def show_link(url: str) -> None:
 def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
     # Before the judge calls: a check that doesn't load stops the table, and it should stop it before they're paid for.
     # Read once: the table counts from what the gates judged, however long the judge calls take.
-    judges, labels = judges_or_stop(prompt), load_labels(prompt.dir)
+    judges, snap = judges_or_stop(prompt), snapshot(prompt.dir)
     covered = covered_reasons(code_checks_or_stop(prompt), judges)
-    gates = judge_gates(prompt, make_judge, judges, labels)
+    gates = judge_gates(prompt, make_judge, judges, snap.labels)
     if gates is None:
         print("no judges in checks/")
         return 0
-    print("\n".join(agreement_table(prompt, gates, judges, labels, covered)) + "\n")
+    print("\n".join(agreement_table(gates, judges, snap, covered)) + "\n")
     code = 0
     for name, (rows, status, advice) in gates.items():
         print(f"{name}: {status}")
@@ -475,10 +475,10 @@ def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
     return code
 
 
-def agreement_table(prompt: PromptSettings, gates: dict[str, tuple[dict[str, Agreement], str, list[str]]], judges: dict[str, Rubric], labels: list[dict[str, Any]], covered: set[str]) -> list[str]:
+def agreement_table(gates: dict[str, tuple[dict[str, Agreement], str, list[str]]], judges: dict[str, Rubric], snap: Snapshot, covered: set[str]) -> list[str]:
     """One row per judge: its counted bad swipes split by who gave the reason, and both sides pooled over graders."""
     width = max(len(name) for name in ["judge", *gates]) + 3
-    events = load_events(prompt.dir)
+    events, labels = snap
     lines = [f"{'judge':<{width}}bad swipes   tapped   claude sure   confirmed   undone   {'good / bad':<11}   gate"]
     for name, (rows, status, _advice) in gates.items():
         rule = covered_reasons({}, {name: judges[name]})
