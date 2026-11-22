@@ -146,3 +146,16 @@ def test_a_bad_answer_body_is_refused(content: str, error: str, tmp_path: Path, 
     assert response.status_code == 400
     assert response.json() == {"error": error}
     assert (prompt / "matches.jsonl").read_text() == before
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_a_broken_check_says_so(method: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt, client = asked_suite(tmp_path, monkeypatch)
+    (prompt / "checks" / "x.judge.toml").write_text("question = ")
+    before = (prompt / "matches.jsonl").read_text()
+
+    response = client.request(method, "/api/matches" if method == "GET" else f"/api/matches/{match_of(NOTE)}", headers=HAMPUS, json={"answer": "yes"})
+
+    assert response.status_code == 500
+    assert "checks/x.judge.toml: invalid TOML" in response.json()["error"]
+    assert (prompt / "matches.jsonl").read_text() == before
