@@ -16,7 +16,7 @@ from whetstone.entry.server import make_app
 from whetstone.features.workspace.load import load_prompt
 from whetstone.features.grading.store import add_label, load_labels
 from whetstone.features.matching.core import Refusal, answer, case_of, swipe_id
-from whetstone.features.matching.store import add_event, load_events
+from whetstone.features.matching.store import add_event, load_events, snapshot
 from whetstone.platform import jsonl
 
 LONG = "Your HRV dipped and your sleep latency rose, so today is a recovery day. " * 4
@@ -461,3 +461,14 @@ def test_a_sure_match_matched_again_since_stops_counting_when_its_check_comes_ba
 
     rows = {line.split()[0]: line for line in capsys.readouterr().out.splitlines()[2:4]}
     assert rows["assumes"].startswith("assumes            0        0             0           0        0")
+
+
+def test_the_snapshot_splits_graders_swipes_from_claudes_matched_lines(tmp_path: Path) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    noted = swiped("c17")
+    matched = {**noted, "reasons": ["banned"], "matched_by": "claude", "swipe": swipe_id(noted), "match": "m_1", "counted": "sure", "at": "2026-11-20T09:00:00+00:00"}
+    write_labels(prompt / "labels.jsonl", [noted, matched])
+
+    snap = snapshot(prompt)
+
+    assert (snap.swipes, snap.matched, snap.events) == ([noted], [matched], [])
