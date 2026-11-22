@@ -137,6 +137,8 @@ def test_an_answer_is_refused(change: str, match: str, body: dict[str, Any], sta
         ('{"answer": "maybe"}', "answer must be yes, no, different, undo or redo"),
         ('{"answer": "different"}', "a different chip needs the reason picked"),
         ('{"reason": "' + "x" * 70_000 + '"}', "body is over 64 KB"),
+        ('{"answer": "yes", "reason": ["tone"]}', "only a different chip takes a reason"),
+        ('{"answer": "no", "reason": "tone"}', "only a different chip takes a reason"),
     ],
 )
 def test_a_bad_answer_body_is_refused(content: str, error: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
