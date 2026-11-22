@@ -52,12 +52,14 @@ def _items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
     swipes = _swipes(labels)
     latest = latest_swipes(labels)
     answers: dict[str, dict[str, Any]] = {}
-    undone: dict[str, bool] = {}
     for event in events:
         if event["event"] == "answered":
             answers.setdefault(event["id"], event)  # the first answer wins
-        elif event["event"] in ("undone", "redone"):
-            undone[event["id"]] = event["event"] == "undone"  # the latest undo or redo wins
+    # The latest undo or redo wins. Each writes its matched line before its event, so a line newer than any event is
+    # one whose event a stopped server never wrote: it already counts, so it says the state.
+    said = [(event["at"], 1, event["id"], event["event"] == "undone") for event in events if event["event"] in ("undone", "redone")]
+    said += [(line["at"], 0, line["match"], line["counted"] == "undone") for line in labels if line.get("counted") == "undone"]
+    undone = {match: state for _at, _event, match, state in sorted(said, key=lambda each: each[:2])}  # ties keep their order
     # A confirmed line with no `answered` event: the server wrote the line, then stopped before the event. The line
     # already counts, so it is the grader's answer.
     leftovers = {line["match"]: line for line in labels if line.get("counted") == "confirmed"}
