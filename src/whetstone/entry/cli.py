@@ -606,7 +606,8 @@ def settle_card(prompt: PromptSettings, card: str, verdict: str, grader: str, no
     sided = [label for label in swiped if label["verdict"] == verdict]
     reasons: list[str] = sided[-1]["reasons"] if sided else []
     swipe: dict[str, Any] = {"grader": grader, "verdict": verdict, "reasons": reasons, "note": note, "settled": True, "at": datetime.now(UTC).isoformat()}
-    add_label(prompt.dir, {**swiped[-1], **swipe})
+    # The card's fields from a swipe, never a matched line: the call is the settler's own, not Claude's match.
+    add_label(prompt.dir, {**[label for label in swiped if "matched_by" not in label][-1], **swipe})
     return 0
 
 
