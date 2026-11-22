@@ -81,7 +81,7 @@ def test_propose_appends_an_event_and_a_matched_line_that_keeps_the_verdict() ->
     match = "m_" + swipe.removeprefix("s_")
     assert event == {"event": "proposed", "id": match, "swipe": swipe, "grader": "Hampus", "card_id": "d:c17", "kind": "sure", "reasons": ["jargon", "generic", "tone"], "why": "Quotes HRV", "at": NOW}
     assert line == {**source, "reasons": ["generic", "jargon", "tone"], "matched_by": "claude", "swipe": swipe, "match": match, "counted": "sure", "at": NOW}
-    assert line["verdict"] == "bad"
+    assert line is not None and line["verdict"] == "bad"
 
 
 def test_evidence_splits_counted_bad_swipes_into_tapped_and_claude_sure() -> None:
