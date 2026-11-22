@@ -89,3 +89,15 @@ def test_a_check_that_fails_to_load_mid_edit_does_not_end_the_follow(follow: tup
     add_label(prompt, later)
 
     assert following.next_swipe() == swipe_id(later)
+
+
+def test_follow_prints_a_note_it_printed_again_once_its_match_goes_stale(follow: tuple[Path, Follow]) -> None:
+    prompt, following = follow
+    backlog = swiped("c1", note="Says HRV")
+    assert following.next_swipe(timeout=10) == swipe_id(backlog)
+    add_event(prompt, "c1", {"event": "proposed", "id": "m_1", "swipe": swipe_id(backlog), "grader": "Hampus", "card_id": "d:c1", "kind": "ask", "reasons": ["assumes"], "why": "Guessing is assuming", "at": "2026-11-20T08:30:00+00:00"})
+    assert following.nothing_more()
+
+    (prompt / "checks" / "assumes.judge.toml").unlink()
+
+    assert following.next_swipe() == swipe_id(backlog)
