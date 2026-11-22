@@ -214,4 +214,9 @@ def undo(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: se
 
 
 def sure_items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str) -> list[dict[str, Any]]:
-    raise NotImplementedError
+    """The grader's sure matches that still stand, as the app lists them with Undo or Redo."""
+    return [
+        {"id": item["id"], "card_id": item["card_id"], "note": item["source"]["note"], "reasons": [r for r in item["reasons"] if r in covered], "undone": item["undone"]}
+        for item in _items(labels, events, covered)
+        if item["kind"] == "sure" and item["grader"] == grader and not item["stale"]
+    ]
