@@ -30,9 +30,9 @@ def test_unmatched_notes_are_latest_bad_swipes_with_a_note_and_no_proposal() -> 
         label(card="d:c6", note=""),
         label(card="d:c7", matched_by="claude", swipe="s_x", at="2026-11-20T09:00:00+00:00"),
     ]
-    events = [{"event": "proposed", "id": "m_1", "swipe": swipe_id(proposed)}]
+    events = [asked(proposed, ["jargon"])]
 
-    assert unmatched_notes(labels, events) == [wanted]
+    assert unmatched_notes(labels, events, {"jargon"}) == [wanted]
 
 
 def test_current_keeps_a_matched_line_only_while_its_swipe_is_latest() -> None:
@@ -63,7 +63,7 @@ NOW = "2026-11-21T10:00:00+00:00"
 def test_propose_refuses(swipe: str, reasons: list[str], refusal: str) -> None:
     lines = {"bad": label(card="d:c1"), "replaced": label(card="d:c2"), "good": label(card="d:c4", verdict="good"), "proposed": label(card="d:c3")}
     labels = [*lines.values(), label(card="d:c2", at="2026-11-20T09:00:00+00:00", note="newer")]
-    events = [{"event": "proposed", "id": "m_1", "swipe": swipe_id(lines["proposed"])}]
+    events = [asked(lines["proposed"], ["jargon"])]
     swipe = swipe_id(lines[swipe]) if swipe in lines else swipe
 
     assert propose(labels, events, {"jargon"}, swipe, reasons, "why", NOW) == refusal
@@ -127,3 +127,20 @@ def test_pending_lists_the_graders_unanswered_asks_with_reasons_still_covered() 
     assert pending(labels, events, {"generic"}, "Hampus") == [
         {"id": asked(waiting, [])["id"], "card_id": "d:c1", "note": "Feels like a horoscope", "excerpt": "Today is a chance to reset.", "reasons": ["generic"], "why": "Could be anyone's"},
     ]
+
+
+def test_a_replaced_swipe_or_a_dead_reason_makes_an_item_stale() -> None:
+    replaced = label(card="d:c1")
+    reswipe = label(card="d:c1", at=NOW, note="Still too vague")
+    dead = label(card="d:c2")
+    dead_sure = label(card="d:c3")
+    dead_no = label(card="d:c4")
+    labels = [replaced, reswipe, dead, dead_sure, dead_no]
+    events = [asked(replaced, ["generic"]), asked(dead, ["deleted judge"]), asked(dead_sure, ["deleted judge"], kind="sure"), asked(dead_no, ["deleted judge"]),
+              {"event": "answered", "id": asked(dead_no, [])["id"], "answer": "no", "at": NOW}]
+
+    assert pending(labels, events, {"generic"}, "Hampus") == []
+    assert unmatched_notes(labels, events, {"generic"}) == [reswipe, dead, dead_sure]
+    proposal = propose(labels, events, {"generic"}, swipe_id(dead), ["generic"], "Could be anyone's", NOW, kind="ask")
+    assert not isinstance(proposal, str)
+    assert proposal[0]["id"] == "m_" + swipe_id(dead).removeprefix("s_") + "_2"

@@ -21,7 +21,7 @@ def latest_swipes(labels: list[dict[str, Any]]) -> dict[tuple[str, str], dict[st
     return latest
 
 
-def unmatched_notes(labels: list[dict[str, Any]], events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def unmatched_notes(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str]) -> list[dict[str, Any]]:
     """The latest bad swipes that carry a note and have no proposal yet."""
     proposed = {event["swipe"] for event in events if event["event"] == "proposed"}
     return [label for label in latest_swipes(labels).values() if label["verdict"] == "bad" and label["note"] and swipe_id(label) not in proposed]
