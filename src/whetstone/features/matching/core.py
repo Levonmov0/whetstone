@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, cast
 
 
 class Refusal(NamedTuple):
@@ -147,4 +147,12 @@ def answer(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
 
 
 def answer_problem(body: object) -> str | None:
-    raise NotImplementedError
+    """Why an answer from the app can't be stored, or None when it can. The match itself is looked up by the caller."""
+    if not isinstance(body, dict):
+        return "body must be a JSON object"
+    sent = cast(dict[str, Any], body)
+    if sent.get("answer") not in ("yes", "no", "different"):
+        return "answer must be yes, no or different"
+    if sent["answer"] == "different" and not isinstance(sent.get("reason"), str):
+        return "a different chip needs the reason picked"
+    return None
