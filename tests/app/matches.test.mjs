@@ -129,3 +129,16 @@ test("A7: an Undo in flight when Back is tapped never draws Nothing to check ove
   assert.doesNotMatch(w.document.querySelector("main").textContent, /Nothing to check/);
   w.close();
 });
+
+test("A8: a Yes in flight when Back is tapped is saved and leaves the badge", async () => {
+  const w = await boot((path, _grader, options) => path === "/api/cards" ? { status: 200, body: { cards: [card("1")], reasons: [] } }
+    : options?.method === "POST" ? { status: 200, body: { answer: "yes" }, delay: 150 } : matches([ask("m_1")]));
+  w.document.getElementById("badge").click();
+  await tick();
+  button(w, "Yes").click();
+  w.document.getElementById("back").click();
+  await tick(300);
+  assert.ok(w.document.querySelector("main .card"));
+  assert.equal(w.document.getElementById("badge").hidden, true);
+  w.close();
+});
