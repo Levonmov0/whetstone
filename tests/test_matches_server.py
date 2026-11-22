@@ -134,7 +134,7 @@ def test_an_answer_is_refused(change: str, match: str, body: dict[str, Any], sta
     [
         ("not json", "body must be a JSON object"),
         ("[1]", "body must be a JSON object"),
-        ('{"answer": "maybe"}', "answer must be yes, no or different"),
+        ('{"answer": "maybe"}', "answer must be yes, no, different, undo or redo"),
         ('{"answer": "different"}', "a different chip needs the reason picked"),
         ('{"reason": "' + "x" * 70_000 + '"}', "body is over 64 KB"),
     ],

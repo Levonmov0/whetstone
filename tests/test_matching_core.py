@@ -208,7 +208,7 @@ def test_answer_refuses_a_missing_or_stale_item_and_a_dead_reason() -> None:
     ("body", "problem"),
     [
         ([1], "body must be a JSON object"),
-        ({"answer": "maybe"}, "answer must be yes, no or different"),
+        ({"answer": "maybe"}, "answer must be yes, no, different, undo or redo"),
         ({"answer": "different"}, "a different chip needs the reason picked"),
         ({"answer": "different", "reason": 3}, "a different chip needs the reason picked"),
         ({"answer": "yes"}, None),
