@@ -48,5 +48,6 @@ def add_label(prompt_dir: Path, label: dict[str, Any]) -> None:
 
 
 def load_labels(prompt_dir: Path) -> list[dict[str, Any]]:
-    """Every label, the prompt's own and each real-data source's."""
-    return [label for f in jsonl.files(prompt_dir, "labels.jsonl") for label in jsonl.read(f)]
+    """Every grader's swipe, the prompt's own and each real-data source's. Claude's matched lines share the file but are
+    never a swipe: only matching's snapshot reads them."""
+    return [label for f in jsonl.files(prompt_dir, "labels.jsonl") for label in jsonl.read(f) if "matched_by" not in label]

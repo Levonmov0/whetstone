@@ -1,14 +1,10 @@
 """Matching's file: `matches.jsonl`, the append-only log of Claude's matches, beside the labels it matches."""
 
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any
 
+from whetstone.features.matching.core import Snapshot
 from whetstone.platform import jsonl
-
-
-class Snapshot(NamedTuple):
-    events: list[dict[str, Any]]
-    labels: list[dict[str, Any]]
 
 
 def load_events(prompt_dir: Path) -> list[dict[str, Any]]:
@@ -17,11 +13,13 @@ def load_events(prompt_dir: Path) -> list[dict[str, Any]]:
 
 
 def snapshot(prompt_dir: Path) -> Snapshot:
-    """The match events and the labels together, the only way to read both. Events first: every event is written after
-    the lines it names, so the labels read next hold each one's swipe. A line newer than the events is read too, and a
-    line no event owns yet never counts."""
+    """The match events and the labels together, the only way to read both, and the only reader of Claude's matched
+    lines: split here from graders' swipes, once. Events first: every event is written after the lines it names, so the
+    labels read next hold each one's swipe. A line newer than the events is read too, and a line no event owns yet
+    never counts."""
     events = load_events(prompt_dir)
-    return Snapshot(events, [label for f in jsonl.files(prompt_dir, "labels.jsonl") for label in jsonl.read(f)])
+    labels = [label for f in jsonl.files(prompt_dir, "labels.jsonl") for label in jsonl.read(f)]
+    return Snapshot(events, [label for label in labels if "matched_by" not in label], [label for label in labels if "matched_by" in label])
 
 
 def add_event(prompt_dir: Path, case_id: str, event: dict[str, Any]) -> None:

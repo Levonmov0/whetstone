@@ -107,9 +107,9 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
     async def matches(request: Request) -> Response:
         grader = unquote(request.headers.get("x-grader", ""))
         reasons = covered()
-        events, labels = snapshot(prompt.dir)
+        snap = snapshot(prompt.dir)
         # Every reason a check stands for: the Different chip sheet offers only reasons that can count.
-        return JSONResponse({"items": pending(labels, events, reasons, grader), "reasons": sorted(reasons), "sure": sure_items(labels, events, reasons, grader)})
+        return JSONResponse({"items": pending(snap, reasons, grader), "reasons": sorted(reasons), "sure": sure_items(snap, reasons, grader)})
 
     async def answer_match(request: Request) -> Response:
         # One at a time on the event loop, as swipes are: two phones answering the same item can't both find it open.
@@ -121,16 +121,16 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
         grader = unquote(request.headers.get("x-grader", ""))
         match = request.path_params["match"]
         reasons = covered()
-        events, labels = snapshot(prompt.dir)
+        snap = snapshot(prompt.dir)
         now = datetime.now(UTC).isoformat()
         undoing = body["answer"] in ("undo", "redo")
         if undoing:
-            line = undo(labels, events, reasons, grader, match, body["answer"], now)
+            line = undo(snap, reasons, grader, match, body["answer"], now)
             writes = (None, line) if isinstance(line, dict) else line
         else:
-            writes = answer(labels, events, reasons, grader, match, body["answer"], body.get("reason"), now)
+            writes = answer(snap, reasons, grader, match, body["answer"], body.get("reason"), now)
         if writes is None:  # answered already, from a double tap or another phone: it counts once, as first answered
-            return JSONResponse({} if undoing else said(labels, events, reasons, match))
+            return JSONResponse({} if undoing else said(snap, reasons, match))
         if isinstance(writes, Refusal):
             # A stale item gets its own status, so the app can drop it.
             return JSONResponse({"error": writes.message}, status_code={"missing": 404, "stale": 409}.get(writes.kind, 400))
@@ -138,7 +138,7 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
         if line is not None:
             add_label(prompt.dir, line)
         if event is not None:
-            add_event(prompt.dir, case_of(labels, events, event), event)
+            add_event(prompt.dir, case_of(snap, event), event)
         # Just stored, so the answer sent is the stored one: answer_problem allows a reason only with a different chip.
         return JSONResponse({} if undoing else {key: body[key] for key in ("answer", "reason") if key in body})
 
