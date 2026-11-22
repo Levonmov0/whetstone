@@ -339,6 +339,8 @@ function render() {
   if (!cards.length) {
     if (matches.length && !later) return deckEnd();
     progress.textContent = "";
+    screen = "all-graded";
+    pollMatches();
     return showMessage("All graded", "Thanks. New cards show up here after the next check run.", retryButton("Check for new cards"));
   }
   const card = cards[0];
@@ -518,8 +520,24 @@ async function send(card, swipe, errorNode) {
   }
 }
 
+// While the deck is done, Claude may still be matching the last notes: ask again until the grader moves on.
+const POLL_MS = 2000;
+let polling = false;
+async function pollMatches() {
+  if (polling) return;
+  polling = true;
+  const deckDone = () => screen === "deck-end" || screen === "all-graded";
+  while (deckDone()) {
+    await new Promise((wake) => setTimeout(wake, POLL_MS));
+    await loadMatches();
+    if (deckDone()) render();
+  }
+  polling = false;
+}
+
 function deckEnd() {
   screen = "deck-end";
+  pollMatches();
   updateBadge();
   progress.textContent = total ? `${total} of ${total} graded` : "";
   const n = matches.length;
