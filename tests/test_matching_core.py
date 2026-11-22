@@ -243,3 +243,18 @@ def test_undo_writes_the_swipes_own_reasons_back() -> None:
     )
     assert isinstance(writes, tuple)
     assert current([*labels, writes[1]]) == [writes[1]]
+
+
+def test_redo_writes_the_matched_reasons_again() -> None:
+    source = label(reasons=["generic"])
+    labels, events = sure_match(source)
+    match = events[0]["id"]
+    undone = undo(labels, events, {"jargon"}, "Hampus", match, "undo", LATER)
+    assert isinstance(undone, tuple)
+
+    writes = undo([*labels, undone[1]], [*events, undone[0]], {"jargon"}, "Hampus", match, "redo", "2026-11-21T12:00:00+00:00")
+
+    assert writes == (
+        {"event": "redone", "id": match, "at": "2026-11-21T12:00:00+00:00"},
+        {**source, "reasons": ["generic", "jargon"], "matched_by": "claude", "swipe": swipe_id(source), "match": match, "counted": "sure", "at": "2026-11-21T12:00:00+00:00"},
+    )
