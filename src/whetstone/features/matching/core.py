@@ -58,7 +58,7 @@ def _items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
     # The latest undo or redo wins. Each writes its matched line before its event, so a line newer than any event is
     # one whose event a stopped server never wrote: it already counts, so it says the state.
     said = [(event["at"], 1, event["id"], event["event"] == "undone") for event in events if event["event"] in ("undone", "redone")]
-    said += [(line["at"], 0, line["match"], line["counted"] == "undone") for line in labels if line.get("counted") == "undone"]
+    said += [(line["at"], 0, line["match"], line["counted"] == "undone") for line in labels if line.get("counted") in ("undone", "sure")]
     undone = {match: state for _at, _event, match, state in sorted(said, key=lambda each: each[:2])}  # ties keep their order
     # A confirmed line with no `answered` event: the server wrote the line, then stopped before the event. The line
     # already counts, so it is the grader's answer.
