@@ -52,23 +52,22 @@ def _items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
     again, or once no check stands for any of its reasons, unless the grader said No: their note is an idea either way."""
     swipes = _swipes(labels)
     latest = latest_swipes(labels)
+    # A grader's answer: a No is an event, a Yes or a different chip the confirmed line that makes the swipe count.
+    # The server answers one at a time and refuses a second, so a match has at most one; the first still wins.
     answers: dict[str, dict[str, Any]] = {}
-    for event in events:
-        if event["event"] == "answered":
-            answers.setdefault(event["id"], event)  # the first answer wins
+    said_by_line = [line for line in labels if line.get("counted") == "confirmed"]
+    for each in sorted([event for event in events if event["event"] == "answered"] + said_by_line, key=lambda each: str(each["at"])):
+        answers.setdefault(each.get("match") or each["id"], {"answer": each["answer"], **({"reason": each["reason"]} if "reason" in each else {})})
     # The latest undo or redo wins. Each writes its matched line before its event, so a line newer than any event is
     # one whose event a stopped server never wrote: it already counts, so it says the state.
     said = [(event["at"], 1, event["id"], event["event"] == "undone") for event in events if event["event"] in ("undone", "redone")]
     said += [(line["at"], 0, line["match"], line["counted"] == "undone") for line in labels if line.get("counted") in ("undone", "sure")]
     undone = {match: state for _at, _event, match, state in sorted(said, key=lambda each: each[:2])}  # ties keep their order
-    # A confirmed line with no `answered` event: the server wrote the line, then stopped before the event. The line
-    # already counts, so it is the grader's answer.
-    leftovers = {line["match"]: line for line in labels if line.get("counted") == "confirmed"}
     proposals = [event for event in events if event["event"] == "proposed"]
     items: list[dict[str, Any]] = []
     for n, event in enumerate(proposals):
         source = swipes[event["swipe"]]
-        answer = answers.get(event["id"]) or (_answer_of(leftovers[event["id"]], source, event) if event["id"] in leftovers else None)
+        answer = answers.get(event["id"])
         said_no = bool(answer and answer["answer"] == "no")
         replaced = latest[source["grader"], source["card_id"]] is not source
         dead = not said_no and not covered & set(event["reasons"])
@@ -76,14 +75,6 @@ def _items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
         superseded = not said_no and any(later["swipe"] == event["swipe"] for later in proposals[n + 1:])
         items.append({**event, "source": source, "answer": answer, "said_no": said_no, "undone": undone.get(event["id"], False), "stale": replaced or dead or superseded})
     return items
-
-
-def _answer_of(line: dict[str, Any], source: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
-    """The answer a confirmed line stands for: Yes, or the one different chip it added."""
-    added = [reason for reason in line["reasons"] if reason not in source["reasons"]]
-    if len(added) == 1 and added[0] not in event["reasons"]:
-        return {"event": "answered", "id": event["id"], "answer": "different", "reason": added[0], "at": line["at"]}
-    return {"event": "answered", "id": event["id"], "answer": "yes", "at": line["at"]}
 
 
 # The lines each kind of match writes: a sure match counts or is undone, an ask counts once its grader confirms it.
@@ -224,10 +215,11 @@ def _own_item(labels: list[dict[str, Any]], events: list[dict[str, Any]], covere
     return STALE if item["stale"] else item
 
 
-def answer(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str, match: str, choice: str, reason: str | None, at: str) -> Refusal | tuple[dict[str, Any], dict[str, Any] | None] | None:
-    """The grader's answer to their own ask match: the refusal, nothing to write when it was already answered (the first answer wins, so a
-    double tap or a second phone counts once), else the `answered` event and the matched label line that makes the swipe count,
-    confirmed by the grader. Yes counts the suggested reasons some check still stands for, a different chip only the
+def answer(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str, match: str, choice: str, reason: str | None, at: str) -> Refusal | tuple[dict[str, Any] | None, dict[str, Any] | None] | None:
+    """The grader's answer to their own ask match: the refusal, nothing to write when it was already answered (the first
+    answer wins, so a double tap or a second phone counts once), else the one record to write: for No its `answered`
+    event, for Yes or a different chip the matched label line that makes the swipe count, confirmed by the grader and
+    carrying the answer. Yes counts the suggested reasons some check still stands for, a different chip only the
     one picked; No leaves the swipe as it was."""
     item = _own_item(labels, events, covered, grader, match, "ask")
     if isinstance(item, Refusal):
@@ -236,18 +228,17 @@ def answer(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
         return None
     if reason is not None and reason not in covered:
         return Refusal("invalid", f'no check stands for "{reason}"')
-    event = {"event": "answered", "id": match, "answer": choice, **({"reason": reason} if choice == "different" else {}), "at": at}
     if choice == "no":
-        return event, None
+        return {"event": "answered", "id": match, "answer": "no", "at": at}, None
     source = item["source"]
     counted = [reason] if reason is not None else [r for r in item["reasons"] if r in covered]
-    return event, _matched_line(source, match, list(dict.fromkeys(source["reasons"] + counted)), "confirmed", at)
+    line = _matched_line(source, match, list(dict.fromkeys(source["reasons"] + counted)), "confirmed", at)
+    return None, {**line, "answer": choice, **({"reason": reason} if reason is not None else {})}
 
 
 def said(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], match: str) -> dict[str, str]:
     """The answer stored for a match, as the app shows it: what counts is the first answer, from whichever phone."""
-    stored = next(item["answer"] for item in _items(labels, events, covered) if item["id"] == match)
-    return {"answer": stored["answer"], **({"reason": stored["reason"]} if "reason" in stored else {})}
+    return next(item["answer"] for item in _items(labels, events, covered) if item["id"] == match)
 
 
 def answer_problem(body: object) -> str | None:

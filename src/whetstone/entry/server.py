@@ -134,11 +134,11 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
             # A stale item gets its own status, so the app can drop it.
             return JSONResponse({"error": writes.message}, status_code={"missing": 404, "stale": 409}.get(writes.kind, 400))
         event, line = writes
-        # The line first, as map writes: a crash in between leaves a swipe that counts and still asks, never a lost count.
         if line is not None:
             add_label(prompt.dir, line)
-        add_event(prompt.dir, case_of(labels, events, event), event)
-        return JSONResponse({} if undoing else said(labels, [*events, event], reasons, match))
+        if event is not None:
+            add_event(prompt.dir, case_of(labels, events, event), event)
+        return JSONResponse({} if undoing else said([*labels, *([line] if line else [])], [*events, *([event] if event else [])], reasons, match))
 
     async def app_page(request: Request) -> Response:
         return HTMLResponse((STATIC / "app.html").read_text())
