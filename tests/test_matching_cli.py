@@ -83,3 +83,14 @@ def test_a_sure_match_measures_an_unmeasured_judge(tmp_path: Path, monkeypatch: 
     ]
     assert "assumes: trusted" in out
     assert read_lines(prompt / "labels.jsonl")[-1]["verdict"] == "bad"
+
+
+def test_agreement_table_shows_a_dash_for_a_side_nobody_swiped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."}, 'reasons = ["assumes the outcome"]\n' + RUBRIC_TAIL)
+    write_labels(prompt / "labels.jsonl", swipes(good_failed=0)[10:])  # 5 bad, no good
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judging("yes"))
+
+    assert code == 1
+    assert capsys.readouterr().out.splitlines()[2] == "assumes            5        5             0   — / 100%      untrusted"
