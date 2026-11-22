@@ -400,3 +400,13 @@ def test_a_matched_line_no_proposal_of_its_kind_owns_never_counts() -> None:
 
     assert current(snap(labels, events)) == [orphan, sure, ask]
     assert evidence(snap(labels, events), {"jargon"}) == (0, 0, 0)
+
+
+def test_a_different_chip_stays_matched_while_its_check_stands_though_the_suggested_one_is_gone() -> None:
+    # Ticket 17: a counted match goes stale when every check it points to is deleted; a different chip points to the one picked.
+    source = label()
+    item = asked(source, ["deleted judge"])
+    line = {**source, "reasons": ["jargon"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "answer": "different", "reason": "jargon", "at": NOW}
+
+    assert unmatched_notes(snap([source, line], [item]), {"jargon", "generic"}) == []
+    assert propose(snap([source, line], [item]), {"jargon", "generic"}, swipe_id(source), ["generic"], "Could be anyone's", NOW, kind="ask") == Refusal("invalid", "already matched")
