@@ -193,5 +193,9 @@ def undo(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: se
     match, redo as matched again."""
     item = next(item for item in _items(labels, events, covered) if item["id"] == match)
     source = item["source"]
-    line = {**source, "matched_by": "claude", "swipe": item["swipe"], "match": match, "counted": "undone", "at": at}
-    return {"event": "undone", "id": match, "at": at}, line
+    if choice == "redo":
+        reasons, counted, event = list(dict.fromkeys(source["reasons"] + item["reasons"])), "sure", "redone"
+    else:
+        reasons, counted, event = source["reasons"], "undone", "undone"
+    line = {**source, "reasons": reasons, "matched_by": "claude", "swipe": item["swipe"], "match": match, "counted": counted, "at": at}
+    return {"event": event, "id": match, "at": at}, line
