@@ -614,21 +614,24 @@ function sureList(errorNode, rerender) {
 async function toggleSure(item, errorNode, rerender) {
   if (busy) return;  // a double tap must not undo twice
   busy = true;
+  const asked = take();
   try {
     const result = await api(`/api/matches/${encodeURIComponent(item.id)}`, { method: "POST", body: JSON.stringify({ answer: item.undone ? "redo" : "undo" }) });
     if (result.status === 401) return tokenProblem();
+    let text;
     if (result.status === 409 || result.status === 404) {
       // Swiped again, or its check is gone: it no longer counts either way, so it leaves the list.
-      sure = sure.filter((other) => other.id !== item.id);  // by id: a refresh since may have replaced the item
-      status.textContent = "That one is out of date, so it was removed.";
+      if (!commit(asked, () => { sure = sure.filter((other) => other.id !== item.id); })) return;  // by id: a refresh since may have replaced the item
+      text = "That one is out of date, so it was removed.";
     } else if (!result.ok) {
       errorNode.textContent = result.status === 400 ? result.body.error : "Couldn’t save, try again.";
       return;
     } else {
       const now = sure.find((other) => other.id === item.id) || item;
-      now.undone = !now.undone;
-      status.textContent = now.undone ? "Undone. Counts as before." : `Counts as ${now.reasons.join(" + ")} again.`;
+      if (!commit(asked, () => { now.undone = !now.undone; })) return;
+      text = now.undone ? "Undone. Counts as before." : `Counts as ${now.reasons.join(" + ")} again.`;
     }
+    status.textContent = text;
     rerender();
   } catch {
     errorNode.textContent = "Couldn’t save, try again.";
@@ -755,6 +758,7 @@ function allChecked() {
 }
 
 function backToCards() {
+  view += 1;
   later = true;  // what's left waits behind the badge
   render();
 }
