@@ -207,6 +207,20 @@ let sureOpen = false;   // the "matched on its own" list on the matching screen 
 let screen = "cards";   // cards, deck-end or matching
 let later = false;      // the grader put the matches off: they wait behind the badge, the deck end doesn't ask again
 let checking = null;    // on the matching screen: the items left, and what the answers did
+let view = 0;           // bumped on every move to another screen: a reply redraws only the screen it was asked from
+
+// A request's token: who asked, from which screen.
+function take() { return { grader, view }; }
+const showing = (token) => token.grader === grader && token.view === view;
+
+// Every server reply changes state here. A reply for another grader is dropped; any other updates the data,
+// and says whether its screen is still showing, the only case in which the caller may draw.
+function commit(token, change) {
+  if (token.grader !== grader) return false;
+  change();
+  updateBadge();
+  return token.view === view;
+}
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -486,6 +500,7 @@ function showToast(text, color) {
 
 async function send(card, swipe, errorNode) {
   busy = true;
+  const asked = take();
   try {
     const result = await api("/api/swipes", { method: "POST", body: JSON.stringify({ card_id: card.card_id, grader, ...swipe }) });
     if (result.status === 401) { tokenProblem(); return false; }
@@ -502,14 +517,15 @@ async function send(card, swipe, errorNode) {
       (errorNode || document.getElementById("card-error")).textContent = text;
       return false;
     }
-    status.textContent = `Saved as ${swipe.verdict}.`;
-    await flyOff(swipe.verdict);
-    showToast(LOOK[swipe.verdict].toast, LOOK[swipe.verdict].color);
-    cards.shift();
+    if (showing(asked)) {
+      status.textContent = `Saved as ${swipe.verdict}.`;
+      await flyOff(swipe.verdict);
+      showToast(LOOK[swipe.verdict].toast, LOOK[swipe.verdict].color);
+    }
     // Claude matches notes while the grader swipes, so the badge is refreshed after every swipe; the last one
     // waits for it, so the deck end knows whether anything is left to check.
-    if (cards.length) loadMatches(); else await loadMatches();
-    render();
+    if (cards.length > 1) loadMatches(); else await loadMatches();
+    if (commit(asked, () => cards.shift())) render();
     return true;
   } catch {
     restore();
@@ -561,6 +577,7 @@ function deckEnd() {
 
 function openMatching() {
   screen = "matching";
+  view += 1;
   checking = { left: [...matches], total: matches.length, counted: 0, kept: 0 };
   sureOpen = false;
   renameButton.hidden = true;
