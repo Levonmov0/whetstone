@@ -167,8 +167,8 @@ def test_yes_counts_the_suggested_reasons_still_covered_as_confirmed() -> None:
     writes = answer([source], [item], {"generic", "tone"}, "Hampus", item["id"], "yes", None, NOW)
 
     assert writes == (
-        {"event": "answered", "id": item["id"], "answer": "yes", "at": NOW},
-        {**source, "reasons": ["tone", "generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "at": NOW},
+        None,
+        {**source, "reasons": ["tone", "generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "answer": "yes", "at": NOW},
     )
 
 
@@ -180,8 +180,8 @@ def test_different_counts_only_the_picked_reason_and_no_counts_nothing() -> None
     no = answer([source], [item], {"generic", "tone"}, "Hampus", item["id"], "no", None, NOW)
 
     assert different == (
-        {"event": "answered", "id": item["id"], "answer": "different", "reason": "jargon", "at": NOW},
-        {**source, "reasons": ["tone", "jargon"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "at": NOW},
+        None,
+        {**source, "reasons": ["tone", "jargon"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "answer": "different", "reason": "jargon", "at": NOW},
     )
     assert no == ({"event": "answered", "id": item["id"], "answer": "no", "at": NOW}, None)
 
@@ -190,9 +190,9 @@ def test_different_counts_only_the_picked_reason_and_no_counts_nothing() -> None
 def test_a_second_answer_writes_nothing(second: str) -> None:
     source = label()
     item = asked(source, ["generic"])
-    first = {"event": "answered", "id": item["id"], "answer": "yes", "at": NOW}
+    first = {**source, "reasons": ["generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "answer": "yes", "at": NOW}
 
-    assert answer([source], [item, first], {"generic", "tone"}, "Hampus", item["id"], second, "tone" if second == "different" else None, NOW) is None
+    assert answer([source, first], [item], {"generic", "tone"}, "Hampus", item["id"], second, "tone" if second == "different" else None, NOW) is None
 
 
 def test_answer_refuses_a_missing_or_stale_item_and_a_dead_reason() -> None:
@@ -357,8 +357,8 @@ def test_a_check_brought_back_does_not_revive_a_match_made_again_since() -> None
 def test_a_counting_line_left_by_a_crash_is_the_answer() -> None:
     source = label()
     item = asked(source, ["generic"])
-    # The server wrote the Yes's line, then died before its `answered` event.
-    leftover = {**source, "reasons": ["generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "at": NOW}
+    # A Yes writes only its line: nothing else for a crash to lose.
+    leftover = {**source, "reasons": ["generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "answer": "yes", "at": NOW}
 
     assert pending([source, leftover], [item], {"generic"}, "Hampus") == []
     assert answer([source, leftover], [item], {"generic"}, "Hampus", item["id"], "no", None, NOW) is None

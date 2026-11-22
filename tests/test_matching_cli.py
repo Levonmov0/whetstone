@@ -232,7 +232,8 @@ def answered_in_app(prompt: Path, match: str, choice: str, grader: str = "Hampus
     event, line = writes
     if line is not None:
         add_label(prompt, line)
-    add_event(prompt, case_of(labels, events, event), event)
+    if event is not None:
+        add_event(prompt, case_of(labels, events, event), event)
 
 
 def test_a_yes_counts_under_confirmed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

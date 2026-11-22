@@ -67,8 +67,8 @@ def test_yes_makes_the_swipe_count(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     assert response.status_code == 200
     line = read_lines(prompt / "labels.jsonl")[-1]
-    assert (line["swipe"], line["reasons"], line["verdict"], line["counted"]) == (swipe_id(NOTE), ["banned"], "bad", "confirmed")
-    assert [(e["event"], e["id"], e.get("answer")) for e in read_lines(prompt / "matches.jsonl")][-1] == ("answered", match_of(NOTE), "yes")
+    assert (line["swipe"], line["reasons"], line["verdict"], line["counted"], line["answer"]) == (swipe_id(NOTE), ["banned"], "bad", "confirmed", "yes")
+    assert [e["event"] for e in read_lines(prompt / "matches.jsonl")] == ["proposed", "proposed"]
     assert client.get("/api/matches", headers=HAMPUS).json()["items"] == []
 
 
@@ -79,12 +79,9 @@ def test_no_writes_only_the_answer_and_different_counts_the_picked_reason(tmp_pa
     picked = client.post(f"/api/matches/{match_of(THEIRS)}", headers={**AUTH, "X-Grader": "Levon"}, json={"answer": "different", "reason": "length"})
 
     assert (said_no.status_code, picked.status_code) == (200, 200)
-    assert [(e["event"], e["id"], e.get("answer"), e.get("reason")) for e in read_lines(prompt / "matches.jsonl")][2:] == [
-        ("answered", match_of(NOTE), "no", None),
-        ("answered", match_of(THEIRS), "different", "length"),
-    ]
+    assert [(e["event"], e["id"], e.get("answer")) for e in read_lines(prompt / "matches.jsonl")][2:] == [("answered", match_of(NOTE), "no")]
     [*_, line] = read_lines(prompt / "labels.jsonl")
-    assert (line["swipe"], line["reasons"], line["counted"]) == (swipe_id(THEIRS), ["length"], "confirmed")
+    assert (line["swipe"], line["reasons"], line["counted"], line["answer"], line["reason"]) == (swipe_id(THEIRS), ["length"], "confirmed", "different", "length")
     assert len(read_lines(prompt / "labels.jsonl")) == 3
 
 
@@ -189,7 +186,7 @@ def test_a_real_data_answer_stays_in_its_private_source_folder(tmp_path: Path, m
 
     client.post(f"/api/matches/{match_of(noted)}", headers=HAMPUS, json={"answer": "yes"})
 
-    assert [e["event"] for e in read_lines(private / "matches.jsonl")] == ["proposed", "answered"]
+    assert [e["event"] for e in read_lines(private / "matches.jsonl")] == ["proposed"]
     assert len(read_lines(private / "labels.jsonl")) == 2
     assert not (prompt / "matches.jsonl").exists() and not (prompt / "labels.jsonl").exists()
 
