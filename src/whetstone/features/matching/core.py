@@ -101,7 +101,7 @@ def idea_lines(labels: list[dict[str, Any]], events: list[dict[str, Any]], cover
         if "matched_by" in line:
             continue
         item = items.get(swipe_id(line))
-        if item and item["answer"] and item["answer"]["answer"] == "no":
+        if item and (item["undone"] or item["answer"] and item["answer"]["answer"] == "no"):  # an undo says Claude was wrong, as a No does
             line = {**line, "reasons": [reason for reason in line["reasons"] if reason not in covered]}
         elif item:
             line = {**line, "note": ""}
