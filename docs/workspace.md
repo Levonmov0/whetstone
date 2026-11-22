@@ -20,6 +20,7 @@ The workspace is the one place Whetstone keeps a repo's settings, keys, theme an
       consent.toml      who consented to this source, and when
       <id>.json         real-data cases, ids private/<source>/<id>
       labels.jsonl      swipes on this source's cases
+      matches.jsonl     Claude's matches of notes on this source's cases
       .gitignore        "*": the folder ignores itself in git
     checks/<name>.py    code checks
     checks/<name>.judge.toml   judge rubrics, one rule each
@@ -28,6 +29,7 @@ The workspace is the one place Whetstone keeps a repo's settings, keys, theme an
     runs/run-<id>/      one optimizing run: report.md, candidate.txt, cost.json, cards.json, split.json, run.json
     calibration/        the realistic cases the user approved, and their answers about real input sizes (from /whetstone:cases)
     labels.jsonl        swipes on the invented cases
+    matches.jsonl       Claude's matches of notes on the invented cases to reasons, one event per line
 ```
 
 ## whetstone.toml
@@ -251,6 +253,17 @@ Each line of `labels.jsonl` is one swipe, self-contained so it outlives the deck
 ```
 
 `about` is there only when the case has a summary. `verdict` is `good`, `bad` or `skip`. A bad swipe with no reasons on a card a code check caught takes those checks' names as reasons. `whetstone settle` adds a line with `"settled": true`, carrying the reasons of the latest swipe it sides with.
+
+## Matching notes
+
+Graders often say what's wrong in a note instead of tapping a reason. Claude matches those notes to reasons a check stands for, so the swipe counts for that check's judge.
+
+- A swipe's id is `s_` and 12 hex characters of a hash of its grader, card id and `at`, so existing lines need no migration.
+- `whetstone notes <prompt>` prints one JSON line per grader's latest bad swipe that has a note and no match yet: `swipe`, `grader`, `card`, `note`, `reasons` and `excerpt`, the output's first 160 characters.
+- `whetstone map <prompt> <swipe-id> --reasons <r>… --sure --why "<text>"` records a match Claude is sure of, and prints `counted  <card> · <grader> · <reasons> (sure)`. It refuses, printing `refused  <swipe> · <why>` and exiting 1 with nothing written, a swipe that doesn't exist, isn't bad or isn't the grader's latest for that card, a reason no check stands for, and a swipe already matched.
+- A match appends a `proposed` event to `matches.jsonl`, `{"event": "proposed", "id": "m_…", "swipe": "s_…", "grader", "card_id", "kind": "sure", "reasons", "why", "at"}`, and a matched line to `labels.jsonl`: the swipe's line with the matched reasons added, `"matched_by": "claude"`, `"swipe"`, `"match"`, `"counted": "sure"` and its own `at`. The verdict never changes. For a real-data case both go in its source folder.
+- A matched line counts only while the swipe it came from is the grader's latest for that card.
+- `whetstone agreement` opens with a table, one row per judge: its counted bad swipes, how many the grader tapped and how many count because Claude was sure, both sides pooled over graders, and the gate. The per-grader lines and advice follow it.
 
 `whetstone disagreements <prompt>` lists cards where one grader's latest swipe is good and another's is bad, until `whetstone settle <prompt> <card> good|bad --grader <name> [--note <rule>]` records the call.
 

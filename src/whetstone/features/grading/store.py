@@ -1,5 +1,6 @@
 """Grading's files: the deck of cards to swipe, kept in the workspace's private `.whetstone/` folder."""
 
+import fcntl
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -43,6 +44,9 @@ def load_deck(workspace: Path, prompt: str) -> dict[str, Any] | None:
 
 def add_label(prompt_dir: Path, label: dict[str, Any]) -> None:
     with _labels_file(prompt_dir, label["case_id"]).open("a") as f:
+        # The server and `map` append from separate processes; a long line goes out in several writes, so each
+        # append holds the file until its line is whole.
+        fcntl.flock(f, fcntl.LOCK_EX)
         f.write(json.dumps(label) + "\n")
 
 
