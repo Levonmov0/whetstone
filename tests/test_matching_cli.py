@@ -331,3 +331,16 @@ def test_a_check_that_fails_to_load_stops_agreement_before_any_judge_call(tmp_pa
 
     assert code != 0
     assert judge.requests == []
+
+
+def test_a_match_written_after_a_reswipe_does_not_bring_back_the_old_call(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    old = swiped("c17")
+    # map read the labels just before Hampus swiped again, and wrote its line just after
+    late_match = {**old, "reasons": ["banned"], "matched_by": "claude", "swipe": swipe_id(old), "match": "m_1", "counted": "sure", "at": "2026-11-20T09:00:01+00:00"}
+    write_labels(prompt / "labels.jsonl", [old, swiped("c17", grader="Levon", note=""), swiped("c17", verdict="good", note="", at="2026-11-20T09:00:00+00:00"), late_match])
+    monkeypatch.chdir(tmp_path)
+
+    run(["disagreements", "daily"], make_model=unused_model)
+
+    assert capsys.readouterr().out.splitlines() == ["d:c17  Hampus: good  Levon: bad", "1 card to settle"]

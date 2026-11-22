@@ -1,6 +1,6 @@
 import pytest
 
-from whetstone.features.baseline.core import baseline_verdict
+from whetstone.features.baseline.core import baseline_verdict, swipe_tally
 
 
 def passes(*passing: str, cases: str = "abc") -> dict[str, bool]:
@@ -24,3 +24,11 @@ def passes(*passing: str, cases: str = "abc") -> dict[str, bool]:
 )
 def test_baseline_verdict(results: dict[str, dict[str, bool]], verdict: str) -> None:
     assert baseline_verdict(results) == verdict
+
+
+def test_swipe_tally_counts_a_graders_swipe_never_claudes_matched_line() -> None:
+    old = {"card_id": "d:a:prod", "grader": "Hampus", "verdict": "bad", "at": "2026-11-20T08:00:00+00:00"}
+    reswipe = {**old, "verdict": "good", "at": "2026-11-20T09:00:00+00:00"}
+    late_match = {**old, "matched_by": "claude", "swipe": "s_x", "at": "2026-11-20T09:00:01+00:00"}
+
+    assert swipe_tally([old, reswipe, late_match], "d", {"prod": "m"}) == {"m": {"good": 1, "bad": 0, "skip": 0}}
