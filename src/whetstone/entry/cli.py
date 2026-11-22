@@ -24,7 +24,7 @@ from whetstone.features.baseline.core import baseline_report, swipe_section
 from whetstone.features.baseline.store import card_models, latest_run, save_run
 from whetstone.features.cases.load import load_cases
 from whetstone.features.cases.sources import SourceError, add_source
-from whetstone.features.checks.core import MINIMUM, Agreement, CaseResult, Side, agreement, covered_reasons, judge_gate, optimize_gate, report, uncovered_reasons
+from whetstone.features.checks.core import MINIMUM, Agreement, CaseResult, Rubric, Side, agreement, covered_reasons, judge_gate, optimize_gate, report, uncovered_reasons
 from whetstone.features.checks.load import CheckLoadError, code_check_reasons
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
@@ -278,7 +278,7 @@ def vet_run(prompt: PromptSettings, meter: Meter, make_model: MakeModel, make_ju
         _via, rewrite_model = rewrite_settings(prompt.workspace)
     except (SplitError, PromptError, MissingKey) as e:
         raise Stop(str(e)) from None
-    gates = judge_gates(prompt, lambda workspace: meter.wrap("gate", make_judge(workspace))) or {}
+    gates = judge_gates(prompt, lambda workspace: meter.wrap("gate", make_judge(workspace)), judges_or_stop(prompt), load_labels(prompt.dir)) or {}
     allowed, advice = optimize_gate({name: (status, lines) for name, (_rows, status, lines) in gates.items()})
     if not allowed:
         raise Stop("\n".join(advice))
@@ -457,12 +457,14 @@ def show_link(url: str) -> None:
 
 def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
     # Before the judge calls: a check that doesn't load stops the table, and it should stop it before they're paid for.
-    covered = covered_reasons(code_checks_or_stop(prompt), judges_or_stop(prompt))
-    gates = judge_gates(prompt, make_judge)
+    # Read once: the table counts from what the gates judged, however long the judge calls take.
+    judges, labels = judges_or_stop(prompt), load_labels(prompt.dir)
+    covered = covered_reasons(code_checks_or_stop(prompt), judges)
+    gates = judge_gates(prompt, make_judge, judges, labels)
     if gates is None:
         print("no judges in checks/")
         return 0
-    print("\n".join(agreement_table(prompt, gates, covered)) + "\n")
+    print("\n".join(agreement_table(prompt, gates, judges, labels, covered)) + "\n")
     code = 0
     for name, (rows, status, advice) in gates.items():
         print(f"{name}: {status}")
@@ -473,10 +475,8 @@ def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
     return code
 
 
-def agreement_table(prompt: PromptSettings, gates: dict[str, tuple[dict[str, Agreement], str, list[str]]], covered: set[str]) -> list[str]:
+def agreement_table(prompt: PromptSettings, gates: dict[str, tuple[dict[str, Agreement], str, list[str]]], judges: dict[str, Rubric], labels: list[dict[str, Any]], covered: set[str]) -> list[str]:
     """One row per judge: its counted bad swipes split by who gave the reason, and both sides pooled over graders."""
-    judges = judges_or_stop(prompt)
-    labels = load_labels(prompt.dir)
     width = max(len(name) for name in ["judge", *gates]) + 3
     events = load_events(prompt.dir)
     lines = [f"{'judge':<{width}}bad swipes   tapped   claude sure   confirmed   undone   {'good / bad':<11}   gate"]
@@ -499,12 +499,10 @@ def _pooled(sides: list[Side]) -> str:
     return f"{round(100 * sum(s.agreed for s in sides) / total)}%" if total else "—"
 
 
-def judge_gates(prompt: PromptSettings, make_judge: MakeJudge) -> dict[str, tuple[dict[str, Agreement], str, list[str]]] | None:
+def judge_gates(prompt: PromptSettings, make_judge: MakeJudge, judges: dict[str, Rubric], labels: list[dict[str, Any]]) -> dict[str, tuple[dict[str, Agreement], str, list[str]]] | None:
     """Each judge's agreement with the swipes per grader, its gate and the advice; None without judges."""
-    judges = judges_or_stop(prompt)
     if not judges:
         return None
-    labels = load_labels(prompt.dir)
     providers = providers_or_stop(prompt)
     ask = prepare_judge(prompt, providers, any(label["case_id"].startswith("private/") for label in labels), make_judge)
     # Each swiped card is judged once, from the input and output its label kept, however many graders swiped it.
