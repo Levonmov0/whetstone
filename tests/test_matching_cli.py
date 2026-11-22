@@ -427,3 +427,23 @@ def test_a_sure_match_whose_proposal_a_crash_lost_never_counts(tmp_path: Path, m
 
     assert asked["id"] != orphan
     assert capsys.readouterr().out.splitlines()[3].startswith("assumes            4        4             0           0        0")
+
+
+def test_a_sure_match_matched_again_since_stops_counting_when_its_check_comes_back(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."}, 'reasons = ["assumes the outcome"]\n' + RUBRIC_TAIL)
+    assumes = prompt / "checks" / "assumes.judge.toml"
+    (prompt / "checks" / "jargon.judge.toml").write_text('reasons = ["biometric jargon"]\n' + RUBRIC_TAIL)
+    noted = swiped("n", note="Assumes I skipped, and says HRV", output="Did you skip it?")
+    write_labels(prompt / "labels.jsonl", [noted])
+    monkeypatch.chdir(tmp_path)
+    run(["map", "daily", swipe_id(noted), "--reasons", "assumes the outcome", "--sure", "--why", "Says it assumes"], make_model=unused_model)
+    rubric = assumes.read_text()
+    assumes.unlink()  # the judge deleted, so the sure match went stale
+    run(["map", "daily", swipe_id(noted), "--reasons", "biometric jargon", "--ask", "--why", "Says HRV"], make_model=unused_model)
+    assumes.write_text(rubric)  # and brought back
+    capsys.readouterr()
+
+    run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judging("yes"))
+
+    rows = {line.split()[0]: line for line in capsys.readouterr().out.splitlines()[2:4]}
+    assert rows["assumes"].startswith("assumes            0        0             0           0        0")
