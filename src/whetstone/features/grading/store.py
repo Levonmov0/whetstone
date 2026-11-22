@@ -1,10 +1,11 @@
 """Grading's files: the deck of cards to swipe, kept in the workspace's private `.whetstone/` folder."""
 
-import fcntl
 import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from whetstone.platform import jsonl
 
 
 def private_dir(workspace: Path) -> Path:
@@ -43,11 +44,7 @@ def load_deck(workspace: Path, prompt: str) -> dict[str, Any] | None:
 
 
 def add_label(prompt_dir: Path, label: dict[str, Any]) -> None:
-    with _labels_file(prompt_dir, label["case_id"]).open("a") as f:
-        # The server and `map` append from separate processes; a long line goes out in several writes, so each
-        # append holds the file until its line is whole.
-        fcntl.flock(f, fcntl.LOCK_EX)
-        f.write(json.dumps(label) + "\n")
+    jsonl.append(_labels_file(prompt_dir, label["case_id"]), label)
 
 
 def _labels_file(prompt_dir: Path, case_id: str) -> Path:
@@ -60,4 +57,4 @@ def _labels_file(prompt_dir: Path, case_id: str) -> Path:
 def load_labels(prompt_dir: Path) -> list[dict[str, Any]]:
     """Every label, the prompt's own and each real-data source's."""
     files = [prompt_dir / "labels.jsonl", *(prompt_dir / "cases" / "private").glob("*/labels.jsonl")]
-    return [json.loads(line) for f in files if f.is_file() for line in f.read_text().splitlines()]
+    return [label for f in files for label in jsonl.read(f)]
