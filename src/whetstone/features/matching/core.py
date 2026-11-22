@@ -93,13 +93,17 @@ WRITES = {"sure": ("sure", "undone"), "ask": ("confirmed",)}
 def current(labels: list[dict[str, Any]], events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """One line per grader and card: their latest swipe, or the newest matched line made from it. A matched line made
     from a swipe since replaced never counts, whichever order the two were written in, and nor does one no proposal
-    of its kind owns: a crash's leftover, or a line written after the events were read."""
+    of its kind owns (a crash's leftover, or a line written after the events were read), nor one of a match its swipe
+    was matched again since."""
     latest = latest_swipes(labels)
-    kinds = {event["id"]: event["kind"] for event in events if event["event"] == "proposed"}
+    proposals = [event for event in events if event["event"] == "proposed"]
+    kinds = {event["id"]: event["kind"] for event in proposals}
+    newest = {event["swipe"]: event["id"] for event in proposals}  # one live proposal per swipe: its newest
     lines = dict(latest)
     for label in _by_time(labels):
         key = label["grader"], label["card_id"]
-        owned = label.get("counted") in WRITES.get(kinds.get(label.get("match"), ""), ())
+        live = label.get("match") is not None and newest.get(label["swipe"]) == label["match"]
+        owned = live and label.get("counted") in WRITES.get(kinds[label["match"]], ())
         if "matched_by" in label and owned and key in latest and label["swipe"] == swipe_id(latest[key]):
             lines[key] = label
     return list(lines.values())
