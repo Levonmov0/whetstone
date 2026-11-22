@@ -337,3 +337,15 @@ def test_undone_count_counts_the_rules_sure_matches_undone_now() -> None:
     assert undone_count(labels, events, {"jargon"}, {"jargon"}) == 0
     assert undone_count([*labels, stale], [*events, *undone, redone], {"jargon"}, {"jargon"}) == 1
     assert undone_count(labels, [*events, *undone], {"jargon"}, {"tone"}) == 0
+
+
+def test_a_check_brought_back_does_not_revive_a_match_made_again_since() -> None:
+    labels, events = sure_match(label())
+    again = propose(labels, events, {"tone"}, swipe_id(label()), ["tone"], "Too formal", NOW, "ask")  # jargon's judge was deleted
+    assert not isinstance(again, str)
+    events = [*events, again[0]]
+
+    back = {"jargon", "tone"}  # and then restored
+
+    assert sure_items(labels, events, back, "Hampus") == []
+    assert [item["id"] for item in pending(labels, events, back, "Hampus")] == [again[0]["id"]]
