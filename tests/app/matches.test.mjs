@@ -95,3 +95,11 @@ test("A5: a match Claude makes after the last swipe opens the deck end by itself
   assert.ok(button(w, "Check them"));
   w.close();
 });
+
+test("the poll leaves an unchanged All graded alone: focus stays on Check for new cards", async () => {
+  const w = await boot((path) => path === "/api/cards" ? { status: 200, body: { cards: [], reasons: [] } } : matches([]));
+  button(w, "Check for new cards").focus();
+  await tick(2300);
+  assert.equal(w.document.activeElement?.textContent, "Check for new cards");
+  w.close();
+});
