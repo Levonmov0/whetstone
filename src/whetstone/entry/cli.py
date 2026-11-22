@@ -23,7 +23,7 @@ from whetstone.features.baseline.core import baseline_report, swipe_section
 from whetstone.features.baseline.store import card_models, latest_run, save_run
 from whetstone.features.cases.load import load_cases
 from whetstone.features.cases.sources import SourceError, add_source
-from whetstone.features.checks.core import Agreement, CaseResult, Side, agreement, covered_reasons, judge_gate, optimize_gate, report, uncovered_reasons
+from whetstone.features.checks.core import MINIMUM, Agreement, CaseResult, Side, agreement, covered_reasons, judge_gate, optimize_gate, report, uncovered_reasons
 from whetstone.features.checks.load import CheckLoadError, code_check_reasons
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
@@ -475,9 +475,11 @@ def agreement_table(prompt: PromptSettings, gates: dict[str, tuple[dict[str, Agr
     lines = [f"{'judge':<{width}}bad swipes   tapped   claude sure   {'good / bad':<11}   gate"]
     for name, (rows, status, _advice) in gates.items():
         tapped, sure = evidence(labels, covered_reasons({}, {name: judges[name]}))
-        good = _pooled([row.good for row in rows.values()])
-        bad = _pooled([row.bad for row in rows.values()])
-        lines.append(f"{name:<{width}}{tapped + sure:>10}   {tapped:>6}   {sure:>11}   {good + ' / ' + bad:<11}   {status}")
+        sides = f"{_pooled([row.good for row in rows.values()])} / {_pooled([row.bad for row in rows.values()])}"
+        if status == "unmeasured":
+            # The gate's own count: the most bad swipes any one grader gave for this rule.
+            sides, status = "—", f"unmeasured · {max(row.bad.total for row in rows.values())} of {MINIMUM} bad"
+        lines.append(f"{name:<{width}}{tapped + sure:>10}   {tapped:>6}   {sure:>11}   {sides:<11}   {status}")
     return lines
 
 
