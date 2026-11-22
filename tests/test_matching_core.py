@@ -170,3 +170,12 @@ def test_different_counts_only_the_picked_reason_and_no_counts_nothing() -> None
         {**source, "reasons": ["tone", "jargon"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "at": NOW},
     )
     assert no == ({"event": "answered", "id": item["id"], "answer": "no", "at": NOW}, None)
+
+
+@pytest.mark.parametrize("second", ["yes", "no", "different"])
+def test_a_second_answer_writes_nothing(second: str) -> None:
+    source = label()
+    item = asked(source, ["generic"])
+    first = {"event": "answered", "id": item["id"], "answer": "yes", "at": NOW}
+
+    assert answer([source], [item, first], {"generic", "tone"}, "Hampus", item["id"], second, "tone" if second == "different" else None, NOW) is None
