@@ -112,3 +112,29 @@ def test_one_note_counts_for_two_judges(tmp_path: Path, monkeypatch: pytest.Monk
         "assumes            1        0             1   — / 100%      untrusted",
         "jargon             1        0             1   — / 100%      untrusted",
     ]
+
+
+@pytest.mark.parametrize(
+    ("swipe", "reasons", "refusal"),
+    [
+        ("replaced", ["banned"], "Hampus swiped d:c2 again, matching the new note instead"),
+        ("noted", ["banned", "vague"], 'no check stands for "vague"'),
+        ("matched", ["banned"], "already matched"),
+        ("s_000000000000", ["banned"], "no swipe s_000000000000"),
+    ],
+)
+def test_map_refuses_and_writes_nothing(swipe: str, reasons: list[str], refusal: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    lines = {"noted": swiped("c1"), "replaced": swiped("c2"), "matched": swiped("c3")}
+    write_labels(prompt / "labels.jsonl", [*lines.values(), swiped("c2", note="It's too long", at="2026-11-20T09:00:00+00:00")])
+    monkeypatch.chdir(tmp_path)
+    run(["map", "daily", swipe_id(lines["matched"]), "--reasons", "banned", "--sure", "--why", "Quotes HRV"], make_model=unused_model)
+    capsys.readouterr()
+    before = ((prompt / "labels.jsonl").read_text(), (prompt / "matches.jsonl").read_text())
+    swipe = swipe_id(lines[swipe]) if swipe in lines else swipe
+
+    code = run(["map", "daily", swipe, "--reasons", *reasons, "--sure", "--why", "Quotes HRV"], make_model=unused_model)
+
+    assert code == 1
+    assert capsys.readouterr().out.splitlines() == [f"refused  {swipe} · {refusal}"]
+    assert ((prompt / "labels.jsonl").read_text(), (prompt / "matches.jsonl").read_text()) == before
