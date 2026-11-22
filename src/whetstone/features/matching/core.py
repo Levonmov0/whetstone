@@ -89,6 +89,21 @@ def propose(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered:
     return event, line
 
 
+def idea_lines(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str]) -> list[dict[str, Any]]:
+    """The swipes new-check ideas come from. A note a match counts, or one waiting on its grader, is no idea; a note
+    answered No stands on its own, whatever chips were tapped."""
+    items = {item["swipe"]: item for item in _items(labels, events, covered) if not item["stale"]}
+    lines: list[dict[str, Any]] = []
+    for line in labels:
+        item = items.get(swipe_id(line))
+        if item and item["answer"] and item["answer"]["answer"] == "no":
+            line = {**line, "reasons": [reason for reason in line["reasons"] if reason not in covered]}
+        elif item:
+            line = {**line, "note": ""}
+        lines.append(line)
+    return lines
+
+
 def kept_and_waiting(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str]) -> tuple[int, dict[str, int]]:
     """How many notes graders answered No to, kept as ideas for a new check, and how many asks wait on each grader."""
     items = [item for item in _items(labels, events, covered) if not item["stale"]]

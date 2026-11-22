@@ -27,7 +27,7 @@ from whetstone.features.checks.core import MINIMUM, Agreement, CaseResult, Side,
 from whetstone.features.checks.load import CheckLoadError, code_check_reasons
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
-from whetstone.features.matching.core import current, evidence, excerpt, kept_and_waiting, propose, swipe_id, unmatched_notes
+from whetstone.features.matching.core import current, evidence, excerpt, idea_lines, kept_and_waiting, propose, swipe_id, unmatched_notes
 from whetstone.features.matching.store import add_event, load_events
 from whetstone.features.optimize.core import SplitError, split_cases
 from whetstone.features.workspace.core import request_differences
@@ -529,7 +529,7 @@ def _side(side: Side) -> str:
 
 def list_reasons(prompt: PromptSettings) -> int:
     covered = covered_reasons(code_checks_or_stop(prompt), judges_or_stop(prompt))
-    uncovered = uncovered_reasons(load_labels(prompt.dir), covered)
+    uncovered = uncovered_reasons(idea_lines(load_labels(prompt.dir), load_events(prompt.dir), covered), covered)
     print("\n".join(f"{count}  {reason}" for reason, count in uncovered) if uncovered else "every reason has a check")
     return 0
 
