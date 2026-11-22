@@ -268,3 +268,17 @@ def test_a_repeat_undo_or_redo_writes_nothing() -> None:
 
     assert undo(labels, events, {"jargon"}, "Hampus", match, "redo", LATER) is None
     assert undo([*labels, undone[1]], [*events, undone[0]], {"jargon"}, "Hampus", match, "undo", LATER) is None
+
+
+def test_undo_refuses_another_graders_match_an_ask_and_a_stale_match() -> None:
+    labels, events = sure_match(label())
+    match = events[0]["id"]
+    ask = label(card="d:c18")
+    events = [*events, asked(ask, ["jargon"])]
+    labels = [*labels, ask]
+    reswiped = [*labels, label(at=LATER, verdict="good", note="")]
+
+    assert undo(labels, events, {"jargon"}, "Levon", match, "undo", LATER) == Refusal("missing", f"no match {match}")
+    assert undo(labels, events, {"jargon"}, "Hampus", events[1]["id"], "undo", LATER) == Refusal("missing", f"no match {events[1]['id']}")
+    assert undo(labels, events, {"jargon"}, "Hampus", "m_000000000000", "undo", LATER) == Refusal("missing", "no match m_000000000000")
+    assert undo(reswiped, events, {"jargon"}, "Hampus", match, "undo", LATER) == Refusal("stale", "out of date: the card was swiped again, or no check stands for its reasons")
