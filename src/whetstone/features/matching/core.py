@@ -123,14 +123,20 @@ def pending(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered:
     ]
 
 
-def answer(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str, match: str, choice: str, reason: str | None, at: str) -> tuple[dict[str, Any], dict[str, Any] | None] | None:
-    """The grader's answer to an ask match: nothing to write when it was already answered (the first answer wins, so a
+def answer(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str, match: str, choice: str, reason: str | None, at: str) -> Refusal | tuple[dict[str, Any], dict[str, Any] | None] | None:
+    """The grader's answer to their own ask match: the refusal, nothing to write when it was already answered (the first answer wins, so a
     double tap or a second phone counts once), else the `answered` event and the matched label line that makes the swipe count,
     confirmed by the grader. Yes counts the suggested reasons some check still stands for, a different chip only the
     one picked; No leaves the swipe as it was."""
-    item = next(item for item in _items(labels, events, covered) if item["id"] == match)
+    item = next((item for item in _items(labels, events, covered) if item["id"] == match and item["kind"] == "ask" and item["grader"] == grader), None)
+    if item is None:
+        return Refusal("missing", f"no match {match}")  # another grader's match looks the same as no match at all
+    if item["stale"]:
+        return Refusal("stale", "out of date: the card was swiped again, or no check stands for its reasons")
     if item["answer"]:
         return None
+    if reason is not None and reason not in covered:
+        return Refusal("invalid", f'no check stands for "{reason}"')
     event = {"event": "answered", "id": match, "answer": choice, **({"reason": reason} if choice == "different" else {}), "at": at}
     if choice == "no":
         return event, None
