@@ -200,6 +200,8 @@ def answer_problem(body: object) -> str | None:
         return "answer must be yes, no, different, undo or redo"
     if sent["answer"] == "different" and not isinstance(sent.get("reason"), str):
         return "a different chip needs the reason picked"
+    if sent["answer"] != "different" and "reason" in sent:
+        return "only a different chip takes a reason"
     return None
 
 
