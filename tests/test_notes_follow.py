@@ -77,3 +77,15 @@ def test_follow_prints_a_note_again_once_the_judge_it_waited_on_is_deleted(tmp_p
     finally:
         following.process.kill()
         following.process.wait()
+
+
+def test_a_check_that_fails_to_load_mid_edit_does_not_end_the_follow(follow: tuple[Path, Follow]) -> None:
+    prompt, following = follow
+    following.next_swipe(timeout=10)
+    (prompt / "checks" / "half_written.py").write_text("REASONS = [\n")
+    assert following.nothing_more()
+    later = swiped("c2", note="Too clinical", at="2026-11-20T09:00:00+00:00")
+
+    add_label(prompt, later)
+
+    assert following.next_swipe() == swipe_id(later)
