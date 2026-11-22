@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from whetstone.features.matching.core import Refusal, answer, answer_problem, current, evidence, pending, propose, sure_items, swipe_id, undo, unmatched_notes
+from whetstone.features.matching.core import Refusal, answer, answer_problem, current, evidence, idea_lines, pending, propose, sure_items, swipe_id, undo, unmatched_notes
 
 
 def label(grader: str = "Hampus", card: str = "d:c17", at: str = "2026-11-20T08:00:00+00:00", verdict: str = "bad", note: str = "Says HRV", reasons: list[str] | None = None, **extra: Any) -> dict[str, Any]:
@@ -302,3 +302,15 @@ def test_sure_items_list_the_graders_live_sure_matches_and_whether_undone() -> N
     assert sure_items(labels, undone, {"jargon"}, "Hampus") == [{**listed, "undone": True}]
     redone = [*undone, {"event": "redone", "id": events[0]["id"], "at": LATER}]
     assert sure_items(labels, redone, {"jargon"}, "Hampus") == [listed]
+
+
+def test_an_undone_note_is_an_idea_until_redone() -> None:
+    source = label(reasons=["generic"], note="Says HRV")
+    labels, events = sure_match(source)
+    match = events[0]["id"]
+    undone = [*events, {"event": "undone", "id": match, "at": LATER}]
+    covered = {"jargon", "generic"}
+
+    assert idea_lines(labels, events, covered) == [{**source, "note": ""}]
+    assert idea_lines(labels, undone, covered) == [{**source, "reasons": []}]
+    assert idea_lines(labels, [*undone, {"event": "redone", "id": match, "at": LATER}], covered) == [{**source, "note": ""}]
