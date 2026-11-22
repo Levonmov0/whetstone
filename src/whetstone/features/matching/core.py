@@ -118,5 +118,11 @@ def pending(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered:
     ]
 
 
-def answer(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str, match: str, choice: str, reason: str | None, at: str) -> Any:
-    raise NotImplementedError
+def answer(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str, match: str, choice: str, reason: str | None, at: str) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """The grader's answer to an ask match: the `answered` event and the matched label line that makes the swipe count,
+    confirmed by the grader. Yes counts the suggested reasons some check still stands for."""
+    item = next(item for item in _items(labels, events, covered) if item["id"] == match)
+    source = item["source"]
+    counted = [r for r in item["reasons"] if r in covered]
+    line = {**source, "reasons": list(dict.fromkeys(source["reasons"] + counted)), "matched_by": "claude", "swipe": item["swipe"], "match": match, "counted": "confirmed", "at": at}
+    return {"event": "answered", "id": match, "answer": choice, "at": at}, line
