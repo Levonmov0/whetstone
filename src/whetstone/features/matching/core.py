@@ -86,4 +86,15 @@ def excerpt(output: Any) -> str:
 
 
 def pending(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str) -> list[dict[str, Any]]:
-    raise NotImplementedError
+    """The grader's ask matches still waiting for an answer, as the app shows them: only the suggested reasons some
+    check still stands for."""
+    answered = {event["id"] for event in events if event["event"] == "answered"}
+    swipes = {swipe_id(label): label for label in labels if "matched_by" not in label}
+    items: list[dict[str, Any]] = []
+    for event in events:
+        if event["event"] != "proposed" or event["kind"] != "ask" or event["grader"] != grader or event["id"] in answered:
+            continue
+        source = swipes[event["swipe"]]
+        reasons = [reason for reason in event["reasons"] if reason in covered]
+        items.append({"id": event["id"], "card_id": event["card_id"], "note": source["note"], "excerpt": excerpt(source["output"]), "reasons": reasons, "why": event["why"]})
+    return items
