@@ -49,3 +49,16 @@ test("a 401 from the Different chip sheet closes it over the token message", asy
   assert.equal(w.document.querySelector(".sheet-backdrop"), null);
   w.close();
 });
+
+test("a 401 from the Why is it bad? sheet closes it over the token message", async () => {
+  const w = await boot((path, _grader, options) => path === "/api/cards" ? { status: 200, body: { cards: [card("1")], reasons: ["tone"] } }
+    : options?.method === "POST" ? { status: 401, body: {} } : matches([]));
+  button(w, "✕ Bad").click();
+  await tick();
+  w.document.getElementById("note").value = "Says HRV";
+  button(w, "Save as bad").click();
+  await tick(60);
+  assert.equal(w.document.querySelector("main h1").textContent, "Scan the QR code again");
+  assert.equal(w.document.querySelector(".sheet-backdrop"), null);
+  w.close();
+});
