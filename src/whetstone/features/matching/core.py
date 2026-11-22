@@ -38,9 +38,12 @@ def _items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
     swipes = {swipe_id(label): label for label in labels if "matched_by" not in label}
     latest = latest_swipes(labels)
     answers: dict[str, dict[str, Any]] = {}
+    undone: dict[str, bool] = {}
     for event in events:
         if event["event"] == "answered":
             answers.setdefault(event["id"], event)  # the first answer wins
+        elif event["event"] in ("undone", "redone"):
+            undone[event["id"]] = event["event"] == "undone"  # the latest undo or redo wins
     items: list[dict[str, Any]] = []
     for event in events:
         if event["event"] != "proposed":
@@ -49,7 +52,7 @@ def _items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
         answer = answers.get(event["id"])
         replaced = latest[source["grader"], source["card_id"]] is not source
         dead = not (answer and answer["answer"] == "no") and not covered & set(event["reasons"])
-        items.append({**event, "source": source, "answer": answer, "stale": replaced or dead})
+        items.append({**event, "source": source, "answer": answer, "undone": undone.get(event["id"], False), "stale": replaced or dead})
     return items
 
 
@@ -98,7 +101,7 @@ def idea_lines(labels: list[dict[str, Any]], events: list[dict[str, Any]], cover
         if "matched_by" in line:
             continue
         item = items.get(swipe_id(line))
-        if item and item["answer"] and item["answer"]["answer"] == "no":
+        if item and (item["undone"] or item["answer"] and item["answer"]["answer"] == "no"):  # an undo says Claude was wrong, as a No does
             line = {**line, "reasons": [reason for reason in line["reasons"] if reason not in covered]}
         elif item:
             line = {**line, "note": ""}
@@ -153,6 +156,9 @@ def pending(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered:
     ]
 
 
+STALE = Refusal("stale", "out of date: the card was swiped again, or no check stands for its reasons")
+
+
 def answer(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str, match: str, choice: str, reason: str | None, at: str) -> Refusal | tuple[dict[str, Any], dict[str, Any] | None] | None:
     """The grader's answer to their own ask match: the refusal, nothing to write when it was already answered (the first answer wins, so a
     double tap or a second phone counts once), else the `answered` event and the matched label line that makes the swipe count,
@@ -162,7 +168,7 @@ def answer(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
     if item is None:
         return Refusal("missing", f"no match {match}")  # another grader's match looks the same as no match at all
     if item["stale"]:
-        return Refusal("stale", "out of date: the card was swiped again, or no check stands for its reasons")
+        return STALE
     if item["answer"]:
         return None
     if reason is not None and reason not in covered:
@@ -181,8 +187,41 @@ def answer_problem(body: object) -> str | None:
     if not isinstance(body, dict):
         return "body must be a JSON object"
     sent = cast(dict[str, Any], body)
-    if sent.get("answer") not in ("yes", "no", "different"):
-        return "answer must be yes, no or different"
+    if sent.get("answer") not in ("yes", "no", "different", "undo", "redo"):
+        return "answer must be yes, no, different, undo or redo"
     if sent["answer"] == "different" and not isinstance(sent.get("reason"), str):
         return "a different chip needs the reason picked"
     return None
+
+
+def undo(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str, match: str, choice: str, at: str) -> Refusal | tuple[dict[str, Any], dict[str, Any]] | None:
+    """The grader's undo or redo of Claude's sure match of their note. Undo makes the swipe count as it did before the
+    match, redo as matched again."""
+    item = next((item for item in _items(labels, events, covered) if item["id"] == match and item["kind"] == "sure" and item["grader"] == grader), None)
+    if item is None:
+        return Refusal("missing", f"no match {match}")  # another grader's, or an ask: only one's own sure matches undo
+    if item["stale"]:
+        return STALE
+    if item["undone"] == (choice == "undo"):
+        return None  # already so: a double tap or a second phone writes once
+    source = item["source"]
+    if choice == "redo":
+        reasons, counted, event = list(dict.fromkeys(source["reasons"] + item["reasons"])), "sure", "redone"
+    else:
+        reasons, counted, event = source["reasons"], "undone", "undone"
+    line = {**source, "reasons": reasons, "matched_by": "claude", "swipe": item["swipe"], "match": match, "counted": counted, "at": at}
+    return {"event": event, "id": match, "at": at}, line
+
+
+def sure_items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str) -> list[dict[str, Any]]:
+    """The grader's sure matches that still stand, as the app lists them with Undo or Redo."""
+    return [
+        {"id": item["id"], "card_id": item["card_id"], "note": item["source"]["note"], "reasons": [r for r in item["reasons"] if r in covered], "undone": item["undone"]}
+        for item in _items(labels, events, covered)
+        if item["kind"] == "sure" and item["grader"] == grader and not item["stale"]
+    ]
+
+
+def undone_count(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], rule: set[str]) -> int:
+    """How many of Claude's sure matches to a rule graders have undone, as things stand: a redo takes one back off."""
+    return sum(1 for item in _items(labels, events, covered) if item["kind"] == "sure" and item["undone"] and not item["stale"] and rule & set(item["reasons"]))

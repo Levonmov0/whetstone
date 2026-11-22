@@ -27,7 +27,7 @@ from whetstone.features.checks.core import MINIMUM, Agreement, CaseResult, Side,
 from whetstone.features.checks.load import CheckLoadError, code_check_reasons
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
-from whetstone.features.matching.core import current, evidence, excerpt, idea_lines, kept_and_waiting, propose, swipe_id, unmatched_notes
+from whetstone.features.matching.core import current, evidence, excerpt, idea_lines, kept_and_waiting, propose, swipe_id, undone_count, unmatched_notes
 from whetstone.features.matching.store import add_event, load_events
 from whetstone.features.optimize.core import SplitError, split_cases
 from whetstone.features.workspace.core import request_differences
@@ -474,15 +474,17 @@ def agreement_table(prompt: PromptSettings, gates: dict[str, tuple[dict[str, Agr
     judges = judges_or_stop(prompt)
     labels = load_labels(prompt.dir)
     width = max(len(name) for name in ["judge", *gates]) + 3
-    lines = [f"{'judge':<{width}}bad swipes   tapped   claude sure   confirmed   {'good / bad':<11}   gate"]
+    events, covered = load_events(prompt.dir), covered_reasons(code_checks_or_stop(prompt), judges)
+    lines = [f"{'judge':<{width}}bad swipes   tapped   claude sure   confirmed   undone   {'good / bad':<11}   gate"]
     for name, (rows, status, _advice) in gates.items():
-        tapped, sure, confirmed = evidence(labels, covered_reasons({}, {name: judges[name]}))
+        rule = covered_reasons({}, {name: judges[name]})
+        tapped, sure, confirmed = evidence(labels, rule)
         sides = f"{_pooled([row.good for row in rows.values()])} / {_pooled([row.bad for row in rows.values()])}"
         if status == "unmeasured":
             # The gate's own count: the most bad swipes any one grader gave for this rule.
             sides, status = "—", f"unmeasured · {max(row.bad.total for row in rows.values())} of {MINIMUM} bad"
-        lines.append(f"{name:<{width}}{tapped + sure + confirmed:>10}   {tapped:>6}   {sure:>11}   {confirmed:>9}   {sides:<11}   {status}")
-    kept, waiting = kept_and_waiting(labels, load_events(prompt.dir), covered_reasons(code_checks_or_stop(prompt), judges))
+        lines.append(f"{name:<{width}}{tapped + sure + confirmed:>10}   {tapped:>6}   {sure:>11}   {confirmed:>9}   {undone_count(labels, events, covered, rule):>6}   {sides:<11}   {status}")
+    kept, waiting = kept_and_waiting(labels, events, covered)
     said = [f"{_count(kept, 'note')} kept as {'an idea' if kept == 1 else 'ideas'} for a new check"] if kept else []
     said += [f"{count} waiting on {grader}" for grader, count in waiting.items()]
     return lines + [" · ".join(said)] if said else lines

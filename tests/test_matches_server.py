@@ -54,6 +54,7 @@ def test_a_grader_gets_only_their_own_waiting_matches(tmp_path: Path, monkeypatc
     assert response.json() == {
         "items": [{"id": match_of(NOTE), "card_id": "d:c17", "note": "Feels like a horoscope", "excerpt": "Today is a chance to reset.", "reasons": ["banned"], "why": "Might be the banned words"}],
         "reasons": ["assumes", "assumes whether they did Kin's advice", "banned", "length"],
+        "sure": [],
     }
     assert [item["id"] for item in client.get("/api/matches", headers={**AUTH, "X-Grader": "Levon"}).json()["items"]] == [match_of(THEIRS)]
 
@@ -133,7 +134,7 @@ def test_an_answer_is_refused(change: str, match: str, body: dict[str, Any], sta
     [
         ("not json", "body must be a JSON object"),
         ("[1]", "body must be a JSON object"),
-        ('{"answer": "maybe"}', "answer must be yes, no or different"),
+        ('{"answer": "maybe"}', "answer must be yes, no, different, undo or redo"),
         ('{"answer": "different"}', "a different chip needs the reason picked"),
         ('{"reason": "' + "x" * 70_000 + '"}', "body is over 64 KB"),
     ],
@@ -187,4 +188,98 @@ def test_a_real_data_answer_stays_in_its_private_source_folder(tmp_path: Path, m
 
     assert [e["event"] for e in read_lines(private / "matches.jsonl")] == ["proposed", "answered"]
     assert len(read_lines(private / "labels.jsonl")) == 2
+    assert not (prompt / "matches.jsonl").exists() and not (prompt / "labels.jsonl").exists()
+
+
+SURE = swiped("c19", note="Says HRV, a banned word")
+THEIR_SURE = swiped("c20", grader="Levon", note="Says REM")
+LEVON = {**AUTH, "X-Grader": "Levon"}
+
+
+def sure_suite(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, TestClient]:
+    """Hampus and Levon each have a note Claude was sure means the banned-words check, besides the asked ones."""
+    prompt, client = asked_suite(tmp_path, monkeypatch)
+    with (prompt / "labels.jsonl").open("a") as f:
+        f.write(json.dumps(SURE) + "\n" + json.dumps(THEIR_SURE) + "\n")
+    for label in (SURE, THEIR_SURE):
+        run(["map", "daily", swipe_id(label), "--reasons", "banned", "--sure", "--why", "Names a banned word"], make_model=unused_model)
+    return prompt, client
+
+
+def test_a_grader_gets_only_their_own_sure_matches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _prompt, client = sure_suite(tmp_path, monkeypatch)
+
+    assert client.get("/api/matches", headers=HAMPUS).json()["sure"] == [{"id": match_of(SURE), "card_id": "d:c19", "note": "Says HRV, a banned word", "reasons": ["banned"], "undone": False}]
+    assert [item["id"] for item in client.get("/api/matches", headers=LEVON).json()["sure"]] == [match_of(THEIR_SURE)]
+
+
+def test_undo_and_redo_a_sure_match(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt, client = sure_suite(tmp_path, monkeypatch)
+    lines = len(read_lines(prompt / "labels.jsonl"))
+
+    undone = client.post(f"/api/matches/{match_of(SURE)}", headers=HAMPUS, json={"answer": "undo"})
+
+    assert undone.status_code == 200
+    line = read_lines(prompt / "labels.jsonl")[-1]
+    assert (line["swipe"], line["reasons"], line["verdict"], line["counted"]) == (swipe_id(SURE), [], "bad", "undone")
+    assert [(e["event"], e["id"]) for e in read_lines(prompt / "matches.jsonl")][-1] == ("undone", match_of(SURE))
+    assert client.get("/api/matches", headers=HAMPUS).json()["sure"][0]["undone"] is True
+
+    redone = client.post(f"/api/matches/{match_of(SURE)}", headers=HAMPUS, json={"answer": "redo"})
+
+    assert redone.status_code == 200
+    line = read_lines(prompt / "labels.jsonl")[-1]
+    assert (line["reasons"], line["counted"]) == (["banned"], "sure")
+    assert [(e["event"], e["id"]) for e in read_lines(prompt / "matches.jsonl")][-1] == ("redone", match_of(SURE))
+    assert len(read_lines(prompt / "labels.jsonl")) == lines + 2
+    assert client.get("/api/matches", headers=HAMPUS).json()["sure"][0]["undone"] is False
+
+
+def test_a_second_undo_writes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt, client = sure_suite(tmp_path, monkeypatch)
+    client.post(f"/api/matches/{match_of(SURE)}", headers=HAMPUS, json={"answer": "undo"})
+    before = ((prompt / "labels.jsonl").read_text(), (prompt / "matches.jsonl").read_text())
+
+    again = client.post(f"/api/matches/{match_of(SURE)}", headers=HAMPUS, json={"answer": "undo"})
+
+    assert again.status_code == 200
+    assert ((prompt / "labels.jsonl").read_text(), (prompt / "matches.jsonl").read_text()) == before
+
+
+@pytest.mark.parametrize(
+    ("change", "match", "body", "status", "error"),
+    [
+        ("", THEIR_SURE, {"answer": "undo"}, 404, "no match {}"),
+        ("reswipe", SURE, {"answer": "undo"}, 409, STALE),
+        ("", SURE, {"answer": "yes"}, 404, "no match {}"),
+        ("", NOTE, {"answer": "undo"}, 404, "no match {}"),
+    ],
+)
+def test_an_undo_is_refused(change: str, match: dict[str, Any], body: dict[str, Any], status: int, error: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt, client = sure_suite(tmp_path, monkeypatch)
+    if change == "reswipe":
+        with (prompt / "labels.jsonl").open("a") as f:
+            f.write(json.dumps(swiped("c19", verdict="good", note="", at="2026-11-20T09:00:00+00:00")) + "\n")
+    before = ((prompt / "labels.jsonl").read_text(), (prompt / "matches.jsonl").read_text())
+
+    response = client.post(f"/api/matches/{match_of(match)}", headers=HAMPUS, json=body)
+
+    assert response.status_code == status
+    assert response.json() == {"error": error.format(match_of(match))}
+    assert ((prompt / "labels.jsonl").read_text(), (prompt / "matches.jsonl").read_text()) == before
+
+
+def test_a_real_data_undo_stays_in_its_private_source_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    private = prompt / "cases" / "private" / "diary"
+    noted = swiped("private/diary/day1")
+    write_labels(private / "labels.jsonl", [noted])
+    monkeypatch.chdir(tmp_path)
+    run(["map", "daily", swipe_id(noted), "--reasons", "banned", "--sure", "--why", "Names it"], make_model=unused_model)
+    client = TestClient(make_app(load_prompt(tmp_path, "daily"), TOKEN))
+
+    client.post(f"/api/matches/{match_of(noted)}", headers=HAMPUS, json={"answer": "undo"})
+
+    assert [e["event"] for e in read_lines(private / "matches.jsonl")] == ["proposed", "undone"]
+    assert [line.get("counted") for line in read_lines(private / "labels.jsonl")] == [None, "sure", "undone"]
     assert not (prompt / "matches.jsonl").exists() and not (prompt / "labels.jsonl").exists()

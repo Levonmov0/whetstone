@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from whetstone.features.matching.core import Refusal, answer, answer_problem, current, evidence, pending, propose, swipe_id, unmatched_notes
+from whetstone.features.matching.core import Refusal, answer, answer_problem, current, evidence, idea_lines, pending, propose, sure_items, swipe_id, undo, undone_count, unmatched_notes
 
 
 def label(grader: str = "Hampus", card: str = "d:c17", at: str = "2026-11-20T08:00:00+00:00", verdict: str = "bad", note: str = "Says HRV", reasons: list[str] | None = None, **extra: Any) -> dict[str, Any]:
@@ -208,7 +208,7 @@ def test_answer_refuses_a_missing_or_stale_item_and_a_dead_reason() -> None:
     ("body", "problem"),
     [
         ([1], "body must be a JSON object"),
-        ({"answer": "maybe"}, "answer must be yes, no or different"),
+        ({"answer": "maybe"}, "answer must be yes, no, different, undo or redo"),
         ({"answer": "different"}, "a different chip needs the reason picked"),
         ({"answer": "different", "reason": 3}, "a different chip needs the reason picked"),
         ({"answer": "yes"}, None),
@@ -217,3 +217,115 @@ def test_answer_refuses_a_missing_or_stale_item_and_a_dead_reason() -> None:
 )
 def test_answer_problem(body: object, problem: str | None) -> None:
     assert answer_problem(body) == problem
+
+
+LATER = "2026-11-21T11:00:00+00:00"
+
+
+def sure_match(source: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Claude was sure the source's note means jargon: the labels with its matched line, and the events."""
+    proposal = propose([source], [], {"jargon"}, swipe_id(source), ["jargon"], "Quotes HRV", NOW)
+    assert not isinstance(proposal, str)
+    event, line = proposal
+    assert line is not None
+    return [source, line], [event]
+
+
+def test_undo_writes_the_swipes_own_reasons_back() -> None:
+    source = label(reasons=["generic"])
+    labels, events = sure_match(source)
+    match = events[0]["id"]
+
+    writes = undo(labels, events, {"jargon"}, "Hampus", match, "undo", LATER)
+
+    assert writes == (
+        {"event": "undone", "id": match, "at": LATER},
+        {**source, "reasons": ["generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": match, "counted": "undone", "at": LATER},
+    )
+    assert writes is not None and not isinstance(writes, Refusal)
+    assert current([*labels, writes[1]]) == [writes[1]]
+
+
+def test_redo_writes_the_matched_reasons_again() -> None:
+    source = label(reasons=["generic"])
+    labels, events = sure_match(source)
+    match = events[0]["id"]
+    undone = undo(labels, events, {"jargon"}, "Hampus", match, "undo", LATER)
+    assert undone is not None and not isinstance(undone, Refusal)
+
+    writes = undo([*labels, undone[1]], [*events, undone[0]], {"jargon"}, "Hampus", match, "redo", "2026-11-21T12:00:00+00:00")
+
+    assert writes == (
+        {"event": "redone", "id": match, "at": "2026-11-21T12:00:00+00:00"},
+        {**source, "reasons": ["generic", "jargon"], "matched_by": "claude", "swipe": swipe_id(source), "match": match, "counted": "sure", "at": "2026-11-21T12:00:00+00:00"},
+    )
+
+
+def test_a_repeat_undo_or_redo_writes_nothing() -> None:
+    labels, events = sure_match(label())
+    match = events[0]["id"]
+    undone = undo(labels, events, {"jargon"}, "Hampus", match, "undo", LATER)
+    assert undone is not None and not isinstance(undone, Refusal)
+
+    assert undo(labels, events, {"jargon"}, "Hampus", match, "redo", LATER) is None
+    assert undo([*labels, undone[1]], [*events, undone[0]], {"jargon"}, "Hampus", match, "undo", LATER) is None
+
+
+def test_undo_refuses_another_graders_match_an_ask_and_a_stale_match() -> None:
+    labels, events = sure_match(label())
+    match = events[0]["id"]
+    ask = label(card="d:c18")
+    events = [*events, asked(ask, ["jargon"])]
+    labels = [*labels, ask]
+    reswiped = [*labels, label(at=LATER, verdict="good", note="")]
+
+    assert undo(labels, events, {"jargon"}, "Levon", match, "undo", LATER) == Refusal("missing", f"no match {match}")
+    assert undo(labels, events, {"jargon"}, "Hampus", events[1]["id"], "undo", LATER) == Refusal("missing", f"no match {events[1]['id']}")
+    assert undo(labels, events, {"jargon"}, "Hampus", "m_000000000000", "undo", LATER) == Refusal("missing", "no match m_000000000000")
+    assert undo(reswiped, events, {"jargon"}, "Hampus", match, "undo", LATER) == Refusal("stale", "out of date: the card was swiped again, or no check stands for its reasons")
+
+
+def test_sure_items_list_the_graders_live_sure_matches_and_whether_undone() -> None:
+    mine = label(card="d:c1", note="Says HRV")
+    labels, events = sure_match(mine)
+    replaced = label(card="d:c2")
+    theirs = label(card="d:c3", grader="Levon")
+    ask = label(card="d:c4")
+    for other in (replaced, theirs):
+        more_labels, more_events = sure_match(other)
+        labels, events = [*labels, *more_labels], [*events, *more_events]
+    labels = [*labels, ask, label(card="d:c2", at=LATER, verdict="good", note="")]
+    events = [*events, asked(ask, ["jargon"])]
+    listed = {"id": events[0]["id"], "card_id": "d:c1", "note": "Says HRV", "reasons": ["jargon"], "undone": False}
+
+    assert sure_items(labels, events, {"jargon"}, "Hampus") == [listed]
+    undone = [*events, {"event": "undone", "id": events[0]["id"], "at": LATER}]
+    assert sure_items(labels, undone, {"jargon"}, "Hampus") == [{**listed, "undone": True}]
+    redone = [*undone, {"event": "redone", "id": events[0]["id"], "at": LATER}]
+    assert sure_items(labels, redone, {"jargon"}, "Hampus") == [listed]
+
+
+def test_an_undone_note_is_an_idea_until_redone() -> None:
+    source = label(reasons=["generic"], note="Says HRV")
+    labels, events = sure_match(source)
+    match = events[0]["id"]
+    undone = [*events, {"event": "undone", "id": match, "at": LATER}]
+    covered = {"jargon", "generic"}
+
+    assert idea_lines(labels, events, covered) == [{**source, "note": ""}]
+    assert idea_lines(labels, undone, covered) == [{**source, "reasons": []}]
+    assert idea_lines(labels, [*undone, {"event": "redone", "id": match, "at": LATER}], covered) == [{**source, "note": ""}]
+
+
+def test_undone_count_counts_the_rules_sure_matches_undone_now() -> None:
+    labels, events = sure_match(label(card="d:c1"))
+    for card in ("d:c2", "d:c3"):
+        more_labels, more_events = sure_match(label(card=card))
+        labels, events = [*labels, *more_labels], [*events, *more_events]
+    undone = [{"event": "undone", "id": event["id"], "at": LATER} for event in events]
+    redone = {"event": "redone", "id": events[2]["id"], "at": LATER}
+    stale = label(card="d:c1", at=LATER, verdict="good", note="")
+
+    assert undone_count(labels, events, {"jargon"}, {"jargon"}) == 0
+    assert undone_count([*labels, stale], [*events, *undone, redone], {"jargon"}, {"jargon"}) == 1
+    assert undone_count(labels, [*events, *undone], {"jargon"}, {"tone"}) == 0
