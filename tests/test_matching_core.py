@@ -37,14 +37,15 @@ def test_unmatched_notes_are_latest_bad_swipes_with_a_note_and_no_proposal() -> 
 
 def test_current_keeps_a_matched_line_only_while_its_swipe_is_latest() -> None:
     kept = label(card="d:c1")
-    kept_match = label(card="d:c1", at="2026-11-20T09:00:00+00:00", reasons=["jargon"], matched_by="claude", swipe=swipe_id(kept))
+    kept_match = label(card="d:c1", at="2026-11-20T09:00:00+00:00", reasons=["jargon"], matched_by="claude", swipe=swipe_id(kept), match=asked(kept, [])["id"], counted="sure")
     replaced = label(card="d:c2")
     # The server's re-swipe can land before a match made from the old swipe is written.
     reswipe = label(card="d:c2", at="2026-11-20T08:30:00+00:00", verdict="good", note="")
-    stale_match = label(card="d:c2", at="2026-11-20T09:00:00+00:00", reasons=["jargon"], matched_by="claude", swipe=swipe_id(replaced))
+    stale_match = label(card="d:c2", at="2026-11-20T09:00:00+00:00", reasons=["jargon"], matched_by="claude", swipe=swipe_id(replaced), match=asked(replaced, [])["id"], counted="sure")
     plain = label(card="d:c3", grader="Levon")
+    events = [asked(kept, ["jargon"], kind="sure"), asked(replaced, ["jargon"], kind="sure")]
 
-    assert current([kept, kept_match, replaced, reswipe, stale_match, plain]) == [kept_match, reswipe, plain]
+    assert current([kept, kept_match, replaced, reswipe, stale_match, plain], events) == [kept_match, reswipe, plain]
 
 
 def test_current_skips_a_matched_line_its_grader_never_swiped() -> None:
@@ -52,7 +53,7 @@ def test_current_skips_a_matched_line_its_grader_never_swiped() -> None:
     # A settle written before settling stopped copying Claude's match fields: Levon's, made from Hampus's swipe.
     old_settle = label(grader="Levon", verdict="good", at="2026-11-20T09:00:00+00:00", settled=True, matched_by="claude", swipe=swipe_id(swipe))
 
-    assert current([swipe, old_settle]) == [swipe]
+    assert current([swipe, old_settle], []) == [swipe]
 
 
 NOW = "2026-11-21T10:00:00+00:00"
@@ -101,16 +102,17 @@ def test_evidence_splits_counted_bad_swipes_into_tapped_claude_sure_and_confirme
     labels = [
         tapped,
         noted,
-        label(card="d:c2", at=NOW, reasons=["jargon"], matched_by="claude", swipe=swipe_id(noted), counted="sure"),
+        label(card="d:c2", at=NOW, reasons=["jargon"], matched_by="claude", swipe=swipe_id(noted), match=asked(noted, [])["id"], counted="sure"),
         already_tapped,
-        label(card="d:c3", at=NOW, reasons=["jargon", "tone"], matched_by="claude", swipe=swipe_id(already_tapped)),
+        label(card="d:c3", at=NOW, reasons=["jargon", "tone"], matched_by="claude", swipe=swipe_id(already_tapped), match=asked(already_tapped, [])["id"], counted="sure"),
         label(card="d:c4", reasons=["tone"]),
         label(card="d:c5", verdict="good", reasons=["jargon"]),
         confirmed,
-        label(card="d:c6", at=NOW, reasons=["biometric jargon"], matched_by="claude", swipe=swipe_id(confirmed), counted="confirmed"),
+        label(card="d:c6", at=NOW, reasons=["biometric jargon"], matched_by="claude", swipe=swipe_id(confirmed), match=asked(confirmed, [])["id"], counted="confirmed"),
     ]
+    events = [asked(noted, ["jargon"], kind="sure"), asked(already_tapped, ["tone"], kind="sure"), asked(confirmed, ["biometric jargon"])]
 
-    assert evidence(labels, {"jargon", "biometric jargon"}) == (2, 1, 1)
+    assert evidence(labels, events, {"jargon", "biometric jargon"}) == (2, 1, 1)
 
 
 def test_an_ask_proposal_waits_for_the_grader_and_writes_no_line() -> None:
@@ -165,8 +167,8 @@ def test_yes_counts_the_suggested_reasons_still_covered_as_confirmed() -> None:
     writes = answer([source], [item], {"generic", "tone"}, "Hampus", item["id"], "yes", None, NOW)
 
     assert writes == (
-        {"event": "answered", "id": item["id"], "answer": "yes", "at": NOW},
-        {**source, "reasons": ["tone", "generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "at": NOW},
+        None,
+        {**source, "reasons": ["tone", "generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "answer": "yes", "at": NOW},
     )
 
 
@@ -178,8 +180,8 @@ def test_different_counts_only_the_picked_reason_and_no_counts_nothing() -> None
     no = answer([source], [item], {"generic", "tone"}, "Hampus", item["id"], "no", None, NOW)
 
     assert different == (
-        {"event": "answered", "id": item["id"], "answer": "different", "reason": "jargon", "at": NOW},
-        {**source, "reasons": ["tone", "jargon"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "at": NOW},
+        None,
+        {**source, "reasons": ["tone", "jargon"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "answer": "different", "reason": "jargon", "at": NOW},
     )
     assert no == ({"event": "answered", "id": item["id"], "answer": "no", "at": NOW}, None)
 
@@ -188,9 +190,9 @@ def test_different_counts_only_the_picked_reason_and_no_counts_nothing() -> None
 def test_a_second_answer_writes_nothing(second: str) -> None:
     source = label()
     item = asked(source, ["generic"])
-    first = {"event": "answered", "id": item["id"], "answer": "yes", "at": NOW}
+    first = {**source, "reasons": ["generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "answer": "yes", "at": NOW}
 
-    assert answer([source], [item, first], {"generic", "tone"}, "Hampus", item["id"], second, "tone" if second == "different" else None, NOW) is None
+    assert answer([source, first], [item], {"generic", "tone"}, "Hampus", item["id"], second, "tone" if second == "different" else None, NOW) is None
 
 
 def test_answer_refuses_a_missing_or_stale_item_and_a_dead_reason() -> None:
@@ -240,6 +242,13 @@ def sure_match(source: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[
     return [source, line], [event]
 
 
+def toggled(labels: list[dict[str, Any]], events: list[dict[str, Any]], match: str, choice: str, at: str, covered: set[str] | None = None) -> dict[str, Any]:
+    """The line the grader's undo or redo writes."""
+    line = undo(labels, events, covered or {"jargon"}, "Hampus", match, choice, at)
+    assert isinstance(line, dict)
+    return line
+
+
 def test_undo_writes_the_swipes_own_reasons_back() -> None:
     source = label(reasons=["generic"])
     labels, events = sure_match(source)
@@ -247,12 +256,9 @@ def test_undo_writes_the_swipes_own_reasons_back() -> None:
 
     writes = undo(labels, events, {"jargon"}, "Hampus", match, "undo", LATER)
 
-    assert writes == (
-        {"event": "undone", "id": match, "at": LATER},
-        {**source, "reasons": ["generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": match, "counted": "undone", "at": LATER},
-    )
+    assert writes == {**source, "reasons": ["generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": match, "counted": "undone", "at": LATER}
     assert writes is not None and not isinstance(writes, Refusal)
-    assert current([*labels, writes[1]]) == [writes[1]]
+    assert current([*labels, writes], events) == [writes]
 
 
 def test_redo_writes_the_matched_reasons_again() -> None:
@@ -262,12 +268,9 @@ def test_redo_writes_the_matched_reasons_again() -> None:
     undone = undo(labels, events, {"jargon"}, "Hampus", match, "undo", LATER)
     assert undone is not None and not isinstance(undone, Refusal)
 
-    writes = undo([*labels, undone[1]], [*events, undone[0]], {"jargon"}, "Hampus", match, "redo", "2026-11-21T12:00:00+00:00")
+    writes = undo([*labels, undone], events, {"jargon"}, "Hampus", match, "redo", "2026-11-21T12:00:00+00:00")
 
-    assert writes == (
-        {"event": "redone", "id": match, "at": "2026-11-21T12:00:00+00:00"},
-        {**source, "reasons": ["generic", "jargon"], "matched_by": "claude", "swipe": swipe_id(source), "match": match, "counted": "sure", "at": "2026-11-21T12:00:00+00:00"},
-    )
+    assert writes == {**source, "reasons": ["generic", "jargon"], "matched_by": "claude", "swipe": swipe_id(source), "match": match, "counted": "sure", "at": "2026-11-21T12:00:00+00:00"}
 
 
 def test_a_repeat_undo_or_redo_writes_nothing() -> None:
@@ -277,7 +280,7 @@ def test_a_repeat_undo_or_redo_writes_nothing() -> None:
     assert undone is not None and not isinstance(undone, Refusal)
 
     assert undo(labels, events, {"jargon"}, "Hampus", match, "redo", LATER) is None
-    assert undo([*labels, undone[1]], [*events, undone[0]], {"jargon"}, "Hampus", match, "undo", LATER) is None
+    assert undo([*labels, undone], events, {"jargon"}, "Hampus", match, "undo", LATER) is None
 
 
 def test_undo_refuses_another_graders_match_an_ask_and_a_stale_match() -> None:
@@ -308,22 +311,22 @@ def test_sure_items_list_the_graders_live_sure_matches_and_whether_undone() -> N
     listed = {"id": events[0]["id"], "card_id": "d:c1", "note": "Says HRV", "reasons": ["jargon"], "undone": False}
 
     assert sure_items(labels, events, {"jargon"}, "Hampus") == [listed]
-    undone = [*events, {"event": "undone", "id": events[0]["id"], "at": LATER}]
-    assert sure_items(labels, undone, {"jargon"}, "Hampus") == [{**listed, "undone": True}]
-    redone = [*undone, {"event": "redone", "id": events[0]["id"], "at": LATER}]
-    assert sure_items(labels, redone, {"jargon"}, "Hampus") == [listed]
+    undone = [*labels, toggled(labels, events, events[0]["id"], "undo", LATER)]
+    assert sure_items(undone, events, {"jargon"}, "Hampus") == [{**listed, "undone": True}]
+    redone = [*undone, toggled(undone, events, events[0]["id"], "redo", "2026-11-21T12:00:00+00:00")]
+    assert sure_items(redone, events, {"jargon"}, "Hampus") == [listed]
 
 
 def test_an_undone_note_is_an_idea_until_redone() -> None:
     source = label(reasons=["generic"], note="Says HRV")
     labels, events = sure_match(source)
     match = events[0]["id"]
-    undone = [*events, {"event": "undone", "id": match, "at": LATER}]
     covered = {"jargon", "generic"}
+    undone = [*labels, toggled(labels, events, match, "undo", LATER, covered)]
 
     assert idea_lines(labels, events, covered) == [{**source, "note": ""}]
-    assert idea_lines(labels, undone, covered) == [{**source, "reasons": []}]
-    assert idea_lines(labels, [*undone, {"event": "redone", "id": match, "at": LATER}], covered) == [{**source, "note": ""}]
+    assert idea_lines(undone, events, covered) == [{**source, "reasons": []}]
+    assert idea_lines([*undone, toggled(undone, events, match, "redo", "2026-11-21T12:00:00+00:00", covered)], events, covered) == [{**source, "note": ""}]
 
 
 def test_undone_count_counts_the_rules_sure_matches_undone_now() -> None:
@@ -331,13 +334,13 @@ def test_undone_count_counts_the_rules_sure_matches_undone_now() -> None:
     for card in ("d:c2", "d:c3"):
         more_labels, more_events = sure_match(label(card=card))
         labels, events = [*labels, *more_labels], [*events, *more_events]
-    undone = [{"event": "undone", "id": event["id"], "at": LATER} for event in events]
-    redone = {"event": "redone", "id": events[2]["id"], "at": LATER}
-    stale = label(card="d:c1", at=LATER, verdict="good", note="")
+    undone = [*labels, *(toggled(labels, events, event["id"], "undo", LATER) for event in events)]
+    redone = toggled(undone, events, events[2]["id"], "redo", "2026-11-21T12:00:00+00:00")
+    stale = label(card="d:c1", at="2026-11-21T12:00:00+00:00", verdict="good", note="")
 
     assert undone_count(labels, events, {"jargon"}, {"jargon"}) == 0
-    assert undone_count([*labels, stale], [*events, *undone, redone], {"jargon"}, {"jargon"}) == 1
-    assert undone_count(labels, [*events, *undone], {"jargon"}, {"tone"}) == 0
+    assert undone_count([*undone, redone, stale], events, {"jargon"}, {"jargon"}) == 1
+    assert undone_count(undone, events, {"jargon"}, {"tone"}) == 0
 
 
 def test_a_check_brought_back_does_not_revive_a_match_made_again_since() -> None:
@@ -355,8 +358,8 @@ def test_a_check_brought_back_does_not_revive_a_match_made_again_since() -> None
 def test_a_counting_line_left_by_a_crash_is_the_answer() -> None:
     source = label()
     item = asked(source, ["generic"])
-    # The server wrote the Yes's line, then died before its `answered` event.
-    leftover = {**source, "reasons": ["generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "at": NOW}
+    # A Yes writes only its line: nothing else for a crash to lose.
+    leftover = {**source, "reasons": ["generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "answer": "yes", "at": NOW}
 
     assert pending([source, leftover], [item], {"generic"}, "Hampus") == []
     assert answer([source, leftover], [item], {"generic"}, "Hampus", item["id"], "no", None, NOW) is None
@@ -365,7 +368,7 @@ def test_a_counting_line_left_by_a_crash_is_the_answer() -> None:
 
 def test_an_undo_line_left_by_a_crash_is_the_undo() -> None:
     labels, events = sure_match(label())
-    # The server wrote the undo's line, then died before its `undone` event.
+    # An undo writes only its line: nothing else for a crash to lose.
     leftover = {**label(), "matched_by": "claude", "swipe": swipe_id(label()), "match": events[0]["id"], "counted": "undone", "at": "2026-11-21T11:00:00+00:00"}
 
     assert [item["undone"] for item in sure_items([*labels, leftover], events, {"jargon"}, "Hampus")] == [True]
@@ -374,8 +377,21 @@ def test_an_undo_line_left_by_a_crash_is_the_undo() -> None:
 
 def test_a_redo_line_left_by_a_crash_is_the_redo() -> None:
     labels, events = sure_match(label())
-    events = [*events, {"event": "undone", "id": events[0]["id"], "at": "2026-11-21T11:00:00+00:00"}]
-    # The redo's line, written before a server stopped short of its `redone` event.
+    labels = [*labels, toggled(labels, events, events[0]["id"], "undo", "2026-11-21T11:00:00+00:00")]
+    # A redo writes only its line: nothing else for a crash to lose.
     leftover = {**label(), "reasons": ["jargon"], "matched_by": "claude", "swipe": swipe_id(label()), "match": events[0]["id"], "counted": "sure", "at": "2026-11-21T12:00:00+00:00"}
 
     assert [item["undone"] for item in sure_items([*labels, leftover], events, {"jargon"}, "Hampus")] == [False]
+
+
+def test_a_matched_line_no_proposal_of_its_kind_owns_never_counts() -> None:
+    orphan, sure, ask = label(card="d:c1"), label(card="d:c2"), label(card="d:c3")
+
+    def line(source: dict[str, Any], counted: str) -> dict[str, Any]:
+        return {**source, "reasons": ["jargon"], "matched_by": "claude", "swipe": swipe_id(source), "match": asked(source, [])["id"], "counted": counted, "at": NOW}
+
+    labels = [orphan, line(orphan, "sure"), sure, line(sure, "confirmed"), ask, line(ask, "sure")]
+    events = [asked(sure, ["jargon"], kind="sure"), asked(ask, ["jargon"])]
+
+    assert current(labels, events) == [orphan, sure, ask]
+    assert evidence(labels, events, {"jargon"}) == (0, 0, 0)

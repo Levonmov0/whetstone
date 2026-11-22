@@ -20,7 +20,7 @@ from whetstone.features.checks.load import CheckLoadError, code_check_reasons, l
 from whetstone.features.grading.core import swipe_problem, swipe_reasons
 from whetstone.features.grading.store import add_label, load_deck, load_labels
 from whetstone.features.matching.core import Refusal, answer, case_of, said, answer_problem, pending, sure_items, undo
-from whetstone.features.matching.store import add_event, load_events
+from whetstone.features.matching.store import add_event, snapshot
 from whetstone.features.workspace.load import PromptSettings
 
 Handler = Callable[[Request], Awaitable[Response]]
@@ -107,7 +107,7 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
     async def matches(request: Request) -> Response:
         grader = unquote(request.headers.get("x-grader", ""))
         reasons = covered()
-        labels, events = load_labels(prompt.dir), load_events(prompt.dir)
+        events, labels = snapshot(prompt.dir)
         # Every reason a check stands for: the Different chip sheet offers only reasons that can count.
         return JSONResponse({"items": pending(labels, events, reasons, grader), "reasons": sorted(reasons), "sure": sure_items(labels, events, reasons, grader)})
 
@@ -120,11 +120,13 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
             return refuse(problem)
         grader = unquote(request.headers.get("x-grader", ""))
         match = request.path_params["match"]
-        labels, events, reasons = load_labels(prompt.dir), load_events(prompt.dir), covered()
+        reasons = covered()
+        events, labels = snapshot(prompt.dir)
         now = datetime.now(UTC).isoformat()
         undoing = body["answer"] in ("undo", "redo")
         if undoing:
-            writes = undo(labels, events, reasons, grader, match, body["answer"], now)
+            line = undo(labels, events, reasons, grader, match, body["answer"], now)
+            writes = (None, line) if isinstance(line, dict) else line
         else:
             writes = answer(labels, events, reasons, grader, match, body["answer"], body.get("reason"), now)
         if writes is None:  # answered already, from a double tap or another phone: it counts once, as first answered
@@ -133,11 +135,12 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
             # A stale item gets its own status, so the app can drop it.
             return JSONResponse({"error": writes.message}, status_code={"missing": 404, "stale": 409}.get(writes.kind, 400))
         event, line = writes
-        # The line first, as map writes: a crash in between leaves a swipe that counts and still asks, never a lost count.
         if line is not None:
             add_label(prompt.dir, line)
-        add_event(prompt.dir, case_of(labels, events, event), event)
-        return JSONResponse({} if undoing else said(labels, [*events, event], reasons, match))
+        if event is not None:
+            add_event(prompt.dir, case_of(labels, events, event), event)
+        # Just stored, so the answer sent is the stored one: answer_problem allows a reason only with a different chip.
+        return JSONResponse({} if undoing else {key: body[key] for key in ("answer", "reason") if key in body})
 
     async def app_page(request: Request) -> Response:
         return HTMLResponse((STATIC / "app.html").read_text())
