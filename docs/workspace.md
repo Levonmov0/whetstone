@@ -198,6 +198,8 @@ yes = "assumes whether they did Kin's advice"
 
 `whetstone run <prompt> --production` prints the estimate for a run on the production model and the cap at twice that, and stops. The estimate scales the last cheap run (the latest run on another model): its tokens per generation at the production price, and its judge and rewrite dollars, for `--budget` plus twice the held-back cases. It exits 2 with no earlier cheap run, no price for a model paid by the token (production, the judge, an API rewrite model; Claude Code reports its own cost), or a cheap run whose dollars are unknown. `--production --yes` starts the run. GEPA stops before an output or a rewrite once the spend so far, plus one more output and one more rewrite at their averages and scoring the held-back cases, reaches the cap; the best version so far is the candidate, and the report says it stopped at the cap. The first rewrite has no average yet, so it can't be reserved for.
 
+`make apptest` (part of `make check`) runs the swipe app's tests, `tests/app/*.test.mjs`: `app.html` in jsdom with the server faked, under `node --test`. It needs Node; the first run installs the pinned jsdom with `npm ci`.
+
 `make smoke` runs a live run on Haiku 5.5 (about $0.10), with `SMOKE_GENERATION_API_KEY` from the repo's `.env` and Claude Code for rewrites. `make check` skips it.
 
 ## Applying
