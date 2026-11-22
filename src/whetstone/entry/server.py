@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import unquote
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from typing import Any
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -18,7 +19,7 @@ from whetstone.features.checks.core import covered_reasons
 from whetstone.features.checks.load import code_check_reasons, load_judges
 from whetstone.features.grading.core import swipe_problem, swipe_reasons
 from whetstone.features.grading.store import add_label, load_deck, load_labels
-from whetstone.features.matching.core import Refusal, answer, pending
+from whetstone.features.matching.core import Refusal, answer, answer_problem, pending
 from whetstone.features.matching.store import add_event, load_events
 from whetstone.features.workspace.load import PromptSettings
 
@@ -31,6 +32,19 @@ STATIC = Path(__file__).parent / "static"
 
 def refuse(error: str) -> Response:
     return JSONResponse({"error": error}, status_code=400)
+
+
+async def read_json(request: Request) -> Any:
+    """The request's JSON body, or the refusal: over 64 KB, or not JSON."""
+    raw = b""
+    async for chunk in request.stream():
+        raw += chunk
+        if len(raw) > MAX_BODY:
+            return refuse("body is over 64 KB")
+    try:
+        return json.loads(raw)
+    except (ValueError, RecursionError):  # RecursionError: nested deeper than the parser goes
+        return refuse("body must be a JSON object")
 
 
 def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME, on_expiry: Callable[[], None] = lambda: None) -> Starlette:
@@ -70,15 +84,9 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
 
     async def swipes(request: Request) -> Response:
         # Handlers run one at a time on the event loop, so appends never interleave.
-        raw = b""
-        async for chunk in request.stream():
-            raw += chunk
-            if len(raw) > MAX_BODY:
-                return refuse("body is over 64 KB")
-        try:
-            body = json.loads(raw)
-        except (ValueError, RecursionError):  # RecursionError: nested deeper than the parser goes
-            return refuse("body must be a JSON object")
+        body = await read_json(request)
+        if isinstance(body, Response):
+            return body
         if problem := swipe_problem(body):
             return refuse(problem)
         deck = load_deck(prompt.workspace, prompt.dir.name)
@@ -104,7 +112,12 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
         return JSONResponse({"items": items, "reasons": sorted(reasons)})
 
     async def answer_match(request: Request) -> Response:
-        body = await request.json()
+        # One at a time on the event loop, as swipes are: two phones answering the same item can't both find it open.
+        body = await read_json(request)
+        if isinstance(body, Response):
+            return body
+        if problem := answer_problem(body):
+            return refuse(problem)
         grader = unquote(request.headers.get("x-grader", ""))
         match = request.path_params["match"]
         labels, events = load_labels(prompt.dir), load_events(prompt.dir)
