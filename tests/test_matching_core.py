@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from whetstone.features.matching.core import Refusal, answer, current, evidence, pending, propose, swipe_id, unmatched_notes
+from whetstone.features.matching.core import Refusal, answer, answer_problem, current, evidence, pending, propose, swipe_id, unmatched_notes
 
 
 def label(grader: str = "Hampus", card: str = "d:c17", at: str = "2026-11-20T08:00:00+00:00", verdict: str = "bad", note: str = "Says HRV", reasons: list[str] | None = None, **extra: Any) -> dict[str, Any]:
@@ -199,3 +199,18 @@ def test_answer_refuses_a_missing_or_stale_item_and_a_dead_reason() -> None:
     assert refusal("replaced") == Refusal("stale", "out of date: the card was swiped again, or no check stands for its reasons")
     assert refusal("mine", covered=frozenset()) == Refusal("stale", "out of date: the card was swiped again, or no check stands for its reasons")
     assert refusal("mine", "different", "vague") == Refusal("invalid", 'no check stands for "vague"')
+
+
+@pytest.mark.parametrize(
+    ("body", "problem"),
+    [
+        ([1], "body must be a JSON object"),
+        ({"answer": "maybe"}, "answer must be yes, no or different"),
+        ({"answer": "different"}, "a different chip needs the reason picked"),
+        ({"answer": "different", "reason": 3}, "a different chip needs the reason picked"),
+        ({"answer": "yes"}, None),
+        ({"answer": "different", "reason": "generic"}, None),
+    ],
+)
+def test_answer_problem(body: object, problem: str | None) -> None:
+    assert answer_problem(body) == problem

@@ -144,3 +144,7 @@ def answer(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
     counted = [reason] if reason is not None else [r for r in item["reasons"] if r in covered]
     line = {**source, "reasons": list(dict.fromkeys(source["reasons"] + counted)), "matched_by": "claude", "swipe": item["swipe"], "match": match, "counted": "confirmed", "at": at}
     return event, line
+
+
+def answer_problem(body: object) -> str | None:
+    raise NotImplementedError
