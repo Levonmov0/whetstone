@@ -111,7 +111,9 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
         writes = answer(labels, events, covered(), grader, match, body["answer"], body.get("reason"), datetime.now(UTC).isoformat())
         if writes is None:  # answered already, from a double tap or another phone: it counts once
             return JSONResponse({})
-        assert not isinstance(writes, Refusal)
+        if isinstance(writes, Refusal):
+            # A stale item gets its own status, so the app can drop it.
+            return JSONResponse({"error": writes.message}, status_code={"missing": 404, "stale": 409}.get(writes.kind, 400))
         event, line = writes
         # The line first, as map writes: a crash in between leaves a swipe that counts and still asks, never a lost count.
         if line is not None:
