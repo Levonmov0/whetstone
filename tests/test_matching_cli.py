@@ -244,3 +244,18 @@ def test_a_yes_counts_under_confirmed(tmp_path: Path, monkeypatch: pytest.Monkey
         "assumes            5        4             0           1   100% / 100%   trusted",
     ]
     assert read_lines(prompt / "labels.jsonl")[-1]["verdict"] == "bad"
+
+
+def test_agreement_says_what_was_kept_and_what_waits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    kept, waiting, other = swiped("c1", note="Feels off"), swiped("c2", note="Too clinical"), swiped("c3", note="Nah", grader="Levon")
+    write_labels(prompt / "labels.jsonl", [kept, waiting, other])
+    monkeypatch.chdir(tmp_path)
+    for label in (kept, waiting, other):
+        run(["map", "daily", swipe_id(label), "--reasons", "banned", "--ask", "--why", "Maybe"], make_model=unused_model)
+    answered_in_app(prompt, "m_" + swipe_id(kept).removeprefix("s_"), "no")
+    capsys.readouterr()
+
+    run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judging("yes"))
+
+    assert capsys.readouterr().out.splitlines()[3] == "1 note kept as an idea for a new check · 1 waiting on Hampus · 1 waiting on Levon"
