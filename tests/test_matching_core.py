@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from whetstone.features.matching.core import current, evidence, propose, swipe_id, unmatched_notes
+from whetstone.features.matching.core import Refusal, answer, answer_problem, current, evidence, pending, propose, swipe_id, unmatched_notes
 
 
 def label(grader: str = "Hampus", card: str = "d:c17", at: str = "2026-11-20T08:00:00+00:00", verdict: str = "bad", note: str = "Says HRV", reasons: list[str] | None = None, **extra: Any) -> dict[str, Any]:
@@ -30,9 +30,9 @@ def test_unmatched_notes_are_latest_bad_swipes_with_a_note_and_no_proposal() -> 
         label(card="d:c6", note=""),
         label(card="d:c7", matched_by="claude", swipe="s_x", at="2026-11-20T09:00:00+00:00"),
     ]
-    events = [{"event": "proposed", "id": "m_1", "swipe": swipe_id(proposed)}]
+    events = [asked(proposed, ["jargon"])]
 
-    assert unmatched_notes(labels, events) == [wanted]
+    assert unmatched_notes(labels, events, {"jargon"}) == [wanted]
 
 
 def test_current_keeps_a_matched_line_only_while_its_swipe_is_latest() -> None:
@@ -63,7 +63,7 @@ NOW = "2026-11-21T10:00:00+00:00"
 def test_propose_refuses(swipe: str, reasons: list[str], refusal: str) -> None:
     lines = {"bad": label(card="d:c1"), "replaced": label(card="d:c2"), "good": label(card="d:c4", verdict="good"), "proposed": label(card="d:c3")}
     labels = [*lines.values(), label(card="d:c2", at="2026-11-20T09:00:00+00:00", note="newer")]
-    events = [{"event": "proposed", "id": "m_1", "swipe": swipe_id(lines["proposed"])}]
+    events = [asked(lines["proposed"], ["jargon"])]
     swipe = swipe_id(lines[swipe]) if swipe in lines else swipe
 
     assert propose(labels, events, {"jargon"}, swipe, reasons, "why", NOW) == refusal
@@ -81,21 +81,139 @@ def test_propose_appends_an_event_and_a_matched_line_that_keeps_the_verdict() ->
     match = "m_" + swipe.removeprefix("s_")
     assert event == {"event": "proposed", "id": match, "swipe": swipe, "grader": "Hampus", "card_id": "d:c17", "kind": "sure", "reasons": ["jargon", "generic", "tone"], "why": "Quotes HRV", "at": NOW}
     assert line == {**source, "reasons": ["generic", "jargon", "tone"], "matched_by": "claude", "swipe": swipe, "match": match, "counted": "sure", "at": NOW}
-    assert line["verdict"] == "bad"
+    assert line is not None and line["verdict"] == "bad"
 
 
-def test_evidence_splits_counted_bad_swipes_into_tapped_and_claude_sure() -> None:
+def test_evidence_splits_counted_bad_swipes_into_tapped_claude_sure_and_confirmed() -> None:
     tapped = label(card="d:c1", reasons=["jargon"])
     noted = label(card="d:c2")
+    confirmed = label(card="d:c6")
     already_tapped = label(card="d:c3", reasons=["jargon"])
     labels = [
         tapped,
         noted,
-        label(card="d:c2", at=NOW, reasons=["jargon"], matched_by="claude", swipe=swipe_id(noted)),
+        label(card="d:c2", at=NOW, reasons=["jargon"], matched_by="claude", swipe=swipe_id(noted), counted="sure"),
         already_tapped,
         label(card="d:c3", at=NOW, reasons=["jargon", "tone"], matched_by="claude", swipe=swipe_id(already_tapped)),
         label(card="d:c4", reasons=["tone"]),
         label(card="d:c5", verdict="good", reasons=["jargon"]),
+        confirmed,
+        label(card="d:c6", at=NOW, reasons=["biometric jargon"], matched_by="claude", swipe=swipe_id(confirmed), counted="confirmed"),
     ]
 
-    assert evidence(labels, {"jargon", "biometric jargon"}) == (2, 1)
+    assert evidence(labels, {"jargon", "biometric jargon"}) == (2, 1, 1)
+
+
+def test_an_ask_proposal_waits_for_the_grader_and_writes_no_line() -> None:
+    source = label()
+    swipe = swipe_id(source)
+
+    proposal = propose([source], [], {"jargon"}, swipe, ["jargon"], "Sounds like jargon", NOW, kind="ask")
+
+    assert proposal == ({"event": "proposed", "id": "m_" + swipe.removeprefix("s_"), "swipe": swipe, "grader": "Hampus", "card_id": "d:c17", "kind": "ask", "reasons": ["jargon"], "why": "Sounds like jargon", "at": NOW}, None)
+
+
+def asked(source: dict[str, Any], reasons: list[str], kind: str = "ask", why: str = "Sounds like it") -> dict[str, Any]:
+    swipe = swipe_id(source)
+    return {"event": "proposed", "id": "m_" + swipe.removeprefix("s_"), "swipe": swipe, "grader": source["grader"], "card_id": source["card_id"], "kind": kind, "reasons": reasons, "why": why, "at": NOW}
+
+
+def test_pending_lists_the_graders_unanswered_asks_with_reasons_still_covered() -> None:
+    waiting = label(card="d:c1", note="Feels like a horoscope", output="Today is a chance to reset.")
+    other_grader = label(card="d:c1", grader="Levon")
+    sure = label(card="d:c2")
+    answered = label(card="d:c3")
+    labels = [waiting, other_grader, sure, answered]
+    events = [asked(waiting, ["generic", "deleted judge"], why="Could be anyone's"), asked(other_grader, ["generic"]), asked(sure, ["generic"], kind="sure"), asked(answered, ["generic"]),
+              {"event": "answered", "id": asked(answered, [])["id"], "answer": "no", "at": NOW}]
+
+    assert pending(labels, events, {"generic"}, "Hampus") == [
+        {"id": asked(waiting, [])["id"], "card_id": "d:c1", "note": "Feels like a horoscope", "excerpt": "Today is a chance to reset.", "reasons": ["generic"], "why": "Could be anyone's"},
+    ]
+
+
+def test_a_replaced_swipe_or_a_dead_reason_makes_an_item_stale() -> None:
+    replaced = label(card="d:c1")
+    reswipe = label(card="d:c1", at=NOW, note="Still too vague")
+    dead = label(card="d:c2")
+    dead_sure = label(card="d:c3")
+    dead_no = label(card="d:c4")
+    labels = [replaced, reswipe, dead, dead_sure, dead_no]
+    events = [asked(replaced, ["generic"]), asked(dead, ["deleted judge"]), asked(dead_sure, ["deleted judge"], kind="sure"), asked(dead_no, ["deleted judge"]),
+              {"event": "answered", "id": asked(dead_no, [])["id"], "answer": "no", "at": NOW}]
+
+    assert pending(labels, events, {"generic"}, "Hampus") == []
+    assert unmatched_notes(labels, events, {"generic"}) == [reswipe, dead, dead_sure]
+    proposal = propose(labels, events, {"generic"}, swipe_id(dead), ["generic"], "Could be anyone's", NOW, kind="ask")
+    assert not isinstance(proposal, str)
+    assert proposal[0]["id"] == "m_" + swipe_id(dead).removeprefix("s_") + "_2"
+
+
+def test_yes_counts_the_suggested_reasons_still_covered_as_confirmed() -> None:
+    source = label(reasons=["tone"])
+    item = asked(source, ["generic", "deleted judge"])
+
+    writes = answer([source], [item], {"generic", "tone"}, "Hampus", item["id"], "yes", None, NOW)
+
+    assert writes == (
+        {"event": "answered", "id": item["id"], "answer": "yes", "at": NOW},
+        {**source, "reasons": ["tone", "generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "at": NOW},
+    )
+
+
+def test_different_counts_only_the_picked_reason_and_no_counts_nothing() -> None:
+    source = label(reasons=["tone"])
+    item = asked(source, ["generic"])
+
+    different = answer([source], [item], {"generic", "tone", "jargon"}, "Hampus", item["id"], "different", "jargon", NOW)
+    no = answer([source], [item], {"generic", "tone"}, "Hampus", item["id"], "no", None, NOW)
+
+    assert different == (
+        {"event": "answered", "id": item["id"], "answer": "different", "reason": "jargon", "at": NOW},
+        {**source, "reasons": ["tone", "jargon"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "at": NOW},
+    )
+    assert no == ({"event": "answered", "id": item["id"], "answer": "no", "at": NOW}, None)
+
+
+@pytest.mark.parametrize("second", ["yes", "no", "different"])
+def test_a_second_answer_writes_nothing(second: str) -> None:
+    source = label()
+    item = asked(source, ["generic"])
+    first = {"event": "answered", "id": item["id"], "answer": "yes", "at": NOW}
+
+    assert answer([source], [item, first], {"generic", "tone"}, "Hampus", item["id"], second, "tone" if second == "different" else None, NOW) is None
+
+
+def test_answer_refuses_a_missing_or_stale_item_and_a_dead_reason() -> None:
+    mine = label(card="d:c1")
+    theirs = label(card="d:c1", grader="Levon")
+    sure = label(card="d:c2")
+    replaced = label(card="d:c3")
+    labels = [mine, theirs, sure, replaced, label(card="d:c3", at=NOW, verdict="good", note="")]
+    items = {"mine": asked(mine, ["generic"]), "theirs": asked(theirs, ["generic"]), "sure": asked(sure, ["generic"], kind="sure"), "replaced": asked(replaced, ["generic"])}
+    events = list(items.values())
+
+    def refusal(item: str, choice: str = "yes", reason: str | None = None, covered: frozenset[str] = frozenset({"generic"})) -> object:
+        return answer(labels, events, set(covered), "Hampus", items[item]["id"] if item in items else item, choice, reason, NOW)
+
+    assert refusal("m_nope") == Refusal("missing", "no match m_nope")
+    assert refusal("theirs") == Refusal("missing", f"no match {items['theirs']['id']}")
+    assert refusal("sure") == Refusal("missing", f"no match {items['sure']['id']}")
+    assert refusal("replaced") == Refusal("stale", "out of date: the card was swiped again, or no check stands for its reasons")
+    assert refusal("mine", covered=frozenset()) == Refusal("stale", "out of date: the card was swiped again, or no check stands for its reasons")
+    assert refusal("mine", "different", "vague") == Refusal("invalid", 'no check stands for "vague"')
+
+
+@pytest.mark.parametrize(
+    ("body", "problem"),
+    [
+        ([1], "body must be a JSON object"),
+        ({"answer": "maybe"}, "answer must be yes, no or different"),
+        ({"answer": "different"}, "a different chip needs the reason picked"),
+        ({"answer": "different", "reason": 3}, "a different chip needs the reason picked"),
+        ({"answer": "yes"}, None),
+        ({"answer": "different", "reason": "generic"}, None),
+    ],
+)
+def test_answer_problem(body: object, problem: str | None) -> None:
+    assert answer_problem(body) == problem

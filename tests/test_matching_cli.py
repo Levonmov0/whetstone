@@ -8,7 +8,9 @@ from tests.fakes import FakeModel, unused_model
 from tests.test_agreement_cli import RUBRIC_TAIL, swipes
 from tests.test_judges_cli import judging, make_judged_suite
 from whetstone.entry.cli import run
-from whetstone.features.matching.core import swipe_id
+from whetstone.features.grading.store import add_label, load_labels
+from whetstone.features.matching.core import Refusal, answer, swipe_id
+from whetstone.features.matching.store import add_event, load_events
 
 LONG = "Your HRV dipped and your sleep latency rose, so today is a recovery day. " * 4
 
@@ -81,8 +83,8 @@ def test_a_sure_match_measures_an_unmeasured_judge(tmp_path: Path, monkeypatch: 
     assert out[:4] == [
         "counted  d:n · Levon · assumes the outcome (sure)",
         "15 judge calls",
-        "judge     bad swipes   tapped   claude sure   good / bad    gate",
-        "assumes            5        4             1   100% / 100%   trusted",
+        "judge     bad swipes   tapped   claude sure   confirmed   good / bad    gate",
+        "assumes            5        4             1           0   100% / 100%   trusted",
     ]
     assert "assumes: trusted" in out
     assert read_lines(prompt / "labels.jsonl")[-1]["verdict"] == "bad"
@@ -96,7 +98,7 @@ def test_agreement_table_shows_a_dash_for_a_side_nobody_swiped(tmp_path: Path, m
     code = run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judging("yes"))
 
     assert code == 1
-    assert capsys.readouterr().out.splitlines()[2] == "assumes            5        5             0   — / 100%      untrusted"
+    assert capsys.readouterr().out.splitlines()[2] == "assumes            5        5             0           0   — / 100%      untrusted"
 
 
 def test_one_note_counts_for_two_judges(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -112,8 +114,8 @@ def test_one_note_counts_for_two_judges(tmp_path: Path, monkeypatch: pytest.Monk
     out = capsys.readouterr().out.splitlines()
     assert out[0] == "counted  d:n · Hampus · assumes the outcome, biometric jargon (sure)"
     assert sorted(out[3:5]) == [
-        "assumes            1        0             1   — / 100%      untrusted",
-        "jargon             1        0             1   — / 100%      untrusted",
+        "assumes            1        0             1           0   — / 100%      untrusted",
+        "jargon             1        0             1           0   — / 100%      untrusted",
     ]
 
 
@@ -167,8 +169,8 @@ def test_agreement_table_says_how_far_an_unmeasured_judge_is(tmp_path: Path, mon
     run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judging("yes"))
 
     assert capsys.readouterr().out.splitlines()[1:3] == [
-        "judge     bad swipes   tapped   claude sure   good / bad    gate",
-        "assumes            2        2             0   —             unmeasured · 2 of 5 bad",
+        "judge     bad swipes   tapped   claude sure   confirmed   good / bad    gate",
+        "assumes            2        2             0           0   —             unmeasured · 2 of 5 bad",
     ]
 
 
@@ -187,3 +189,87 @@ def test_a_reswipe_written_while_map_ran_wins_over_the_match(tmp_path: Path, mon
     out = capsys.readouterr().out.splitlines()
     assert "  Levon: good 10/11 (91%), bad 4/4 (100%)" in out
     assert out[3].startswith("assumes            4        4             0")
+
+
+def test_map_ask_waits_for_the_grader(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    noted = swiped("c17")
+    write_labels(prompt / "labels.jsonl", [noted])
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["map", "daily", swipe_id(noted), "--reasons", "banned", "--ask", "--why", "Might mean the banned words"], make_model=unused_model)
+    run(["notes", "daily"], make_model=unused_model)
+
+    assert code == 0
+    match = "m_" + swipe_id(noted).removeprefix("s_")
+    assert capsys.readouterr().out.splitlines() == [f"waiting  d:c17 · Hampus · banned (ask {match})"]
+    assert [(e["event"], e["kind"]) for e in read_lines(prompt / "matches.jsonl")] == [("proposed", "ask")]
+    assert read_lines(prompt / "labels.jsonl") == [noted]
+
+
+def test_map_needs_sure_or_ask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    make_judged_suite(tmp_path, {"a": "Rest today."})
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(SystemExit) as stopped:
+        run(["map", "daily", "s_1", "--reasons", "banned", "--why", "x"], make_model=unused_model)
+
+    assert stopped.value.code == 2
+
+
+def answered_in_app(prompt: Path, match: str, choice: str, grader: str = "Hampus", reason: str | None = None, covered: frozenset[str] = frozenset({"banned", "assumes", "assumes the outcome"})) -> None:
+    """The grader's answer, written as the swipe server writes it."""
+    labels = load_labels(prompt)
+    writes = answer(labels, load_events(prompt), set(covered), grader, match, choice, reason, "2026-11-21T10:00:00+00:00")
+    assert writes is not None and not isinstance(writes, Refusal)
+    event, line = writes
+    if line is not None:
+        add_label(prompt, line)
+    add_event(prompt, next(label["case_id"] for label in labels if "m_" + swipe_id(label).removeprefix("s_") == match), event)
+
+
+def test_a_yes_counts_under_confirmed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."}, 'reasons = ["assumes the outcome"]\n' + RUBRIC_TAIL)
+    noted = swiped("n", note="Feels like it guessed what I did", output="Did you skip it?", grader="Levon")
+    write_labels(prompt / "labels.jsonl", swipes(good_failed=0)[:14] + [noted])
+    monkeypatch.chdir(tmp_path)
+    run(["map", "daily", swipe_id(noted), "--reasons", "assumes the outcome", "--ask", "--why", "Guessing is assuming"], make_model=unused_model)
+
+    answered_in_app(prompt, "m_" + swipe_id(noted).removeprefix("s_"), "yes", grader="Levon")
+    run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judging("yes"))
+
+    out = capsys.readouterr().out.splitlines()
+    assert out[2:4] == [
+        "judge     bad swipes   tapped   claude sure   confirmed   good / bad    gate",
+        "assumes            5        4             0           1   100% / 100%   trusted",
+    ]
+    assert read_lines(prompt / "labels.jsonl")[-1]["verdict"] == "bad"
+
+
+def test_agreement_says_what_was_kept_and_what_waits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    kept, waiting, other = swiped("c1", note="Feels off"), swiped("c2", note="Too clinical"), swiped("c3", note="Nah", grader="Levon")
+    write_labels(prompt / "labels.jsonl", [kept, waiting, other])
+    monkeypatch.chdir(tmp_path)
+    for label in (kept, waiting, other):
+        run(["map", "daily", swipe_id(label), "--reasons", "banned", "--ask", "--why", "Maybe"], make_model=unused_model)
+    answered_in_app(prompt, "m_" + swipe_id(kept).removeprefix("s_"), "no")
+    capsys.readouterr()
+
+    run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judging("yes"))
+
+    assert capsys.readouterr().out.splitlines()[3] == "1 note kept as an idea for a new check · 1 waiting on Hampus · 1 waiting on Levon"
+
+
+def test_deleting_the_judge_lists_an_asked_note_again(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    noted = swiped("c17", note="It guessed what I did")
+    write_labels(prompt / "labels.jsonl", [noted])
+    monkeypatch.chdir(tmp_path)
+    run(["map", "daily", swipe_id(noted), "--reasons", "assumes", "--ask", "--why", "Guessing is assuming"], make_model=unused_model)
+    (prompt / "checks" / "assumes.judge.toml").unlink()
+    capsys.readouterr()
+
+    run(["notes", "daily"], make_model=unused_model)
+
+    assert [json.loads(line)["swipe"] for line in capsys.readouterr().out.splitlines()] == [swipe_id(noted)]

@@ -1,5 +1,6 @@
 """Matching's file: `matches.jsonl`, the append-only log of Claude's matches, beside the labels it matches."""
 
+import fcntl
 import json
 from pathlib import Path
 from typing import Any
@@ -16,4 +17,5 @@ def add_event(prompt_dir: Path, case_id: str, event: dict[str, Any]) -> None:
     # case's labels do.
     folder = prompt_dir / "cases" / Path(case_id).parent if case_id.startswith("private/") else prompt_dir
     with (folder / "matches.jsonl").open("a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)  # the server and map append from separate processes, as with labels
         f.write(json.dumps(event) + "\n")
