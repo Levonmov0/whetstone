@@ -67,3 +67,15 @@ def test_propose_refuses(swipe: str, reasons: list[str], refusal: str) -> None:
     swipe = swipe_id(lines[swipe]) if swipe in lines else swipe
 
     assert propose(labels, events, {"jargon"}, swipe, reasons, "why", NOW) == refusal
+
+
+def test_propose_appends_an_event_and_a_matched_line_that_keeps_the_verdict() -> None:
+    source = label(reasons=["generic"])
+    swipe = swipe_id(source)
+
+    event, line = propose([source], [], {"jargon", "generic", "tone"}, swipe, ["jargon", "generic", "tone"], "Quotes HRV", NOW)  # type: ignore[misc]
+
+    match = "m_" + swipe.removeprefix("s_")
+    assert event == {"event": "proposed", "id": match, "swipe": swipe, "grader": "Hampus", "card_id": "d:c17", "kind": "sure", "reasons": ["jargon", "generic", "tone"], "why": "Quotes HRV", "at": NOW}
+    assert line == {**source, "reasons": ["generic", "jargon", "tone"], "matched_by": "claude", "swipe": swipe, "match": match, "counted": "sure", "at": NOW}
+    assert line["verdict"] == "bad"
