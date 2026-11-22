@@ -94,3 +94,21 @@ def test_agreement_table_shows_a_dash_for_a_side_nobody_swiped(tmp_path: Path, m
 
     assert code == 1
     assert capsys.readouterr().out.splitlines()[2] == "assumes            5        5             0   — / 100%      untrusted"
+
+
+def test_one_note_counts_for_two_judges(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."}, 'reasons = ["assumes the outcome"]\n' + RUBRIC_TAIL)
+    (prompt / "checks" / "jargon.judge.toml").write_text('reasons = ["biometric jargon"]\n' + RUBRIC_TAIL)
+    noted = swiped("n", note="Assumes I skipped, and says HRV", output="Did you skip it?")
+    write_labels(prompt / "labels.jsonl", [noted])
+    monkeypatch.chdir(tmp_path)
+
+    run(["map", "daily", swipe_id(noted), "--reasons", "assumes the outcome", "biometric jargon", "--sure", "--why", "Names both"], make_model=unused_model)
+    run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judging("yes"))
+
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "counted  d:n · Hampus · assumes the outcome, biometric jargon (sure)"
+    assert sorted(out[3:5]) == [
+        "assumes            1        0             1   — / 100%      untrusted",
+        "jargon             1        0             1   — / 100%      untrusted",
+    ]
