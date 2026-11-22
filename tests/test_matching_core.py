@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from whetstone.features.matching.core import Refusal, answer, answer_problem, current, evidence, pending, propose, swipe_id, unmatched_notes
+from whetstone.features.matching.core import Refusal, answer, answer_problem, current, evidence, pending, propose, swipe_id, undo, unmatched_notes
 
 
 def label(grader: str = "Hampus", card: str = "d:c17", at: str = "2026-11-20T08:00:00+00:00", verdict: str = "bad", note: str = "Says HRV", reasons: list[str] | None = None, **extra: Any) -> dict[str, Any]:
@@ -217,3 +217,29 @@ def test_answer_refuses_a_missing_or_stale_item_and_a_dead_reason() -> None:
 )
 def test_answer_problem(body: object, problem: str | None) -> None:
     assert answer_problem(body) == problem
+
+
+LATER = "2026-11-21T11:00:00+00:00"
+
+
+def sure_match(source: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Claude was sure the source's note means jargon: the labels with its matched line, and the events."""
+    proposal = propose([source], [], {"jargon"}, swipe_id(source), ["jargon"], "Quotes HRV", NOW)
+    assert not isinstance(proposal, str) and proposal[1] is not None
+    event, line = proposal
+    return [source, line], [event]
+
+
+def test_undo_writes_the_swipes_own_reasons_back() -> None:
+    source = label(reasons=["generic"])
+    labels, events = sure_match(source)
+    match = events[0]["id"]
+
+    writes = undo(labels, events, {"jargon"}, "Hampus", match, "undo", LATER)
+
+    assert writes == (
+        {"event": "undone", "id": match, "at": LATER},
+        {**source, "reasons": ["generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": match, "counted": "undone", "at": LATER},
+    )
+    assert isinstance(writes, tuple)
+    assert current([*labels, writes[1]]) == [writes[1]]

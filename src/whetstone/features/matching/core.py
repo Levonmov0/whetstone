@@ -186,3 +186,7 @@ def answer_problem(body: object) -> str | None:
     if sent["answer"] == "different" and not isinstance(sent.get("reason"), str):
         return "a different chip needs the reason picked"
     return None
+
+
+def undo(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str, match: str, choice: str, at: str) -> Refusal | tuple[dict[str, Any], dict[str, Any]] | None:
+    raise NotImplementedError
