@@ -103,3 +103,16 @@ test("the poll leaves an unchanged All graded alone: focus stays on Check for ne
   assert.equal(w.document.activeElement?.textContent, "Check for new cards");
   w.close();
 });
+
+test("A6: a badge tap while a swipe saves keeps the matching screen open", async () => {
+  const w = await boot((path, _grader, options) => path === "/api/cards" ? { status: 200, body: { cards: [card("1"), card("2")], reasons: [] } }
+    : path === "/api/swipes" ? { status: 201, body: {}, delay: 150 } : matches([ask("m_1")]));
+  button(w, "✓ Good").click();
+  w.document.getElementById("badge").click();
+  await tick(500);
+  assert.equal(w.document.querySelector("main h1").textContent, "Is this what you meant?");
+  w.document.getElementById("back").click();
+  await tick();
+  assert.equal(w.document.getElementById("progress").textContent, "2 of 2");
+  w.close();
+});
