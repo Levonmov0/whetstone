@@ -67,3 +67,16 @@ def test_reasons_lists_notes_answered_no_and_leaves_out_matched_ones(tmp_path: P
 
     assert code == 0
     assert capsys.readouterr().out.splitlines() == ['1  note: "Reads like a horoscope"']
+
+
+def test_a_matched_line_does_not_count_a_tapped_reason_twice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    noted = swiped("c1", note="Says HRV, and too vague", reasons=["vague"])
+    write_labels_as_swiped(prompt / "labels.jsonl", [noted])
+    monkeypatch.chdir(tmp_path)
+    run(["map", "daily", swipe_id(noted), "--reasons", "banned", "--sure", "--why", "Quotes HRV"], make_model=unused_model)
+    capsys.readouterr()
+
+    run(["reasons", "daily"], make_model=unused_model)
+
+    assert capsys.readouterr().out.splitlines() == ["1  vague"]
