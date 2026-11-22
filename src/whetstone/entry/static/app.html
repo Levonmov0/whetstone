@@ -278,9 +278,10 @@ async function load() {
 
 // The badge is a quiet extra: when the matches can't be fetched, grading goes on and the badge keeps what it had.
 async function loadMatches() {
+  const asked = grader;
   try {
     const result = await api("/api/matches");
-    if (!result.ok) return;
+    if (!result.ok || grader !== asked) return;  // a reply for the grader before "Not you?" is theirs, not this one's
     matches = result.body.items;
     matchReasons = result.body.reasons;
     sure = result.body.sure;
@@ -587,14 +588,15 @@ async function toggleSure(item, errorNode, rerender) {
     if (result.status === 401) return tokenProblem();
     if (result.status === 409 || result.status === 404) {
       // Swiped again, or its check is gone: it no longer counts either way, so it leaves the list.
-      sure = sure.filter((other) => other !== item);
+      sure = sure.filter((other) => other.id !== item.id);  // by id: a refresh since may have replaced the item
       status.textContent = "That one is out of date, so it was removed.";
     } else if (!result.ok) {
       errorNode.textContent = result.status === 400 ? result.body.error : "Couldn’t save, try again.";
       return;
     } else {
-      item.undone = !item.undone;
-      status.textContent = item.undone ? "Undone. Counts as before." : `Counts as ${item.reasons.join(" + ")} again.`;
+      const now = sure.find((other) => other.id === item.id) || item;
+      now.undone = !now.undone;
+      status.textContent = now.undone ? "Undone. Counts as before." : `Counts as ${now.reasons.join(" + ")} again.`;
     }
     rerender();
   } catch {
@@ -680,7 +682,11 @@ async function reply(item, body, errorNode) {
   busy = true;
   try {
     const result = await api(`/api/matches/${encodeURIComponent(item.id)}`, { method: "POST", body: JSON.stringify(body) });
-    if (result.status === 401) { tokenProblem(); return false; }
+    if (result.status === 401) {
+      document.querySelector(".sheet-backdrop")?.remove();  // the Different chip sheet would cover the message
+      tokenProblem();
+      return false;
+    }
     // Swiped again, or its check is gone: no longer a question, so it leaves quietly.
     if (result.status === 409 || result.status === 404) {
       status.textContent = "That one is out of date, so it was skipped.";
@@ -731,6 +737,8 @@ renameButton.addEventListener("click", () => {
   grader = null;
   matches = [];  // the last grader's, not the next one's
   sure = [];
+  later = false;
+  checking = null;
   updateBadge();
   try { localStorage.removeItem("ws-grader"); } catch {}
   askName();
