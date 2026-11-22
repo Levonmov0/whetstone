@@ -5,7 +5,8 @@ from typing import Any
 import pytest
 
 from tests.fakes import unused_model
-from tests.test_judges_cli import make_judged_suite
+from tests.test_agreement_cli import RUBRIC_TAIL, swipes
+from tests.test_judges_cli import judging, make_judged_suite
 from whetstone.entry.cli import run
 from whetstone.features.matching.core import swipe_id
 
@@ -58,3 +59,27 @@ def test_map_sure_counts_the_swipe(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     assert (line["reasons"], line["verdict"], line["matched_by"], line["swipe"]) == (["banned"], "bad", "claude", swipe_id(noted))
     run(["notes", "daily"], make_model=unused_model)
     assert capsys.readouterr().out == ""
+
+
+def test_a_sure_match_measures_an_unmeasured_judge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."}, 'reasons = ["assumes the outcome"]\n' + RUBRIC_TAIL)
+    noted = swiped("n", note="It assumes I skipped the run", output="Did you skip it?", grader="Levon")
+    write_labels(prompt / "labels.jsonl", swipes(good_failed=0)[:14] + [noted])  # 10 good, 4 bad tapped, 1 note
+    monkeypatch.chdir(tmp_path)
+    judge = lambda _workspace: judging("yes")  # noqa: E731
+    run(["agreement", "daily"], make_model=unused_model, make_judge=judge)
+    assert "assumes: unmeasured" in capsys.readouterr().out.splitlines()
+
+    run(["map", "daily", swipe_id(noted), "--reasons", "assumes the outcome", "--sure", "--why", "Says it assumes"], make_model=unused_model)
+    code = run(["agreement", "daily"], make_model=unused_model, make_judge=judge)
+
+    out = capsys.readouterr().out.splitlines()
+    assert code == 0
+    assert out[:4] == [
+        "counted  d:n · Levon · assumes the outcome (sure)",
+        "15 judge calls",
+        "judge     bad swipes   tapped   claude sure   good / bad    gate",
+        "assumes            5        4             1   100% / 100%   trusted",
+    ]
+    assert "assumes: trusted" in out
+    assert read_lines(prompt / "labels.jsonl")[-1]["verdict"] == "bad"
