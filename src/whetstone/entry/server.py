@@ -19,7 +19,7 @@ from whetstone.features.checks.core import covered_reasons
 from whetstone.features.checks.load import CheckLoadError, code_check_reasons, load_judges
 from whetstone.features.grading.core import swipe_problem, swipe_reasons
 from whetstone.features.grading.store import add_label, load_deck, load_labels
-from whetstone.features.matching.core import Refusal, answer, answer_problem, pending
+from whetstone.features.matching.core import Refusal, answer, answer_problem, pending, sure_items, undo
 from whetstone.features.matching.store import add_event, load_events
 from whetstone.features.workspace.load import PromptSettings
 
@@ -107,9 +107,9 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
     async def matches(request: Request) -> Response:
         grader = unquote(request.headers.get("x-grader", ""))
         reasons = covered()
-        items = pending(load_labels(prompt.dir), load_events(prompt.dir), reasons, grader)
+        labels, events = load_labels(prompt.dir), load_events(prompt.dir)
         # Every reason a check stands for: the Different chip sheet offers only reasons that can count.
-        return JSONResponse({"items": items, "reasons": sorted(reasons)})
+        return JSONResponse({"items": pending(labels, events, reasons, grader), "reasons": sorted(reasons), "sure": sure_items(labels, events, reasons, grader)})
 
     async def answer_match(request: Request) -> Response:
         # One at a time on the event loop, as swipes are: two phones answering the same item can't both find it open.
@@ -121,7 +121,11 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
         grader = unquote(request.headers.get("x-grader", ""))
         match = request.path_params["match"]
         labels, events = load_labels(prompt.dir), load_events(prompt.dir)
-        writes = answer(labels, events, covered(), grader, match, body["answer"], body.get("reason"), datetime.now(UTC).isoformat())
+        now = datetime.now(UTC).isoformat()
+        if body["answer"] in ("undo", "redo"):
+            writes = undo(labels, events, covered(), grader, match, body["answer"], now)
+        else:
+            writes = answer(labels, events, covered(), grader, match, body["answer"], body.get("reason"), now)
         if writes is None:  # answered already, from a double tap or another phone: it counts once
             return JSONResponse({})
         if isinstance(writes, Refusal):

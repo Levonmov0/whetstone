@@ -7,7 +7,12 @@ import pytest
 from tests.fakes import FakeModel, unused_model
 from tests.test_agreement_cli import RUBRIC_TAIL, swipes
 from tests.test_judges_cli import judging, make_judged_suite
+from starlette.testclient import TestClient
+
+from tests.test_server import AUTH, TOKEN
 from whetstone.entry.cli import run
+from whetstone.entry.server import make_app
+from whetstone.features.workspace.load import load_prompt
 from whetstone.features.grading.store import add_label, load_labels
 from whetstone.features.matching.core import Refusal, answer, swipe_id
 from whetstone.features.matching.store import add_event, load_events
@@ -83,8 +88,8 @@ def test_a_sure_match_measures_an_unmeasured_judge(tmp_path: Path, monkeypatch: 
     assert out[:4] == [
         "counted  d:n · Levon · assumes the outcome (sure)",
         "15 judge calls",
-        "judge     bad swipes   tapped   claude sure   confirmed   good / bad    gate",
-        "assumes            5        4             1           0   100% / 100%   trusted",
+        "judge     bad swipes   tapped   claude sure   confirmed   undone   good / bad    gate",
+        "assumes            5        4             1           0        0   100% / 100%   trusted",
     ]
     assert "assumes: trusted" in out
     assert read_lines(prompt / "labels.jsonl")[-1]["verdict"] == "bad"
@@ -98,7 +103,7 @@ def test_agreement_table_shows_a_dash_for_a_side_nobody_swiped(tmp_path: Path, m
     code = run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judging("yes"))
 
     assert code == 1
-    assert capsys.readouterr().out.splitlines()[2] == "assumes            5        5             0           0   — / 100%      untrusted"
+    assert capsys.readouterr().out.splitlines()[2] == "assumes            5        5             0           0        0   — / 100%      untrusted"
 
 
 def test_one_note_counts_for_two_judges(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -114,8 +119,8 @@ def test_one_note_counts_for_two_judges(tmp_path: Path, monkeypatch: pytest.Monk
     out = capsys.readouterr().out.splitlines()
     assert out[0] == "counted  d:n · Hampus · assumes the outcome, biometric jargon (sure)"
     assert sorted(out[3:5]) == [
-        "assumes            1        0             1           0   — / 100%      untrusted",
-        "jargon             1        0             1           0   — / 100%      untrusted",
+        "assumes            1        0             1           0        0   — / 100%      untrusted",
+        "jargon             1        0             1           0        0   — / 100%      untrusted",
     ]
 
 
@@ -169,8 +174,8 @@ def test_agreement_table_says_how_far_an_unmeasured_judge_is(tmp_path: Path, mon
     run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judging("yes"))
 
     assert capsys.readouterr().out.splitlines()[1:3] == [
-        "judge     bad swipes   tapped   claude sure   confirmed   good / bad    gate",
-        "assumes            2        2             0           0   —             unmeasured · 2 of 5 bad",
+        "judge     bad swipes   tapped   claude sure   confirmed   undone   good / bad    gate",
+        "assumes            2        2             0           0        0   —             unmeasured · 2 of 5 bad",
     ]
 
 
@@ -240,8 +245,8 @@ def test_a_yes_counts_under_confirmed(tmp_path: Path, monkeypatch: pytest.Monkey
 
     out = capsys.readouterr().out.splitlines()
     assert out[2:4] == [
-        "judge     bad swipes   tapped   claude sure   confirmed   good / bad    gate",
-        "assumes            5        4             0           1   100% / 100%   trusted",
+        "judge     bad swipes   tapped   claude sure   confirmed   undone   good / bad    gate",
+        "assumes            5        4             0           1        0   100% / 100%   trusted",
     ]
     assert read_lines(prompt / "labels.jsonl")[-1]["verdict"] == "bad"
 
@@ -273,3 +278,27 @@ def test_deleting_the_judge_lists_an_asked_note_again(tmp_path: Path, monkeypatc
     run(["notes", "daily"], make_model=unused_model)
 
     assert [json.loads(line)["swipe"] for line in capsys.readouterr().out.splitlines()] == [swipe_id(noted)]
+
+
+def test_agreement_counts_an_undone_match_until_redone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."}, 'reasons = ["assumes the outcome"]\n' + RUBRIC_TAIL)
+    noted = swiped("n", note="It assumes I skipped the run", output="Did you skip it?", grader="Levon")
+    write_labels(prompt / "labels.jsonl", swipes(good_failed=0)[:14] + [noted])
+    monkeypatch.chdir(tmp_path)
+    run(["map", "daily", swipe_id(noted), "--reasons", "assumes the outcome", "--sure", "--why", "Says it assumes"], make_model=unused_model)
+    phone = TestClient(make_app(load_prompt(tmp_path, "daily"), TOKEN))
+    levon = {**AUTH, "X-Grader": "Levon"}
+    match = "m_" + swipe_id(noted).removeprefix("s_")
+
+    def table() -> list[str]:
+        capsys.readouterr()
+        run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judging("yes"))
+        return capsys.readouterr().out.splitlines()[1:3]
+
+    assert phone.post(f"/api/matches/{match}", headers=levon, json={"answer": "undo"}).status_code == 200
+    assert table() == [
+        "judge     bad swipes   tapped   claude sure   confirmed   undone   good / bad    gate",
+        "assumes            4        4             0           0        1   —             unmeasured · 4 of 5 bad",
+    ]
+    assert phone.post(f"/api/matches/{match}", headers=levon, json={"answer": "redo"}).status_code == 200
+    assert table()[1] == "assumes            5        4             1           0        0   100% / 100%   trusted"
