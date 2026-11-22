@@ -230,7 +230,9 @@ const showing = (asked) => asked.grader === state.grader && asked.view === state
 function commit(asked, result, change) {
   if (asked.grader !== state.grader || (asked.read && asked.seq <= state.settled)) return false;
   if (result?.status === 401) { show("token"); return false; }
-  state.settled = asked.read ? asked.seq : state.seq;
+  // Only a reply that says how things stand settles the reads sent before it; a failed save changed nothing.
+  const stands = result?.ok || result?.status === 404 || result?.status === 409;
+  if (stands) state.settled = asked.read ? asked.seq : state.seq;
   const next = change(result?.body);
   const fresh = asked.view === state.view;
   if (fresh && next) show(next); else updateBadge();
