@@ -344,3 +344,20 @@ def test_a_match_written_after_a_reswipe_does_not_bring_back_the_old_call(tmp_pa
     run(["disagreements", "daily"], make_model=unused_model)
 
     assert capsys.readouterr().out.splitlines() == ["d:c17  Hampus: good  Levon: bad", "1 card to settle"]
+
+
+def test_a_judge_deleted_while_agreement_judges_still_gets_its_row(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."}, 'reasons = ["assumes the outcome"]\n' + RUBRIC_TAIL)
+    jargon = prompt / "checks" / "jargon.judge.toml"
+    jargon.write_text('reasons = ["biometric jargon"]\n' + RUBRIC_TAIL)
+    write_labels(prompt / "labels.jsonl", [swiped("c17")])
+    monkeypatch.chdir(tmp_path)
+
+    def answer(_request: dict[str, Any]) -> str:
+        jargon.unlink(missing_ok=True)  # the session runner deletes it while the judge calls run
+        return json.dumps({"answer": "no"})
+
+    code = run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: FakeModel(answer))
+
+    assert code in (0, 1)
+    assert [line.split()[0] for line in capsys.readouterr().out.splitlines()[1:4]] == ["judge", "assumes", "jargon"]
