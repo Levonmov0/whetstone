@@ -6,7 +6,8 @@ import pytest
 from starlette.testclient import TestClient
 
 from tests.fakes import unused_model
-from tests.test_judges_cli import make_judged_suite
+from tests.test_check_cli import echo_model
+from tests.test_judges_cli import judging, make_judged_suite
 from tests.test_matching_cli import read_lines, swiped, write_labels
 from tests.test_server import AUTH, TOKEN
 from whetstone.entry.cli import run
@@ -159,3 +160,15 @@ def test_a_broken_check_says_so(method: str, tmp_path: Path, monkeypatch: pytest
     assert response.status_code == 500
     assert "checks/x.judge.toml: invalid TOML" in response.json()["error"]
     assert (prompt / "matches.jsonl").read_text() == before
+
+
+def test_a_waiting_match_survives_a_new_deck_and_a_restart(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _prompt, client = asked_suite(tmp_path, monkeypatch)
+    client.get("/api/matches", headers=HAMPUS)
+    run(["check", "daily"], make_model=lambda _settings: echo_model(), make_judge=lambda _workspace: judging("no"))
+    assert (tmp_path / ".whetstone" / "decks" / "daily.json").is_file()
+    restarted = TestClient(make_app(load_prompt(tmp_path, "daily"), "a-new-token"))
+    fresh = {"Authorization": "Bearer a-new-token", "X-Grader": "Hampus"}
+
+    assert [item["id"] for item in restarted.get("/api/matches", headers=fresh).json()["items"]] == [match_of(NOTE)]
+    assert restarted.post(f"/api/matches/{match_of(NOTE)}", headers=fresh, json={"answer": "yes"}).status_code == 200
