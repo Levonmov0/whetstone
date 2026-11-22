@@ -14,8 +14,12 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Route
 
+from whetstone.features.checks.core import covered_reasons
+from whetstone.features.checks.load import code_check_reasons, load_judges
 from whetstone.features.grading.core import swipe_problem, swipe_reasons
 from whetstone.features.grading.store import add_label, load_deck, load_labels
+from whetstone.features.matching.core import pending
+from whetstone.features.matching.store import load_events
 from whetstone.features.workspace.load import PromptSettings
 
 Handler = Callable[[Request], Awaitable[Response]]
@@ -89,8 +93,15 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
         add_label(prompt.dir, {**card, "deck_id": deck["id"], **swipe, "at": datetime.now(UTC).isoformat()})
         return JSONResponse({}, status_code=201)
 
+    def covered() -> set[str]:
+        return covered_reasons(code_check_reasons(prompt.dir), load_judges(prompt.dir))
+
     async def matches(request: Request) -> Response:
-        return JSONResponse({})
+        grader = unquote(request.headers.get("x-grader", ""))
+        reasons = covered()
+        items = pending(load_labels(prompt.dir), load_events(prompt.dir), reasons, grader)
+        # Every reason a check stands for: the Different chip sheet offers only reasons that can count.
+        return JSONResponse({"items": items, "reasons": sorted(reasons)})
 
     async def answer_match(request: Request) -> Response:
         return JSONResponse({})
