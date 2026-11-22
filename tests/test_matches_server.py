@@ -172,3 +172,19 @@ def test_a_waiting_match_survives_a_new_deck_and_a_restart(tmp_path: Path, monke
 
     assert [item["id"] for item in restarted.get("/api/matches", headers=fresh).json()["items"]] == [match_of(NOTE)]
     assert restarted.post(f"/api/matches/{match_of(NOTE)}", headers=fresh, json={"answer": "yes"}).status_code == 200
+
+
+def test_a_real_data_answer_stays_in_its_private_source_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    private = prompt / "cases" / "private" / "diary"
+    noted = swiped("private/diary/day1")
+    write_labels(private / "labels.jsonl", [noted])
+    monkeypatch.chdir(tmp_path)
+    run(["map", "daily", swipe_id(noted), "--reasons", "banned", "--ask", "--why", "Maybe"], make_model=unused_model)
+    client = TestClient(make_app(load_prompt(tmp_path, "daily"), TOKEN))
+
+    client.post(f"/api/matches/{match_of(noted)}", headers=HAMPUS, json={"answer": "yes"})
+
+    assert [e["event"] for e in read_lines(private / "matches.jsonl")] == ["proposed", "answered"]
+    assert len(read_lines(private / "labels.jsonl")) == 2
+    assert not (prompt / "matches.jsonl").exists() and not (prompt / "labels.jsonl").exists()
