@@ -1,18 +1,21 @@
+import fcntl
 import json
 import queue
 import subprocess
 import sys
 import threading
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from tests.test_judges_cli import make_judged_suite
 from tests.test_matching_cli import swiped, write_labels
-from whetstone.features.grading.store import add_label
+from whetstone.features.grading.store import add_label, load_labels
 from whetstone.features.matching.core import swipe_id
-from whetstone.features.matching.store import add_event
+from whetstone.features.matching.store import add_event, load_events
 
 WHETSTONE = str(Path(sys.executable).parent / "whetstone")
 
@@ -101,3 +104,27 @@ def test_follow_prints_a_note_it_printed_again_once_its_match_goes_stale(follow:
     (prompt / "checks" / "assumes.judge.toml").unlink()
 
     assert following.next_swipe() == swipe_id(backlog)
+
+
+@pytest.mark.parametrize("name, load", [("labels.jsonl", load_labels), ("matches.jsonl", load_events)])
+def test_a_read_waits_for_a_line_another_process_is_still_writing(tmp_path: Path, name: str, load: Callable[[Path], list[dict[str, Any]]]) -> None:
+    line = json.dumps({"note": "x" * 20_000}) + "\n"
+    read: list[list[dict[str, Any]] | BaseException] = []
+    with (tmp_path / name).open("a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)  # as add_label and add_event hold it, a long line going out in several writes
+        f.write(line[:8192])
+        f.flush()
+        reader = threading.Thread(target=lambda: read.append(_try(lambda: load(tmp_path))))
+        reader.start()
+        time.sleep(0.3)
+        f.write(line[8192:])
+    reader.join(timeout=5)
+
+    assert read == [[{"note": "x" * 20_000}]]
+
+
+def _try(call: Callable[[], list[dict[str, Any]]]) -> list[dict[str, Any]] | BaseException:
+    try:
+        return call()
+    except Exception as e:
+        return e
