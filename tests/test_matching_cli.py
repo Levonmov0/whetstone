@@ -10,6 +10,7 @@ from tests.test_judges_cli import judging, make_judged_suite
 from starlette.testclient import TestClient
 
 from tests.test_server import AUTH, TOKEN
+import whetstone.entry.cli as cli
 from whetstone.entry.cli import run
 from whetstone.entry.server import make_app
 from whetstone.features.workspace.load import load_prompt
@@ -401,3 +402,28 @@ def test_a_swipe_mapped_between_reads_does_not_crash_notes_or_reasons(command: s
     mapped_between_reads(monkeypatch, prompt)
 
     assert run([command, "daily"], make_model=unused_model) == 0
+
+
+def test_a_sure_match_whose_proposal_a_crash_lost_never_counts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."}, 'reasons = ["assumes the outcome"]\n' + RUBRIC_TAIL)
+    noted = swiped("n", note="It assumes I skipped the run", output="Did you skip it?", grader="Levon")
+    write_labels(prompt / "labels.jsonl", swipes(good_failed=0)[:14] + [noted])
+    monkeypatch.chdir(tmp_path)
+
+    def died(*_args: object) -> None:
+        raise OSError("killed")
+
+    with monkeypatch.context() as crash:
+        crash.setattr(cli, "add_event", died)
+        with pytest.raises(OSError):
+            run(["map", "daily", swipe_id(noted), "--reasons", "assumes the outcome", "--sure", "--why", "Says it assumes"], make_model=unused_model)
+    orphan = read_lines(prompt / "labels.jsonl")[-1]["match"]
+    capsys.readouterr()
+
+    run(["map", "daily", swipe_id(noted), "--reasons", "assumes the outcome", "--ask", "--why", "Maybe assuming"], make_model=unused_model)
+    [asked] = read_lines(prompt / "matches.jsonl")
+    answered_in_app(prompt, asked["id"], "no", grader="Levon")
+    run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judging("yes"))
+
+    assert asked["id"] != orphan
+    assert capsys.readouterr().out.splitlines()[3].startswith("assumes            4        4             0           0        0")
