@@ -278,7 +278,7 @@ def vet_run(prompt: PromptSettings, meter: Meter, make_model: MakeModel, make_ju
         _via, rewrite_model = rewrite_settings(prompt.workspace)
     except (SplitError, PromptError, MissingKey) as e:
         raise Stop(str(e)) from None
-    gates = judge_gates(prompt, lambda workspace: meter.wrap("gate", make_judge(workspace)), judges_or_stop(prompt), load_labels(prompt.dir)) or {}
+    gates = judge_gates(prompt, lambda workspace: meter.wrap("gate", make_judge(workspace)), judges_or_stop(prompt), snapshot(prompt.dir)) or {}
     allowed, advice = optimize_gate({name: (status, lines) for name, (_rows, status, lines) in gates.items()})
     if not allowed:
         raise Stop("\n".join(advice))
@@ -460,7 +460,7 @@ def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
     # Read once: the table counts from what the gates judged, however long the judge calls take.
     judges, snap = judges_or_stop(prompt), snapshot(prompt.dir)
     covered = covered_reasons(code_checks_or_stop(prompt), judges)
-    gates = judge_gates(prompt, make_judge, judges, snap.labels)
+    gates = judge_gates(prompt, make_judge, judges, snap)
     if gates is None:
         print("no judges in checks/")
         return 0
@@ -482,7 +482,7 @@ def agreement_table(gates: dict[str, tuple[dict[str, Agreement], str, list[str]]
     lines = [f"{'judge':<{width}}bad swipes   tapped   claude sure   confirmed   undone   {'good / bad':<11}   gate"]
     for name, (rows, status, _advice) in gates.items():
         rule = covered_reasons({}, {name: judges[name]})
-        tapped, sure, confirmed = evidence(labels, rule)
+        tapped, sure, confirmed = evidence(labels, events, rule)
         sides = f"{_pooled([row.good for row in rows.values()])} / {_pooled([row.bad for row in rows.values()])}"
         if status == "unmeasured":
             # The gate's own count: the most bad swipes any one grader gave for this rule.
@@ -499,16 +499,17 @@ def _pooled(sides: list[Side]) -> str:
     return f"{round(100 * sum(s.agreed for s in sides) / total)}%" if total else "—"
 
 
-def judge_gates(prompt: PromptSettings, make_judge: MakeJudge, judges: dict[str, Rubric], labels: list[dict[str, Any]]) -> dict[str, tuple[dict[str, Agreement], str, list[str]]] | None:
+def judge_gates(prompt: PromptSettings, make_judge: MakeJudge, judges: dict[str, Rubric], snap: Snapshot) -> dict[str, tuple[dict[str, Agreement], str, list[str]]] | None:
     """Each judge's agreement with the swipes per grader, its gate and the advice; None without judges."""
     if not judges:
         return None
+    events, labels = snap
     providers = providers_or_stop(prompt)
     ask = prepare_judge(prompt, providers, any(label["case_id"].startswith("private/") for label in labels), make_judge)
     # Each swiped card is judged once, from the input and output its label kept, however many graders swiped it.
     cards = {label["card_id"]: label for label in labels}
     print(_count(len(cards) * len(judges), "judge call"), flush=True)
-    counting = current(labels)  # a match counts only while the swipe it came from is the grader's latest
+    counting = current(labels, events)  # a match counts only while the swipe it came from is the grader's latest
     gates: dict[str, tuple[dict[str, Agreement], str, list[str]]] = {}
     for name, rubric in judges.items():
         verdicts = {card: not ask(name, rubric, label["case_id"], label["input"], label["output"]) for card, label in cards.items()}

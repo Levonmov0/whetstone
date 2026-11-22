@@ -37,14 +37,15 @@ def test_unmatched_notes_are_latest_bad_swipes_with_a_note_and_no_proposal() -> 
 
 def test_current_keeps_a_matched_line_only_while_its_swipe_is_latest() -> None:
     kept = label(card="d:c1")
-    kept_match = label(card="d:c1", at="2026-11-20T09:00:00+00:00", reasons=["jargon"], matched_by="claude", swipe=swipe_id(kept))
+    kept_match = label(card="d:c1", at="2026-11-20T09:00:00+00:00", reasons=["jargon"], matched_by="claude", swipe=swipe_id(kept), match=asked(kept, [])["id"], counted="sure")
     replaced = label(card="d:c2")
     # The server's re-swipe can land before a match made from the old swipe is written.
     reswipe = label(card="d:c2", at="2026-11-20T08:30:00+00:00", verdict="good", note="")
-    stale_match = label(card="d:c2", at="2026-11-20T09:00:00+00:00", reasons=["jargon"], matched_by="claude", swipe=swipe_id(replaced))
+    stale_match = label(card="d:c2", at="2026-11-20T09:00:00+00:00", reasons=["jargon"], matched_by="claude", swipe=swipe_id(replaced), match=asked(replaced, [])["id"], counted="sure")
     plain = label(card="d:c3", grader="Levon")
+    events = [asked(kept, ["jargon"], kind="sure"), asked(replaced, ["jargon"], kind="sure")]
 
-    assert current([kept, kept_match, replaced, reswipe, stale_match, plain]) == [kept_match, reswipe, plain]
+    assert current([kept, kept_match, replaced, reswipe, stale_match, plain], events) == [kept_match, reswipe, plain]
 
 
 def test_current_skips_a_matched_line_its_grader_never_swiped() -> None:
@@ -52,7 +53,7 @@ def test_current_skips_a_matched_line_its_grader_never_swiped() -> None:
     # A settle written before settling stopped copying Claude's match fields: Levon's, made from Hampus's swipe.
     old_settle = label(grader="Levon", verdict="good", at="2026-11-20T09:00:00+00:00", settled=True, matched_by="claude", swipe=swipe_id(swipe))
 
-    assert current([swipe, old_settle]) == [swipe]
+    assert current([swipe, old_settle], []) == [swipe]
 
 
 NOW = "2026-11-21T10:00:00+00:00"
@@ -101,16 +102,17 @@ def test_evidence_splits_counted_bad_swipes_into_tapped_claude_sure_and_confirme
     labels = [
         tapped,
         noted,
-        label(card="d:c2", at=NOW, reasons=["jargon"], matched_by="claude", swipe=swipe_id(noted), counted="sure"),
+        label(card="d:c2", at=NOW, reasons=["jargon"], matched_by="claude", swipe=swipe_id(noted), match=asked(noted, [])["id"], counted="sure"),
         already_tapped,
-        label(card="d:c3", at=NOW, reasons=["jargon", "tone"], matched_by="claude", swipe=swipe_id(already_tapped)),
+        label(card="d:c3", at=NOW, reasons=["jargon", "tone"], matched_by="claude", swipe=swipe_id(already_tapped), match=asked(already_tapped, [])["id"], counted="sure"),
         label(card="d:c4", reasons=["tone"]),
         label(card="d:c5", verdict="good", reasons=["jargon"]),
         confirmed,
-        label(card="d:c6", at=NOW, reasons=["biometric jargon"], matched_by="claude", swipe=swipe_id(confirmed), counted="confirmed"),
+        label(card="d:c6", at=NOW, reasons=["biometric jargon"], matched_by="claude", swipe=swipe_id(confirmed), match=asked(confirmed, [])["id"], counted="confirmed"),
     ]
+    events = [asked(noted, ["jargon"], kind="sure"), asked(already_tapped, ["tone"], kind="sure"), asked(confirmed, ["biometric jargon"])]
 
-    assert evidence(labels, {"jargon", "biometric jargon"}) == (2, 1, 1)
+    assert evidence(labels, events, {"jargon", "biometric jargon"}) == (2, 1, 1)
 
 
 def test_an_ask_proposal_waits_for_the_grader_and_writes_no_line() -> None:
@@ -252,7 +254,7 @@ def test_undo_writes_the_swipes_own_reasons_back() -> None:
         {**source, "reasons": ["generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": match, "counted": "undone", "at": LATER},
     )
     assert writes is not None and not isinstance(writes, Refusal)
-    assert current([*labels, writes[1]]) == [writes[1]]
+    assert current([*labels, writes[1]], events) == [writes[1]]
 
 
 def test_redo_writes_the_matched_reasons_again() -> None:

@@ -85,7 +85,7 @@ def _answer_of(line: dict[str, Any], source: dict[str, Any], event: dict[str, An
     return {"event": "answered", "id": event["id"], "answer": "yes", "at": line["at"]}
 
 
-def current(labels: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def current(labels: list[dict[str, Any]], events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """One line per grader and card: their latest swipe, or the newest matched line made from it. A matched line made
     from a swipe since replaced never counts, whichever order the two were written in."""
     latest = latest_swipes(labels)
@@ -155,12 +155,12 @@ def kept_and_waiting(labels: list[dict[str, Any]], events: list[dict[str, Any]],
     return kept, waiting
 
 
-def evidence(labels: list[dict[str, Any]], rule: set[str]) -> tuple[int, int, int]:
+def evidence(labels: list[dict[str, Any]], events: list[dict[str, Any]], rule: set[str]) -> tuple[int, int, int]:
     """Of the bad swipes that count for a rule, how many the grader tapped it on, how many count only because Claude
     was sure of their note, and how many because the grader said yes to Claude's match."""
     swipes = _swipes(labels)
     tapped = sure = confirmed = 0
-    for line in current(labels):
+    for line in current(labels, events):
         if line["verdict"] != "bad" or not rule & set(line["reasons"]):
             continue
         if "matched_by" not in line or rule & set(swipes[line["swipe"]]["reasons"]):
