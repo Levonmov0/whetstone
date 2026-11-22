@@ -370,3 +370,12 @@ def test_an_undo_line_left_by_a_crash_is_the_undo() -> None:
 
     assert [item["undone"] for item in sure_items([*labels, leftover], events, {"jargon"}, "Hampus")] == [True]
     assert undo([*labels, leftover], events, {"jargon"}, "Hampus", events[0]["id"], "undo", NOW) is None
+
+
+def test_a_redo_line_left_by_a_crash_is_the_redo() -> None:
+    labels, events = sure_match(label())
+    events = [*events, {"event": "undone", "id": events[0]["id"], "at": "2026-11-21T11:00:00+00:00"}]
+    # The redo's line, written before a server stopped short of its `redone` event.
+    leftover = {**label(), "reasons": ["jargon"], "matched_by": "claude", "swipe": swipe_id(label()), "match": events[0]["id"], "counted": "sure", "at": "2026-11-21T12:00:00+00:00"}
+
+    assert [item["undone"] for item in sure_items([*labels, leftover], events, {"jargon"}, "Hampus")] == [False]
