@@ -74,16 +74,17 @@ def test_propose_refuses(swipe: str, reasons: list[str], refusal: str) -> None:
     events = [asked(lines["proposed"], ["jargon"])]
     swipe = swipe_id(lines[swipe]) if swipe in lines else swipe
 
-    assert propose(labels, events, {"jargon"}, swipe, reasons, "why", NOW) == refusal
+    result = propose(labels, events, {"jargon"}, swipe, reasons, "why", NOW, "sure")
+    assert isinstance(result, Refusal) and result.message == refusal
 
 
 def test_propose_appends_an_event_and_a_matched_line_that_keeps_the_verdict() -> None:
     source = label(reasons=["generic"])
     swipe = swipe_id(source)
 
-    proposal = propose([source], [], {"jargon", "generic", "tone"}, swipe, ["jargon", "generic", "tone"], "Quotes HRV", NOW)
+    proposal = propose([source], [], {"jargon", "generic", "tone"}, swipe, ["jargon", "generic", "tone"], "Quotes HRV", NOW, "sure")
 
-    assert not isinstance(proposal, str)
+    assert not isinstance(proposal, Refusal)
     event, line = proposal
 
     match = "m_" + swipe.removeprefix("s_")
@@ -153,7 +154,7 @@ def test_a_replaced_swipe_or_a_dead_reason_makes_an_item_stale() -> None:
     assert pending(labels, events, {"generic"}, "Hampus") == []
     assert unmatched_notes(labels, events, {"generic"}) == [reswipe, dead, dead_sure]
     proposal = propose(labels, events, {"generic"}, swipe_id(dead), ["generic"], "Could be anyone's", NOW, kind="ask")
-    assert not isinstance(proposal, str)
+    assert not isinstance(proposal, Refusal)
     assert proposal[0]["id"] == "m_" + swipe_id(dead).removeprefix("s_") + "_2"
 
 
@@ -232,8 +233,8 @@ LATER = "2026-11-21T11:00:00+00:00"
 
 def sure_match(source: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Claude was sure the source's note means jargon: the labels with its matched line, and the events."""
-    proposal = propose([source], [], {"jargon"}, swipe_id(source), ["jargon"], "Quotes HRV", NOW)
-    assert not isinstance(proposal, str)
+    proposal = propose([source], [], {"jargon"}, swipe_id(source), ["jargon"], "Quotes HRV", NOW, "sure")
+    assert not isinstance(proposal, Refusal)
     event, line = proposal
     assert line is not None
     return [source, line], [event]
@@ -342,7 +343,7 @@ def test_undone_count_counts_the_rules_sure_matches_undone_now() -> None:
 def test_a_check_brought_back_does_not_revive_a_match_made_again_since() -> None:
     labels, events = sure_match(label())
     again = propose(labels, events, {"tone"}, swipe_id(label()), ["tone"], "Too formal", NOW, "ask")  # jargon's judge was deleted
-    assert not isinstance(again, str)
+    assert not isinstance(again, Refusal)
     events = [*events, again[0]]
 
     back = {"jargon", "tone"}  # and then restored

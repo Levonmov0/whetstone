@@ -28,7 +28,7 @@ from whetstone.features.checks.core import MINIMUM, Agreement, CaseResult, Side,
 from whetstone.features.checks.load import CheckLoadError, code_check_reasons
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
-from whetstone.features.matching.core import current, evidence, excerpt, idea_lines, kept_and_waiting, propose, swipe_id, undone_count, unmatched_notes
+from whetstone.features.matching.core import Refusal, case_of, current, evidence, excerpt, idea_lines, kept_and_waiting, propose, swipe_id, undone_count, unmatched_notes
 from whetstone.features.matching.store import add_event, load_events
 from whetstone.features.optimize.core import SplitError, split_cases
 from whetstone.features.workspace.core import request_differences
@@ -540,7 +540,7 @@ def list_reasons(prompt: PromptSettings) -> int:
     return 0
 
 
-def list_notes(prompt: PromptSettings, follow: bool = False) -> int:
+def list_notes(prompt: PromptSettings, follow: bool) -> int:
     printed: set[str] = set()
     covered: set[str] | None = None
     while True:
@@ -572,14 +572,14 @@ def map_note(prompt: PromptSettings, swipe: str, reasons: list[str], why: str, k
         fcntl.flock(lock, fcntl.LOCK_EX)
         labels = load_labels(prompt.dir)
         proposal = propose(labels, load_events(prompt.dir), covered, swipe, reasons, why, datetime.now(UTC).isoformat(), kind)
-        if isinstance(proposal, str):
-            print(f"refused  {swipe} · {proposal}")
+        if isinstance(proposal, Refusal):
+            print(f"refused  {swipe} · {proposal.message}")
             return 1
         event, line = proposal
         # The line first: a crash before the event leaves a swipe that counts and is listed again, never a lost count.
         if line is not None:
             add_label(prompt.dir, line)
-        add_event(prompt.dir, next(label["case_id"] for label in labels if label["card_id"] == event["card_id"]), event)
+        add_event(prompt.dir, case_of(labels, [], event), event)
     said = f"{event['card_id']} · {event['grader']} · {', '.join(reasons)}"
     print(f"counted  {said} (sure)" if line is not None else f"waiting  {said} (ask {event['id']})")
     return 0

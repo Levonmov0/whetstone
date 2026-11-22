@@ -19,7 +19,7 @@ from whetstone.features.checks.core import covered_reasons
 from whetstone.features.checks.load import CheckLoadError, code_check_reasons, load_judges
 from whetstone.features.grading.core import swipe_problem, swipe_reasons
 from whetstone.features.grading.store import add_label, load_deck, load_labels
-from whetstone.features.matching.core import Refusal, answer, answer_problem, pending, sure_items, undo
+from whetstone.features.matching.core import Refusal, answer, case_of, answer_problem, pending, sure_items, undo
 from whetstone.features.matching.store import add_event, load_events
 from whetstone.features.workspace.load import PromptSettings
 
@@ -135,8 +135,7 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
         # The line first, as map writes: a crash in between leaves a swipe that counts and still asks, never a lost count.
         if line is not None:
             add_label(prompt.dir, line)
-        card = next(e["card_id"] for e in events if e["event"] == "proposed" and e["id"] == match)
-        add_event(prompt.dir, next(label["case_id"] for label in labels if label["card_id"] == card), event)
+        add_event(prompt.dir, case_of(labels, events, event), event)
         return JSONResponse({})
 
     async def app_page(request: Request) -> Response:
