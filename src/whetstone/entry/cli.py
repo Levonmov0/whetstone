@@ -89,7 +89,9 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
     settle.add_argument("--note", default="", help="the rule this settles, in your words")
     mapping.add_argument("swipe", help="the swipe id, as notes prints it")
     mapping.add_argument("--reasons", nargs="+", required=True, help="the reasons the note names, each one some check stands for")
-    mapping.add_argument("--sure", action="store_true", required=True, help="the note names the exact thing a check lists, so the match counts at once")
+    kind = mapping.add_mutually_exclusive_group(required=True)
+    kind.add_argument("--sure", dest="kind", action="store_const", const="sure", help="the note names the exact thing a check lists, so the match counts at once")
+    kind.add_argument("--ask", dest="kind", action="store_const", const="ask", help="a judgement call: the grader answers it in the swipe app")
     mapping.add_argument("--why", required=True, help="one line on why the note means these reasons")
     source.add_argument("source", help="the source's folder name, such as diary")
     source.add_argument("--consented-by", required=True, help="who consented")
@@ -138,7 +140,7 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
         if args.command == "notes":
             return list_notes(prompt)
         if args.command == "map":
-            return map_note(prompt, args.swipe, args.reasons, args.why)
+            return map_note(prompt, args.swipe, args.reasons, args.why, args.kind)
         if args.command == "disagreements":
             return list_disagreements(prompt)
         if args.command == "serve":
@@ -537,21 +539,23 @@ def list_notes(prompt: PromptSettings) -> int:
     return 0
 
 
-def map_note(prompt: PromptSettings, swipe: str, reasons: list[str], why: str) -> int:
+def map_note(prompt: PromptSettings, swipe: str, reasons: list[str], why: str, kind: str) -> int:
     covered = covered_reasons(code_checks_or_stop(prompt), judges_or_stop(prompt))
     # One map at a time per prompt, so two can't both find no proposal and both count the swipe.
     with (private_dir(prompt.workspace) / f"{prompt.dir.name}.matches.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        proposal = propose(load_labels(prompt.dir), load_events(prompt.dir), covered, swipe, reasons, why, datetime.now(UTC).isoformat())
+        labels = load_labels(prompt.dir)
+        proposal = propose(labels, load_events(prompt.dir), covered, swipe, reasons, why, datetime.now(UTC).isoformat(), kind)
         if isinstance(proposal, str):
             print(f"refused  {swipe} · {proposal}")
             return 1
         event, line = proposal
-        assert line is not None  # only sure matches are made here
         # The line first: a crash before the event leaves a swipe that counts and is listed again, never a lost count.
-        add_label(prompt.dir, line)
-        add_event(prompt.dir, line["case_id"], event)
-    print(f"counted  {line['card_id']} · {line['grader']} · {', '.join(reasons)} (sure)")
+        if line is not None:
+            add_label(prompt.dir, line)
+        add_event(prompt.dir, next(label["case_id"] for label in labels if label["card_id"] == event["card_id"]), event)
+    said = f"{event['card_id']} · {event['grader']} · {', '.join(reasons)}"
+    print(f"counted  {said} (sure)" if line is not None else f"waiting  {said} (ask {event['id']})")
     return 0
 
 
