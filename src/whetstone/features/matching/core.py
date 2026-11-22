@@ -89,6 +89,17 @@ def propose(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered:
     return event, line
 
 
+def kept_and_waiting(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str]) -> tuple[int, dict[str, int]]:
+    """How many notes graders answered No to, kept as ideas for a new check, and how many asks wait on each grader."""
+    items = [item for item in _items(labels, events, covered) if not item["stale"]]
+    kept = sum(1 for item in items if item["answer"] and item["answer"]["answer"] == "no")
+    waiting: dict[str, int] = {}
+    for item in items:
+        if item["kind"] == "ask" and not item["answer"]:
+            waiting[item["grader"]] = waiting.get(item["grader"], 0) + 1
+    return kept, waiting
+
+
 def evidence(labels: list[dict[str, Any]], rule: set[str]) -> tuple[int, int, int]:
     """Of the bad swipes that count for a rule, how many the grader tapped it on, how many count only because Claude
     was sure of their note, and how many because the grader said yes to Claude's match."""
