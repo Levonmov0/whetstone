@@ -54,6 +54,7 @@ def test_a_grader_gets_only_their_own_waiting_matches(tmp_path: Path, monkeypatc
     assert response.json() == {
         "items": [{"id": match_of(NOTE), "card_id": "d:c17", "note": "Feels like a horoscope", "excerpt": "Today is a chance to reset.", "reasons": ["banned"], "why": "Might be the banned words"}],
         "reasons": ["assumes", "assumes whether they did Kin's advice", "banned", "length"],
+        "sure": [],
     }
     assert [item["id"] for item in client.get("/api/matches", headers={**AUTH, "X-Grader": "Levon"}).json()["items"]] == [match_of(THEIRS)]
 
@@ -188,3 +189,25 @@ def test_a_real_data_answer_stays_in_its_private_source_folder(tmp_path: Path, m
     assert [e["event"] for e in read_lines(private / "matches.jsonl")] == ["proposed", "answered"]
     assert len(read_lines(private / "labels.jsonl")) == 2
     assert not (prompt / "matches.jsonl").exists() and not (prompt / "labels.jsonl").exists()
+
+
+SURE = swiped("c19", note="Says HRV, a banned word")
+THEIR_SURE = swiped("c20", grader="Levon", note="Says REM")
+LEVON = {**AUTH, "X-Grader": "Levon"}
+
+
+def sure_suite(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, TestClient]:
+    """Hampus and Levon each have a note Claude was sure means the banned-words check, besides the asked ones."""
+    prompt, client = asked_suite(tmp_path, monkeypatch)
+    with (prompt / "labels.jsonl").open("a") as f:
+        f.write(json.dumps(SURE) + "\n" + json.dumps(THEIR_SURE) + "\n")
+    for label in (SURE, THEIR_SURE):
+        run(["map", "daily", swipe_id(label), "--reasons", "banned", "--sure", "--why", "Names a banned word"], make_model=unused_model)
+    return prompt, client
+
+
+def test_a_grader_gets_only_their_own_sure_matches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _prompt, client = sure_suite(tmp_path, monkeypatch)
+
+    assert client.get("/api/matches", headers=HAMPUS).json()["sure"] == [{"id": match_of(SURE), "card_id": "d:c19", "note": "Says HRV, a banned word", "reasons": ["banned"], "undone": False}]
+    assert [item["id"] for item in client.get("/api/matches", headers=LEVON).json()["sure"]] == [match_of(THEIR_SURE)]
