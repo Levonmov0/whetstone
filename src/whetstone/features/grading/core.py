@@ -42,6 +42,7 @@ def disagreements(labels: list[dict[str, Any]]) -> list[str]:
     for label in sorted(labels, key=lambda label: str(label.get("at", ""))):
         if label.get("settled"):
             settled.add(label["card_id"])
-        latest.setdefault(label["card_id"], {})[label["grader"]] = label["verdict"]
+        if "matched_by" not in label:  # Claude's matched line is never a swipe
+            latest.setdefault(label["card_id"], {})[label["grader"]] = label["verdict"]
     return [card for card, verdicts in latest.items() if card not in settled and {"good", "bad"} <= set(verdicts.values())]
 

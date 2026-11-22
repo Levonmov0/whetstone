@@ -38,7 +38,7 @@ def swipe_tally(labels: list[dict[str, Any]], deck_id: str, tag_models: dict[str
     latest: dict[tuple[str, str], str] = {}
     for label in sorted(labels, key=lambda label: str(label.get("at", ""))):
         tag = str(label["card_id"]).rsplit(":", 1)[-1]
-        if label["card_id"].startswith(f"{deck_id}:") and tag in tag_models:
+        if label["card_id"].startswith(f"{deck_id}:") and tag in tag_models and "matched_by" not in label:  # a matched line is Claude's
             latest[label["grader"], tag] = label["verdict"]
     tally = {model: {"good": 0, "bad": 0, "skip": 0} for model in tag_models.values()}
     for (_grader, tag), verdict in latest.items():

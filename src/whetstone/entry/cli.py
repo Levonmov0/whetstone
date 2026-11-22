@@ -596,7 +596,7 @@ def list_disagreements(prompt: PromptSettings) -> int:
     labels = load_labels(prompt.dir)
     queued = disagreements(labels)
     for card in queued:
-        latest = {label["grader"]: label for label in labels if label["card_id"] == card}
+        latest = {label["grader"]: label for label in labels if label["card_id"] == card and "matched_by" not in label}
         print(f"{card}  " + "  ".join(_verdict(label) for label in latest.values()))
     print(f"{len(queued)} card{'' if len(queued) == 1 else 's'} to settle" if queued else "nothing to settle")
     return 0
