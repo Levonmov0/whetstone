@@ -85,3 +85,13 @@ test("an item another phone answered with a different chip counts as that chip",
   assert.equal(w.document.getElementById("status").textContent, "✓ Counts as jargon");
   w.close();
 });
+
+test("A5: a match Claude makes after the last swipe opens the deck end by itself", async () => {
+  let made = false;
+  const w = await boot((path) => path === "/api/cards" ? { status: 200, body: { cards: [], reasons: [] } } : matches(made ? [ask("m_1")] : []));
+  assert.equal(w.document.querySelector("main h1").textContent, "All graded");
+  made = true;
+  await tick(2300);
+  assert.ok(button(w, "Check them"));
+  w.close();
+});
