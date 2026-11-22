@@ -91,10 +91,12 @@ def propose(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered:
 
 def idea_lines(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str]) -> list[dict[str, Any]]:
     """The swipes new-check ideas come from. A note a match counts, or one waiting on its grader, is no idea; a note
-    answered No stands on its own, whatever chips were tapped."""
+    answered No stands on its own, whatever chips were tapped. Matched lines are Claude's, never a swipe."""
     items = {item["swipe"]: item for item in _items(labels, events, covered) if not item["stale"]}
     lines: list[dict[str, Any]] = []
     for line in labels:
+        if "matched_by" in line:
+            continue
         item = items.get(swipe_id(line))
         if item and item["answer"] and item["answer"]["answer"] == "no":
             line = {**line, "reasons": [reason for reason in line["reasons"] if reason not in covered]}
