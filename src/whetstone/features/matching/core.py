@@ -2,7 +2,12 @@
 
 import hashlib
 import json
-from typing import Any
+from typing import Any, NamedTuple
+
+
+class Refusal(NamedTuple):
+    kind: str  # missing, stale or invalid
+    message: str
 
 
 def swipe_id(label: dict[str, Any]) -> str:

@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from whetstone.features.matching.core import answer, current, evidence, pending, propose, swipe_id, unmatched_notes
+from whetstone.features.matching.core import Refusal, answer, current, evidence, pending, propose, swipe_id, unmatched_notes
 
 
 def label(grader: str = "Hampus", card: str = "d:c17", at: str = "2026-11-20T08:00:00+00:00", verdict: str = "bad", note: str = "Says HRV", reasons: list[str] | None = None, **extra: Any) -> dict[str, Any]:
@@ -179,3 +179,23 @@ def test_a_second_answer_writes_nothing(second: str) -> None:
     first = {"event": "answered", "id": item["id"], "answer": "yes", "at": NOW}
 
     assert answer([source], [item, first], {"generic", "tone"}, "Hampus", item["id"], second, "tone" if second == "different" else None, NOW) is None
+
+
+def test_answer_refuses_a_missing_or_stale_item_and_a_dead_reason() -> None:
+    mine = label(card="d:c1")
+    theirs = label(card="d:c1", grader="Levon")
+    sure = label(card="d:c2")
+    replaced = label(card="d:c3")
+    labels = [mine, theirs, sure, replaced, label(card="d:c3", at=NOW, verdict="good", note="")]
+    items = {"mine": asked(mine, ["generic"]), "theirs": asked(theirs, ["generic"]), "sure": asked(sure, ["generic"], kind="sure"), "replaced": asked(replaced, ["generic"])}
+    events = list(items.values())
+
+    def refusal(item: str, choice: str = "yes", reason: str | None = None, covered: frozenset[str] = frozenset({"generic"})) -> object:
+        return answer(labels, events, set(covered), "Hampus", items[item]["id"] if item in items else item, choice, reason, NOW)
+
+    assert refusal("m_nope") == Refusal("missing", "no match m_nope")
+    assert refusal("theirs") == Refusal("missing", f"no match {items['theirs']['id']}")
+    assert refusal("sure") == Refusal("missing", f"no match {items['sure']['id']}")
+    assert refusal("replaced") == Refusal("stale", "out of date: the card was swiped again, or no check stands for its reasons")
+    assert refusal("mine", covered=frozenset()) == Refusal("stale", "out of date: the card was swiped again, or no check stands for its reasons")
+    assert refusal("mine", "different", "vague") == Refusal("invalid", 'no check stands for "vague"')
