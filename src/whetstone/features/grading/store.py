@@ -44,17 +44,9 @@ def load_deck(workspace: Path, prompt: str) -> dict[str, Any] | None:
 
 
 def add_label(prompt_dir: Path, label: dict[str, Any]) -> None:
-    jsonl.append(_labels_file(prompt_dir, label["case_id"]), label)
-
-
-def _labels_file(prompt_dir: Path, case_id: str) -> Path:
-    # A real-data case's labels quote its input, so they live in its gitignored source folder.
-    if case_id.startswith("private/"):
-        return prompt_dir / "cases" / Path(case_id).parent / "labels.jsonl"
-    return prompt_dir / "labels.jsonl"
+    jsonl.append(jsonl.file_for(prompt_dir, label["case_id"], "labels.jsonl"), label)
 
 
 def load_labels(prompt_dir: Path) -> list[dict[str, Any]]:
     """Every label, the prompt's own and each real-data source's."""
-    files = [prompt_dir / "labels.jsonl", *(prompt_dir / "cases" / "private").glob("*/labels.jsonl")]
-    return [label for f in files for label in jsonl.read(f)]
+    return [label for f in jsonl.files(prompt_dir, "labels.jsonl") for label in jsonl.read(f)]

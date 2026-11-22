@@ -20,3 +20,13 @@ def read(path: Path) -> list[dict[str, Any]]:
     with path.open() as f:
         fcntl.flock(f, fcntl.LOCK_SH)
         return [json.loads(line) for line in f.read().splitlines()]
+
+
+def files(prompt_dir: Path, name: str) -> list[Path]:
+    """A prompt's own file of this name and each real-data source's."""
+    return [prompt_dir / name, *(prompt_dir / "cases" / "private").glob(f"*/{name}")]
+
+
+def file_for(prompt_dir: Path, case_id: str, name: str) -> Path:
+    # A real-data case's records quote its input or the grader's reading of it, so they live in its gitignored source folder.
+    return prompt_dir / "cases" / Path(case_id).parent / name if case_id.startswith("private/") else prompt_dir / name
