@@ -7,6 +7,12 @@
 <title>Whetstone</title>
 <link rel="stylesheet" href="theme.css">
 <style>
+  /* Accent shades for Claude's suggestions, made from the theme so a repo's own accent carries through. */
+  :root {
+    --tint: color-mix(in srgb, var(--ws-accent) 13%, var(--ws-surface));
+    --wash: color-mix(in srgb, var(--ws-accent) 8%, var(--ws-surface));
+    --ink: color-mix(in srgb, var(--ws-accent) 80%, var(--ws-text));
+  }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
   body {
@@ -14,8 +20,14 @@
     display: flex; flex-direction: column; overscroll-behavior: none;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
-  header { display: flex; justify-content: space-between; align-items: baseline; padding: var(--ws-space); color: var(--ws-muted); font-size: 14px; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: var(--ws-space); color: var(--ws-muted); font-size: 14px; }
   header button { background: none; border: 0; color: var(--ws-muted); font: inherit; text-decoration: underline; padding: 4px; }
+  header .badge {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border-radius: 999px;
+    background: var(--tint); color: var(--ink); font-size: 14px; font-weight: 600; text-decoration: none;
+  }
+  header .badge[hidden] { display: none; }
+  .badge .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--ws-accent); }
   main { flex: 1; display: flex; flex-direction: column; padding: 0 var(--ws-space); min-height: 0; }
   .card {
     flex: 1; min-height: 0; overflow-y: auto; background: var(--ws-surface); border-radius: var(--ws-radius);
@@ -52,7 +64,7 @@
   details { margin-top: 18px; border-top: 1px solid color-mix(in srgb, var(--ws-muted) 30%, transparent); padding-top: 10px; }
   summary { color: var(--ws-accent); cursor: pointer; padding: 6px 0; }
   .actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; padding: var(--ws-space) 0; }
-  .actions button, .sheet button {
+  .actions button, .sheet button, .deck-end button {
     min-height: 52px; border-radius: var(--ws-radius); border: 0; font: inherit; font-size: 17px; font-weight: 600;
     background: var(--ws-surface); color: var(--ws-text);
   }
@@ -81,11 +93,58 @@
   .sheet-actions { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; margin-top: 12px; }
   .sheet .save { background: var(--ws-bad); color: var(--ws-surface); }
   .error { color: var(--ws-bad); min-height: 1.4em; font-size: 14px; }
+  /* Claude's matches: its suggestions use the accent, never the bad colour a grader's own pick gets. */
+  .ask-title { margin: 0 0 4px; font-size: 22px; line-height: 1.25; }
+  .ask-lede { margin: 0 0 14px; color: var(--ws-muted); font-size: 15px; line-height: 1.45; }
+  .match {
+    flex: 1; min-height: 0; overflow-y: auto; background: var(--ws-surface); border-radius: var(--ws-radius);
+    padding: calc(var(--ws-space) * 1.25); display: flex; flex-direction: column; gap: 16px;
+  }
+  .match .field-name { margin-bottom: 4px; }
+  .match .about { margin: 0; }
+  .match .about .field-name { margin-bottom: 2px; }
+  .match .chips-label { margin-bottom: 6px; }
+  .match-note { margin: 0; font-size: 18px; line-height: 1.45; }
+  .match-why { margin: 0; font-size: 15px; line-height: 1.45; }
+  .suggested-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .suggested {
+    display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border-radius: 999px;
+    border: 1.5px solid var(--ws-accent); background: var(--wash); color: var(--ink); font-size: 15px; font-weight: 600;
+  }
+  .match-error { margin: 8px 0 0; font-weight: 600; }
+  .answers { padding: 12px 0 16px; }
+  .answers button { font-size: 16px; }
+  .answers .different { line-height: 1.15; }
+  .answers .yes, .sheet .count, .deck-end .primary { background: var(--ws-accent); color: var(--ws-surface); }
+  .pick h2 { margin-bottom: 4px; }
+  .sheet-note { margin: 0 0 12px; color: var(--ws-muted); font-size: 14px; line-height: 1.4; }
+  .pick .chip {
+    min-height: 40px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--ws-muted) 50%, transparent);
+    background: transparent; font-size: 15px; font-weight: 400;
+  }
+  .pick .chip[aria-pressed="true"] { background: var(--ws-accent); border-color: var(--ws-accent); color: var(--ws-surface); }
+  .pick .error { margin: 0; }
+  .pick .sheet-actions { margin-top: 8px; }
+  .deck-end { margin: auto 0; max-height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: var(--ws-space) 0; }
+  .deck-end-text { text-align: center; }
+  .deck-end h1 { font-size: 22px; margin: 0 0 8px; }
+  .deck-end-text p { margin: 0 auto; max-width: 28em; line-height: 1.5; }
+  .pending { background: var(--ws-surface); border-radius: var(--ws-radius); padding: var(--ws-space); display: flex; flex-direction: column; gap: 12px; }
+  .pending-row { display: flex; gap: 10px; align-items: baseline; }
+  .pending-note { flex: 1; min-width: 0; font-size: 15px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pending-chip { flex: none; font-size: 13px; color: var(--ink); font-weight: 600; }
+  .deck-end .sheet-actions { margin-top: 6px; }
+  .hint { margin: 0; text-align: center; color: var(--ws-muted); font-size: 13px; line-height: 1.4; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 </style>
 </head>
 <body>
-<header><span id="progress"></span><button id="rename" type="button" hidden>Not you?</button></header>
+<header>
+  <button id="back" type="button" hidden>‹ Back to cards</button>
+  <span id="progress"></span>
+  <button id="badge" class="badge" type="button" hidden><span class="dot" aria-hidden="true"></span><span id="badge-text"></span></button>
+  <button id="rename" type="button" hidden>Not you?</button>
+</header>
 <main id="main"></main>
 <p class="sr-only" aria-live="polite" id="status"></p>
 <div class="toast" id="toast" aria-hidden="true"></div>
@@ -104,12 +163,19 @@ const main = document.getElementById("main");
 const progress = document.getElementById("progress");
 const status = document.getElementById("status");
 const renameButton = document.getElementById("rename");
+const backButton = document.getElementById("back");
+const badge = document.getElementById("badge");
 let grader = null;
 try { grader = localStorage.getItem("ws-grader"); } catch {}
 let cards = [];
 let reasons = [];
 let total = 0;
 let busy = false;
+let matches = [];       // Claude's matches of this grader's notes that wait for their answer
+let matchReasons = [];  // every reason a check stands for: what the Different chip sheet offers
+let screen = "cards";   // cards, deck-end or matching
+let later = false;      // the grader put the matches off: they wait behind the badge, the deck end doesn't ask again
+let checking = null;    // on the matching screen: the items left, and what the answers did
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -173,7 +239,24 @@ async function load() {
   cards = result.body.cards;
   reasons = result.body.reasons;
   total = cards.length;
+  await loadMatches();
   render();
+}
+
+// The badge is a quiet extra: when the matches can't be fetched, grading goes on and the badge keeps what it had.
+async function loadMatches() {
+  try {
+    const result = await api("/api/matches");
+    if (!result.ok) return;
+    matches = result.body.items;
+    matchReasons = result.body.reasons;
+  } catch { return; }
+  updateBadge();
+}
+
+function updateBadge() {
+  document.getElementById("badge-text").textContent = `${matches.length} to check`;
+  badge.hidden = !matches.length || screen !== "cards";
 }
 
 function retryButton(label = "Try again") {
@@ -209,7 +292,13 @@ function renderOutput(output) {
 }
 
 function render() {
+  screen = "cards";
+  checking = null;
+  backButton.hidden = true;
+  renameButton.hidden = false;
+  updateBadge();
   if (!cards.length) {
+    if (matches.length && !later) return deckEnd();
     progress.textContent = "";
     return showMessage("All graded", "Thanks. New cards show up here after the next check run.", retryButton("Check for new cards"));
   }
@@ -345,10 +434,10 @@ function restore() {
 }
 
 let toastTimer;
-function showToast(verdict) {
+function showToast(text, color) {
   const toast = document.getElementById("toast");
-  toast.textContent = LOOK[verdict].toast;
-  toast.style.background = LOOK[verdict].color;
+  toast.textContent = text;
+  toast.style.background = color;
   toast.classList.add("show");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.classList.remove("show"), 1400);
@@ -374,8 +463,11 @@ async function send(card, swipe, errorNode) {
     }
     status.textContent = `Saved as ${swipe.verdict}.`;
     await flyOff(swipe.verdict);
-    showToast(swipe.verdict);
+    showToast(LOOK[swipe.verdict].toast, LOOK[swipe.verdict].color);
     cards.shift();
+    // Claude matches notes while the grader swipes, so the badge is refreshed after every swipe; the last one
+    // waits for it, so the deck end knows whether anything is left to check.
+    if (cards.length) loadMatches(); else await loadMatches();
     render();
     return true;
   } catch {
@@ -387,8 +479,151 @@ async function send(card, swipe, errorNode) {
   }
 }
 
+function deckEnd() {
+  screen = "deck-end";
+  updateBadge();
+  progress.textContent = total ? `${total} of ${total} graded` : "";
+  const n = matches.length;
+  const rows = matches.map((item) => el("div", { class: "pending-row" },
+    el("span", { class: "pending-note" }, `“${item.note}”`),
+    el("span", { class: "pending-chip" }, item.reasons.length === 1 ? `${item.reasons[0]}?` : `${item.reasons.length} checks?`)));
+  main.replaceChildren(el("div", { class: "deck-end" },
+    el("div", { class: "deck-end-text" },
+      el("h1", {}, "All graded. One more minute?"),
+      el("p", {}, n === 1
+        ? "One of your notes sounds like a check we already have. Say yes and that swipe counts toward the check."
+        : `${n} of your notes sound like checks we already have. Say yes and those swipes count toward the check.`)),
+    el("div", { class: "pending" }, ...rows),
+    el("div", { class: "sheet-actions" },
+      el("button", { type: "button", onclick: putOff }, "Later"),
+      el("button", { type: "button", class: "primary", onclick: openMatching }, "Check them")),
+    el("p", { class: "hint" }, "Later keeps them. They wait behind the badge until you're back.")));
+}
+
+function putOff() {
+  later = true;
+  render();
+}
+
+function openMatching() {
+  screen = "matching";
+  checking = { left: [...matches], total: matches.length, counted: 0, kept: 0 };
+  renameButton.hidden = true;
+  backButton.hidden = false;
+  updateBadge();
+  renderMatch();
+}
+
+function renderMatch() {
+  const item = checking.left[0];
+  if (!item) return allChecked();
+  progress.textContent = `${checking.total - checking.left.length + 1} of ${checking.total}`;
+  const error = el("p", { class: "error match-error", role: "alert" });
+  main.replaceChildren(
+    el("h1", { class: "ask-title" }, "Is this what you meant?"),
+    el("p", { class: "ask-lede" }, "Some of what you said is already covered by a check. If it matches, your swipe counts toward that check."),
+    el("article", { class: "match", "aria-label": "Matched note" },
+      el("div", {}, el("span", { class: "field-name" }, "You said"), el("p", { class: "match-note text" }, `“${item.note}”`)),
+      el("div", { class: "about" }, el("span", { class: "field-name" }, "About this card"), el("span", { class: "text" }, item.excerpt)),
+      el("div", {}, el("span", { class: "field-name chips-label" }, "Claude thinks it's"),
+        el("div", { class: "suggested-chips" }, ...item.reasons.map((reason) => el("span", { class: "suggested" }, reason)))),
+      el("div", {}, el("span", { class: "field-name" }, "Why"), el("p", { class: "match-why" }, item.why))),
+    error,
+    el("div", { class: "actions answers" },
+      el("button", { type: "button", onclick: () => reply(item, { answer: "no" }, error) }, "No"),
+      el("button", { type: "button", class: "different", onclick: () => pickDifferent(item) }, "Different chip"),
+      el("button", { type: "button", class: "yes", onclick: () => reply(item, { answer: "yes" }, error) }, "Yes")));
+}
+
+function pickDifferent(item) {
+  let picked = null;
+  const error = el("p", { class: "error", role: "alert" });
+  const save = el("button", { type: "button", class: "count" }, "Count it");
+  const chips = matchReasons.map((reason) => {
+    const chip = el("button", { type: "button", class: "chip", "aria-pressed": "false" }, reason);
+    chip.addEventListener("click", () => {
+      picked = picked === reason ? null : reason;  // one chip: the one they meant
+      for (const other of chips) other.setAttribute("aria-pressed", String(other === chip && picked !== null));
+      save.textContent = picked ? `Count as ${picked}` : "Count it";
+      error.textContent = "";
+    });
+    return chip;
+  });
+  const close = () => { backdrop.remove(); document.removeEventListener("keydown", onKey); };
+  const onKey = (event) => { if (event.key === "Escape") close(); };
+  save.addEventListener("click", async () => {
+    if (!picked) { error.textContent = "Pick the one you meant."; return; }
+    if (await reply(item, { answer: "different", reason: picked }, error)) close();
+  });
+  const sheet = el("div", { class: "sheet pick", role: "dialog", "aria-modal": "true", "aria-labelledby": "which" },
+    el("h2", { id: "which" }, "Which one did you mean?"),
+    el("p", { class: "sheet-note" }, `“${item.note}”`),
+    el("div", { class: "chips" }, ...chips), error,
+    el("div", { class: "sheet-actions" }, el("button", { type: "button", onclick: close }, "Cancel"), save));
+  const backdrop = el("div", { class: "sheet-backdrop" }, sheet);
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) close(); });
+  document.addEventListener("keydown", onKey);
+  document.body.append(backdrop);
+  chips[0]?.focus();
+}
+
+// One answer to one match. True once the item is done with: answered, or out of date and dropped.
+async function reply(item, body, errorNode) {
+  if (busy) return false;  // a double tap must not answer twice
+  busy = true;
+  try {
+    const result = await api(`/api/matches/${encodeURIComponent(item.id)}`, { method: "POST", body: JSON.stringify(body) });
+    if (result.status === 401) { tokenProblem(); return false; }
+    // Swiped again, or its check is gone: no longer a question, so it leaves quietly.
+    if (result.status === 409 || result.status === 404) {
+      status.textContent = "That one is out of date, so it was skipped.";
+      done(item);
+      return true;
+    }
+    if (!result.ok) {
+      // A failed save keeps the item, so the grader can try again; a refusal says what was wrong.
+      errorNode.textContent = result.status === 400 ? result.body.error : "Couldn’t save, try again.";
+      return false;
+    }
+    const counted = body.answer !== "no";
+    if (counted) checking.counted += 1; else checking.kept += 1;
+    const text = counted ? `✓ Counts as ${(body.reason ? [body.reason] : item.reasons).join(" + ")}` : "Kept as an idea for a new check";
+    status.textContent = text;
+    showToast(text, counted ? "var(--ws-accent)" : "var(--ws-muted)");
+    done(item);
+    return true;
+  } catch {
+    errorNode.textContent = "Couldn’t save, try again.";
+    return false;
+  } finally {
+    busy = false;
+  }
+}
+
+function done(item) {
+  checking.left = checking.left.filter((other) => other !== item);
+  matches = matches.filter((other) => other.id !== item.id);
+  renderMatch();
+}
+
+function allChecked() {
+  const { counted, kept } = checking;
+  showMessage("All checked", `Thanks. ${counted} now count toward a check. ${kept} kept as ${kept === 1 ? "an idea" : "ideas"} for a new check.`,
+    el("div", { class: "actions", style: "grid-template-columns: 1fr" }, el("button", { type: "button", class: "good", onclick: backToCards }, "Back to cards")));
+}
+
+function backToCards() {
+  later = true;  // what's left waits behind the badge
+  render();
+}
+
+backButton.addEventListener("click", backToCards);
+badge.addEventListener("click", openMatching);
+
 renameButton.addEventListener("click", () => {
   grader = null;
+  matches = [];  // the last grader's, not the next one's
+  updateBadge();
   try { localStorage.removeItem("ws-grader"); } catch {}
   askName();
 });
