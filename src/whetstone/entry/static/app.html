@@ -210,6 +210,7 @@ const state = {
   sureOpen: false,   // the "matched on its own" list on the matching screen starts collapsed
   busy: false,       // a save in flight: a double tap must not save twice
   answering: null,   // the match whose answer is in flight
+  backTo: null,      // the screen Back returns to from matching, when it isn't the deck's
   sheet: null,       // the open sheet's close()
   polling: false,
   view: 0,           // bumped on every move to another screen: a reply draws only on the view it was asked from
@@ -628,6 +629,7 @@ function deckEnd() {
 }
 
 function openMatching() {
+  state.backTo = state.screen === "message" ? "message" : null;  // a load error stays what Back returns to
   // An answer still in flight from the last visit is the old visit's: it lands there, so this one starts without it.
   const left = state.matches.filter((item) => item.id !== state.answering);
   state.checking = { left, total: left.length, counted: 0, kept: 0 };
@@ -788,7 +790,9 @@ function allChecked() {
 
 function backToCards() {
   state.later = true;  // what's left waits behind the badge
-  show(deckScreen());
+  const to = state.backTo;
+  state.backTo = null;
+  show(to || deckScreen());
 }
 
 backButton.addEventListener("click", backToCards);
