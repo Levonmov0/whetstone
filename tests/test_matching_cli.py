@@ -167,3 +167,20 @@ def test_agreement_table_says_how_far_an_unmeasured_judge_is(tmp_path: Path, mon
         "judge     bad swipes   tapped   claude sure   good / bad    gate",
         "assumes            2        2             0   —             unmeasured · 2 of 5 bad",
     ]
+
+
+def test_a_reswipe_written_while_map_ran_wins_over_the_match(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."}, 'reasons = ["assumes the outcome"]\n' + RUBRIC_TAIL)
+    noted = swiped("n", note="It assumes I skipped the run", output="Did you skip it?", grader="Levon")
+    write_labels(prompt / "labels.jsonl", swipes(good_failed=0)[:14] + [noted])
+    monkeypatch.chdir(tmp_path)
+    run(["map", "daily", swipe_id(noted), "--reasons", "assumes the outcome", "--sure", "--why", "Says it assumes"], make_model=unused_model)
+    # The server stamped this re-swipe before map stamped its line, but appended it after map had checked.
+    with (prompt / "labels.jsonl").open("a") as f:
+        f.write(json.dumps(swiped("n", verdict="good", note="", output="Did you skip it?", grader="Levon", at="2026-11-20T08:30:00+00:00")) + "\n")
+
+    run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judging("yes"))
+
+    out = capsys.readouterr().out.splitlines()
+    assert "  Levon: good 10/11 (91%), bad 4/4 (100%)" in out
+    assert out[3].startswith("assumes            4        4             0")
