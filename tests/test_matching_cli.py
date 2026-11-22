@@ -391,3 +391,13 @@ def test_a_swipe_mapped_while_agreement_judges_does_not_crash_it(tmp_path: Path,
 
     assert code in (0, 1)
     assert capsys.readouterr().out.splitlines()[1].startswith("judge ")
+
+
+@pytest.mark.parametrize("command", ["notes", "reasons"])
+def test_a_swipe_mapped_between_reads_does_not_crash_notes_or_reasons(command: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    write_labels(prompt / "labels.jsonl", [swiped("c17")])
+    monkeypatch.chdir(tmp_path)
+    mapped_between_reads(monkeypatch, prompt)
+
+    assert run([command, "daily"], make_model=unused_model) == 0
