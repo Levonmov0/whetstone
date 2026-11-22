@@ -211,3 +211,25 @@ def test_a_grader_gets_only_their_own_sure_matches(tmp_path: Path, monkeypatch: 
 
     assert client.get("/api/matches", headers=HAMPUS).json()["sure"] == [{"id": match_of(SURE), "card_id": "d:c19", "note": "Says HRV, a banned word", "reasons": ["banned"], "undone": False}]
     assert [item["id"] for item in client.get("/api/matches", headers=LEVON).json()["sure"]] == [match_of(THEIR_SURE)]
+
+
+def test_undo_and_redo_a_sure_match(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt, client = sure_suite(tmp_path, monkeypatch)
+    lines = len(read_lines(prompt / "labels.jsonl"))
+
+    undone = client.post(f"/api/matches/{match_of(SURE)}", headers=HAMPUS, json={"answer": "undo"})
+
+    assert undone.status_code == 200
+    line = read_lines(prompt / "labels.jsonl")[-1]
+    assert (line["swipe"], line["reasons"], line["verdict"], line["counted"]) == (swipe_id(SURE), [], "bad", "undone")
+    assert [(e["event"], e["id"]) for e in read_lines(prompt / "matches.jsonl")][-1] == ("undone", match_of(SURE))
+    assert client.get("/api/matches", headers=HAMPUS).json()["sure"][0]["undone"] is True
+
+    redone = client.post(f"/api/matches/{match_of(SURE)}", headers=HAMPUS, json={"answer": "redo"})
+
+    assert redone.status_code == 200
+    line = read_lines(prompt / "labels.jsonl")[-1]
+    assert (line["reasons"], line["counted"]) == (["banned"], "sure")
+    assert [(e["event"], e["id"]) for e in read_lines(prompt / "matches.jsonl")][-1] == ("redone", match_of(SURE))
+    assert len(read_lines(prompt / "labels.jsonl")) == lines + 2
+    assert client.get("/api/matches", headers=HAMPUS).json()["sure"][0]["undone"] is False
