@@ -28,4 +28,12 @@ def unmatched_notes(labels: list[dict[str, Any]], events: list[dict[str, Any]]) 
 
 
 def current(labels: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    raise NotImplementedError
+    """One line per grader and card: their latest swipe, or the newest matched line made from it. A matched line made
+    from a swipe since replaced never counts, whichever order the two were written in."""
+    latest = latest_swipes(labels)
+    lines = dict(latest)
+    for label in sorted(labels, key=lambda label: str(label.get("at", ""))):
+        key = label["grader"], label["card_id"]
+        if "matched_by" in label and label["swipe"] == swipe_id(latest[key]):
+            lines[key] = label
+    return list(lines.values())
