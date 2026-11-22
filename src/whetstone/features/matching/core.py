@@ -22,9 +22,30 @@ def latest_swipes(labels: list[dict[str, Any]]) -> dict[tuple[str, str], dict[st
 
 
 def unmatched_notes(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str]) -> list[dict[str, Any]]:
-    """The latest bad swipes that carry a note and have no proposal yet."""
-    proposed = {event["swipe"] for event in events if event["event"] == "proposed"}
+    """The latest bad swipes that carry a note and have no live proposal: none yet, or only stale ones."""
+    proposed = {item["swipe"] for item in _items(labels, events, covered) if not item["stale"]}
     return [label for label in latest_swipes(labels).values() if label["verdict"] == "bad" and label["note"] and swipe_id(label) not in proposed]
+
+
+def _items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str]) -> list[dict[str, Any]]:
+    """Each proposal, folded with its first answer and its source swipe. It is stale once the grader swiped the card
+    again, or once no check stands for any of its reasons, unless the grader said No: their note is an idea either way."""
+    swipes = {swipe_id(label): label for label in labels if "matched_by" not in label}
+    latest = latest_swipes(labels)
+    answers: dict[str, dict[str, Any]] = {}
+    for event in events:
+        if event["event"] == "answered":
+            answers.setdefault(event["id"], event)  # the first answer wins
+    items: list[dict[str, Any]] = []
+    for event in events:
+        if event["event"] != "proposed":
+            continue
+        source = swipes[event["swipe"]]
+        answer = answers.get(event["id"])
+        replaced = latest[source["grader"], source["card_id"]] is not source
+        dead = not (answer and answer["answer"] == "no") and not covered & set(event["reasons"])
+        items.append({**event, "source": source, "answer": answer, "stale": replaced or dead})
+    return items
 
 
 def current(labels: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -51,9 +72,11 @@ def propose(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered:
         return f"{source['grader']} swiped {source['card_id']} again, matching the new note instead"
     if uncovered := [reason for reason in reasons if reason not in covered]:
         return f'no check stands for "{uncovered[0]}"'
-    if any(event["event"] == "proposed" and event["swipe"] == swipe for event in events):
+    earlier = [item for item in _items(labels, events, covered) if item["swipe"] == swipe]
+    if any(not item["stale"] for item in earlier):
         return "already matched"
-    match = "m_" + swipe.removeprefix("s_")  # a swipe has at most one proposal
+    # A swipe has one live proposal at a time; one made after its earlier ones went stale gets its own id.
+    match = "m_" + swipe.removeprefix("s_") + (f"_{len(earlier) + 1}" if earlier else "")
     event = {"event": "proposed", "id": match, "swipe": swipe, "grader": source["grader"], "card_id": source["card_id"], "kind": kind, "reasons": reasons, "why": why, "at": at}
     if kind == "ask":
         return event, None
@@ -88,13 +111,8 @@ def excerpt(output: Any) -> str:
 def pending(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str) -> list[dict[str, Any]]:
     """The grader's ask matches still waiting for an answer, as the app shows them: only the suggested reasons some
     check still stands for."""
-    answered = {event["id"] for event in events if event["event"] == "answered"}
-    swipes = {swipe_id(label): label for label in labels if "matched_by" not in label}
-    items: list[dict[str, Any]] = []
-    for event in events:
-        if event["event"] != "proposed" or event["kind"] != "ask" or event["grader"] != grader or event["id"] in answered:
-            continue
-        source = swipes[event["swipe"]]
-        reasons = [reason for reason in event["reasons"] if reason in covered]
-        items.append({"id": event["id"], "card_id": event["card_id"], "note": source["note"], "excerpt": excerpt(source["output"]), "reasons": reasons, "why": event["why"]})
-    return items
+    return [
+        {"id": item["id"], "card_id": item["card_id"], "note": item["source"]["note"], "excerpt": excerpt(item["source"]["output"]), "reasons": [r for r in item["reasons"] if r in covered], "why": item["why"]}
+        for item in _items(labels, events, covered)
+        if item["kind"] == "ask" and item["grader"] == grader and not item["answer"] and not item["stale"]
+    ]

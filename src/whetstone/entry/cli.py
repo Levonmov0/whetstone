@@ -530,7 +530,8 @@ def list_reasons(prompt: PromptSettings) -> int:
 
 
 def list_notes(prompt: PromptSettings) -> int:
-    for label in unmatched_notes(load_labels(prompt.dir), load_events(prompt.dir), set()):
+    covered = covered_reasons(code_checks_or_stop(prompt), judges_or_stop(prompt))
+    for label in unmatched_notes(load_labels(prompt.dir), load_events(prompt.dir), covered):
         note = {"swipe": swipe_id(label), "grader": label["grader"], "card": label["card_id"], "note": label["note"], "reasons": label["reasons"], "excerpt": excerpt(label["output"])}
         print(json.dumps(note, ensure_ascii=False))
     return 0
