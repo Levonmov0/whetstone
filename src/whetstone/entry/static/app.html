@@ -214,12 +214,13 @@ const state = {
   polling: false,
   view: 0,           // bumped on every move to another screen: a reply draws only on the view it was asked from
   seq: 0,            // the last request's number
-  settled: 0,        // a read numbered this or lower is older than a reply already applied
+  settled: { cards: 0, matches: 0 },  // per list: a read of it numbered this or lower is older than a reply already applied
 };
 try { state.grader = localStorage.getItem("ws-grader"); } catch {}
 Object.defineProperty(window, "matches", { get: () => state.matches });  // read by the app tests
 
-// A request's token: who asked, from which view, in what order. A badge-only read passes view null: it never draws.
+// A request's token: who asked, from which view, in what order, and which list a read reads (false for a write).
+// A badge-only read passes view null: it never draws.
 function take(read = false, view = state.view) { return { grader: state.grader, view, seq: ++state.seq, read }; }
 const showing = (asked) => asked.grader === state.grader && asked.view === state.view;
 
@@ -228,11 +229,13 @@ const showing = (asked) => asked.grader === state.grader && asked.view === state
 // it. A 401 means the token is dead for every screen. Otherwise change(body) updates the data and names the
 // screen to draw, which is drawn only while the reply's view is still showing. Returns whether it is.
 function commit(asked, result, change) {
-  if (asked.grader !== state.grader || (asked.read && asked.seq <= state.settled)) return false;
+  if (asked.grader !== state.grader || (asked.read && asked.seq <= state.settled[asked.read])) return false;
   if (result?.status === 401) { show("token"); return false; }
   // Only a reply that says how things stand settles the reads sent before it; a failed save changed nothing.
   const stands = result?.ok || result?.status === 404 || result?.status === 409;
-  if (stands) state.settled = asked.read ? asked.seq : state.seq;
+  // A read settles its own list; a write may have changed either.
+  if (stands && asked.read) state.settled[asked.read] = asked.seq;
+  else if (stands) state.settled = { cards: state.seq, matches: state.seq };
   const next = change(result?.body);
   const fresh = asked.view === state.view;
   if (fresh && next) show(next); else updateBadge();
@@ -328,7 +331,7 @@ async function load() {
   if (!token) return show("token");
   if (!state.grader) return show("name");
   show("loading");
-  const asked = take();
+  const asked = take("cards");
   let result = null;
   try { result = await api("/api/cards"); } catch {}
   if (result?.ok) await loadMatches();
@@ -347,7 +350,7 @@ const ids = (items) => items.map((item) => item.id).join();
 // The badge is a quiet extra: when the matches can't be fetched, grading goes on and the badge keeps what it had.
 // Only the deck's own screens draw from the list, and only when it changed: a redraw for nothing would take focus.
 async function loadMatches(view = null) {
-  const asked = take(true, view);
+  const asked = take("matches", view);
   let result;
   try { result = await api("/api/matches"); } catch { return; }
   commit(asked, result, (body) => {
