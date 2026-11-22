@@ -158,3 +158,17 @@ test("A9: a refresh sent before an answer never brings the answered item back", 
   assert.equal(w.document.getElementById("badge-text").textContent, "1 to check");
   w.close();
 });
+
+test("round 3 A1: a Yes in flight, then Back and the badge, never shows the answered item again", async () => {
+  const w = await boot((path, _grader, options) => path === "/api/cards" ? { status: 200, body: { cards: [card("1")], reasons: [] } }
+    : options?.method === "POST" ? { status: 200, body: { answer: "yes" }, delay: 150 } : matches([ask("m_1"), ask("m_2")]));
+  w.document.getElementById("badge").click();
+  await tick();
+  button(w, "Yes").click();
+  w.document.getElementById("back").click();
+  w.document.getElementById("badge").click();
+  await tick(300);
+  assert.equal(w.document.querySelector(".match-note").textContent, "“note m_2”");
+  assert.equal(w.document.getElementById("progress").textContent, "1 of 1");
+  w.close();
+});
