@@ -116,3 +116,7 @@ def pending(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered:
         for item in _items(labels, events, covered)
         if item["kind"] == "ask" and item["grader"] == grader and not item["answer"] and not item["stale"]
     ]
+
+
+def answer(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str, match: str, choice: str, reason: str | None, at: str) -> Any:
+    raise NotImplementedError

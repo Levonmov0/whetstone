@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from whetstone.features.matching.core import current, evidence, pending, propose, swipe_id, unmatched_notes
+from whetstone.features.matching.core import answer, current, evidence, pending, propose, swipe_id, unmatched_notes
 
 
 def label(grader: str = "Hampus", card: str = "d:c17", at: str = "2026-11-20T08:00:00+00:00", verdict: str = "bad", note: str = "Says HRV", reasons: list[str] | None = None, **extra: Any) -> dict[str, Any]:
@@ -144,3 +144,15 @@ def test_a_replaced_swipe_or_a_dead_reason_makes_an_item_stale() -> None:
     proposal = propose(labels, events, {"generic"}, swipe_id(dead), ["generic"], "Could be anyone's", NOW, kind="ask")
     assert not isinstance(proposal, str)
     assert proposal[0]["id"] == "m_" + swipe_id(dead).removeprefix("s_") + "_2"
+
+
+def test_yes_counts_the_suggested_reasons_still_covered_as_confirmed() -> None:
+    source = label(reasons=["tone"])
+    item = asked(source, ["generic", "deleted judge"])
+
+    writes = answer([source], [item], {"generic", "tone"}, "Hampus", item["id"], "yes", None, NOW)
+
+    assert writes == (
+        {"event": "answered", "id": item["id"], "answer": "yes", "at": NOW},
+        {**source, "reasons": ["tone", "generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "at": NOW},
+    )
