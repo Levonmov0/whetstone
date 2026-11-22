@@ -47,17 +47,21 @@ def unmatched_notes(labels: list[dict[str, Any]], events: list[dict[str, Any]], 
     return [label for label in latest_swipes(labels).values() if label["verdict"] == "bad" and label["note"] and swipe_id(label) not in proposed]
 
 
+# The lines each kind of match writes: a sure match counts or is undone, an ask counts once its grader confirms it.
+WRITES = {"sure": ("sure", "undone"), "ask": ("confirmed",)}
+
+
 def _items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str]) -> list[dict[str, Any]]:
     """Each proposal, folded with its first answer and its source swipe. It is stale once the grader swiped the card
     again, or once no check stands for any of its reasons, unless the grader said No: their note is an idea either way."""
     swipes = _swipes(labels)
     latest = latest_swipes(labels)
-    # A grader's answer: a No is an event, a Yes or a different chip the confirmed line that makes the swipe count.
-    # The server answers one at a time and refuses a second, so a match has at most one; the first still wins.
+    # A No is an event; a Yes or a different chip is the confirmed line that makes the swipe count, and says which.
+    noes = [event for event in events if event["event"] == "answered"]
+    confirmed = [line for line in labels if line.get("counted") == "confirmed"]
     answers: dict[str, dict[str, Any]] = {}
-    said_by_line = [line for line in labels if line.get("counted") == "confirmed"]
-    for each in sorted([event for event in events if event["event"] == "answered"] + said_by_line, key=lambda each: str(each["at"])):
-        answers.setdefault(each.get("match") or each["id"], {"answer": each["answer"], **({"reason": each["reason"]} if "reason" in each else {})})
+    for said in sorted(noes + confirmed, key=lambda each: str(each["at"])):  # the first answer wins
+        answers.setdefault(said.get("match") or said["id"], {key: said[key] for key in ("answer", "reason") if key in said})
     # A sure match's newest line says whether the grader undid it.
     undone = {line["match"]: line["counted"] == "undone" for line in _by_time(labels) if line.get("counted") in WRITES["sure"]}
     proposals = [event for event in events if event["event"] == "proposed"]
@@ -72,10 +76,6 @@ def _items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
         superseded = not said_no and any(later["swipe"] == event["swipe"] for later in proposals[n + 1:])
         items.append({**event, "source": source, "answer": answer, "said_no": said_no, "undone": undone.get(event["id"], False), "stale": replaced or dead or superseded})
     return items
-
-
-# The lines each kind of match writes: a sure match counts or is undone, an ask counts once its grader confirms it.
-WRITES = {"sure": ("sure", "undone"), "ask": ("confirmed",)}
 
 
 def current(labels: list[dict[str, Any]], events: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -176,8 +176,8 @@ def evidence(labels: list[dict[str, Any]], events: list[dict[str, Any]], rule: s
 
 
 def case_of(labels: list[dict[str, Any]], events: list[dict[str, Any]], event: dict[str, Any]) -> str:
-    """The case an event is about: a real-data case's events go in its source folder. An answer or undo names only
-    its match, so its card comes from the proposal."""
+    """The case an event is about: a real-data case's events go in its source folder. A No names only its match,
+    so its card comes from the proposal."""
     card = event.get("card_id") or next(e["card_id"] for e in events if e["event"] == "proposed" and e["id"] == event["id"])
     return next(label["case_id"] for label in labels if label["card_id"] == card)
 
