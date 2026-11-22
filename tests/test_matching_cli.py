@@ -323,6 +323,19 @@ def test_settling_a_card_claude_matched_is_a_call_not_a_match(tmp_path: Path, mo
     assert "matched_by" not in settled and "swipe" not in settled
 
 
+def test_a_bad_call_siding_with_a_match_keeps_the_swipes_own_reasons(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    noted = swiped("c17")
+    write_labels(prompt / "labels.jsonl", [noted])
+    monkeypatch.chdir(tmp_path)
+    run(["map", "daily", swipe_id(noted), "--reasons", "banned", "--sure", "--why", "Quotes HRV, a banned term"], make_model=unused_model)
+
+    run(["settle", "daily", "d:c17", "bad", "--grader", "Levon"], make_model=unused_model)
+
+    settled = read_lines(prompt / "labels.jsonl")[-1]
+    assert (settled["grader"], settled["verdict"], settled["reasons"]) == ("Levon", "bad", [])
+
+
 def test_a_check_that_fails_to_load_stops_agreement_before_any_judge_call(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
     write_labels(prompt / "labels.jsonl", [swiped("c17")])
