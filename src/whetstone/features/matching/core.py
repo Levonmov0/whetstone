@@ -38,9 +38,12 @@ def _items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
     swipes = {swipe_id(label): label for label in labels if "matched_by" not in label}
     latest = latest_swipes(labels)
     answers: dict[str, dict[str, Any]] = {}
+    undone: dict[str, bool] = {}
     for event in events:
         if event["event"] == "answered":
             answers.setdefault(event["id"], event)  # the first answer wins
+        elif event["event"] in ("undone", "redone"):
+            undone[event["id"]] = event["event"] == "undone"  # the latest undo or redo wins
     items: list[dict[str, Any]] = []
     for event in events:
         if event["event"] != "proposed":
@@ -49,7 +52,7 @@ def _items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
         answer = answers.get(event["id"])
         replaced = latest[source["grader"], source["card_id"]] is not source
         dead = not (answer and answer["answer"] == "no") and not covered & set(event["reasons"])
-        items.append({**event, "source": source, "answer": answer, "stale": replaced or dead})
+        items.append({**event, "source": source, "answer": answer, "undone": undone.get(event["id"], False), "stale": replaced or dead})
     return items
 
 
@@ -192,6 +195,8 @@ def undo(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: se
     """The grader's undo or redo of Claude's sure match of their note. Undo makes the swipe count as it did before the
     match, redo as matched again."""
     item = next(item for item in _items(labels, events, covered) if item["id"] == match)
+    if item["undone"] == (choice == "undo"):
+        return None  # already so: a double tap or a second phone writes once
     source = item["source"]
     if choice == "redo":
         reasons, counted, event = list(dict.fromkeys(source["reasons"] + item["reasons"])), "sure", "redone"
