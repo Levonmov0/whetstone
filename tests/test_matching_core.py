@@ -156,3 +156,17 @@ def test_yes_counts_the_suggested_reasons_still_covered_as_confirmed() -> None:
         {"event": "answered", "id": item["id"], "answer": "yes", "at": NOW},
         {**source, "reasons": ["tone", "generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "at": NOW},
     )
+
+
+def test_different_counts_only_the_picked_reason_and_no_counts_nothing() -> None:
+    source = label(reasons=["tone"])
+    item = asked(source, ["generic"])
+
+    different = answer([source], [item], {"generic", "tone", "jargon"}, "Hampus", item["id"], "different", "jargon", NOW)
+    no = answer([source], [item], {"generic", "tone"}, "Hampus", item["id"], "no", None, NOW)
+
+    assert different == (
+        {"event": "answered", "id": item["id"], "answer": "different", "reason": "jargon", "at": NOW},
+        {**source, "reasons": ["tone", "jargon"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "at": NOW},
+    )
+    assert no == ({"event": "answered", "id": item["id"], "answer": "no", "at": NOW}, None)
