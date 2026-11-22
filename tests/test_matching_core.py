@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from whetstone.features.matching.core import Refusal, answer, answer_problem, current, evidence, idea_lines, pending, propose, sure_items, swipe_id, undo, unmatched_notes
+from whetstone.features.matching.core import Refusal, answer, answer_problem, current, evidence, idea_lines, pending, propose, sure_items, swipe_id, undo, undone_count, unmatched_notes
 
 
 def label(grader: str = "Hampus", card: str = "d:c17", at: str = "2026-11-20T08:00:00+00:00", verdict: str = "bad", note: str = "Says HRV", reasons: list[str] | None = None, **extra: Any) -> dict[str, Any]:
@@ -314,3 +314,17 @@ def test_an_undone_note_is_an_idea_until_redone() -> None:
     assert idea_lines(labels, events, covered) == [{**source, "note": ""}]
     assert idea_lines(labels, undone, covered) == [{**source, "reasons": []}]
     assert idea_lines(labels, [*undone, {"event": "redone", "id": match, "at": LATER}], covered) == [{**source, "note": ""}]
+
+
+def test_undone_count_counts_the_rules_sure_matches_undone_now() -> None:
+    labels, events = sure_match(label(card="d:c1"))
+    for card in ("d:c2", "d:c3"):
+        more_labels, more_events = sure_match(label(card=card))
+        labels, events = [*labels, *more_labels], [*events, *more_events]
+    undone = [{"event": "undone", "id": event["id"], "at": LATER} for event in events]
+    redone = {"event": "redone", "id": events[2]["id"], "at": LATER}
+    stale = label(card="d:c1", at=LATER, verdict="good", note="")
+
+    assert undone_count(labels, events, {"jargon"}, {"jargon"}) == 0
+    assert undone_count([*labels, stale], [*events, *undone, redone], {"jargon"}, {"jargon"}) == 1
+    assert undone_count(labels, [*events, *undone], {"jargon"}, {"tone"}) == 0

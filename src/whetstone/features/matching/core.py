@@ -220,3 +220,7 @@ def sure_items(labels: list[dict[str, Any]], events: list[dict[str, Any]], cover
         for item in _items(labels, events, covered)
         if item["kind"] == "sure" and item["grader"] == grader and not item["stale"]
     ]
+
+
+def undone_count(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], rule: set[str]) -> int:
+    raise NotImplementedError
