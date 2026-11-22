@@ -209,6 +209,7 @@ const state = {
   checking: null,    // this visit of the matching screen: the items left, and what the answers did
   sureOpen: false,   // the "matched on its own" list on the matching screen starts collapsed
   busy: false,       // a save in flight: a double tap must not save twice
+  answering: null,   // the match whose answer is in flight
   sheet: null,       // the open sheet's close()
   polling: false,
   view: 0,           // bumped on every move to another screen: a reply draws only on the view it was asked from
@@ -622,7 +623,9 @@ function deckEnd() {
 }
 
 function openMatching() {
-  state.checking = { left: [...state.matches], total: state.matches.length, counted: 0, kept: 0 };
+  // An answer still in flight from the last visit is the old visit's: it lands there, so this one starts without it.
+  const left = state.matches.filter((item) => item.id !== state.answering);
+  state.checking = { left, total: left.length, counted: 0, kept: 0 };
   state.sureOpen = false;
   show("matching");
 }
@@ -723,6 +726,7 @@ function pickDifferent(item) {
 async function postAnswer(item, body, errorNode) {
   if (state.busy) return false;  // a double tap must not answer twice
   state.busy = true;
+  state.answering = item.id;
   const asked = take(), session = state.checking;  // the reply belongs to this visit of the matching screen
   const toggle = body.answer === "undo" || body.answer === "redo";
   try {
@@ -767,6 +771,7 @@ async function postAnswer(item, body, errorNode) {
     return false;
   } finally {
     state.busy = false;
+    state.answering = null;
   }
 }
 
