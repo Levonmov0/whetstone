@@ -267,3 +267,19 @@ def test_an_undo_is_refused(change: str, match: dict[str, Any], body: dict[str, 
     assert response.status_code == status
     assert response.json() == {"error": error.format(match_of(match))}
     assert ((prompt / "labels.jsonl").read_text(), (prompt / "matches.jsonl").read_text()) == before
+
+
+def test_a_real_data_undo_stays_in_its_private_source_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    private = prompt / "cases" / "private" / "diary"
+    noted = swiped("private/diary/day1")
+    write_labels(private / "labels.jsonl", [noted])
+    monkeypatch.chdir(tmp_path)
+    run(["map", "daily", swipe_id(noted), "--reasons", "banned", "--sure", "--why", "Names it"], make_model=unused_model)
+    client = TestClient(make_app(load_prompt(tmp_path, "daily"), TOKEN))
+
+    client.post(f"/api/matches/{match_of(noted)}", headers=HAMPUS, json={"answer": "undo"})
+
+    assert [e["event"] for e in read_lines(private / "matches.jsonl")] == ["proposed", "undone"]
+    assert [line.get("counted") for line in read_lines(private / "labels.jsonl")] == [None, "sure", "undone"]
+    assert not (prompt / "matches.jsonl").exists() and not (prompt / "labels.jsonl").exists()
