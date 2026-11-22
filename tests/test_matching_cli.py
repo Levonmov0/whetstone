@@ -187,3 +187,29 @@ def test_a_reswipe_written_while_map_ran_wins_over_the_match(tmp_path: Path, mon
     out = capsys.readouterr().out.splitlines()
     assert "  Levon: good 10/11 (91%), bad 4/4 (100%)" in out
     assert out[3].startswith("assumes            4        4             0")
+
+
+def test_map_ask_waits_for_the_grader(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    noted = swiped("c17")
+    write_labels(prompt / "labels.jsonl", [noted])
+    monkeypatch.chdir(tmp_path)
+
+    code = run(["map", "daily", swipe_id(noted), "--reasons", "banned", "--ask", "--why", "Might mean the banned words"], make_model=unused_model)
+    run(["notes", "daily"], make_model=unused_model)
+
+    assert code == 0
+    match = "m_" + swipe_id(noted).removeprefix("s_")
+    assert capsys.readouterr().out.splitlines() == [f"waiting  d:c17 · Hampus · banned (ask {match})"]
+    assert [(e["event"], e["kind"]) for e in read_lines(prompt / "matches.jsonl")] == [("proposed", "ask")]
+    assert read_lines(prompt / "labels.jsonl") == [noted]
+
+
+def test_map_needs_sure_or_ask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    make_judged_suite(tmp_path, {"a": "Rest today."})
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(SystemExit) as stopped:
+        run(["map", "daily", "s_1", "--reasons", "banned", "--why", "x"], make_model=unused_model)
+
+    assert stopped.value.code == 2
