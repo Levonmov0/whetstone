@@ -83,3 +83,7 @@ def excerpt(output: Any) -> str:
     """The start of an output, as text, for reading a note beside what it was about."""
     text = output if isinstance(output, str) else json.dumps(output, ensure_ascii=False)
     return text if len(text) <= EXCERPT else text[:EXCERPT] + "…"
+
+
+def pending(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str) -> list[dict[str, Any]]:
+    raise NotImplementedError

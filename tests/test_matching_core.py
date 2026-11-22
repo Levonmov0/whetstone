@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from whetstone.features.matching.core import current, evidence, propose, swipe_id, unmatched_notes
+from whetstone.features.matching.core import current, evidence, pending, propose, swipe_id, unmatched_notes
 
 
 def label(grader: str = "Hampus", card: str = "d:c17", at: str = "2026-11-20T08:00:00+00:00", verdict: str = "bad", note: str = "Says HRV", reasons: list[str] | None = None, **extra: Any) -> dict[str, Any]:
@@ -108,3 +108,22 @@ def test_an_ask_proposal_waits_for_the_grader_and_writes_no_line() -> None:
     proposal = propose([source], [], {"jargon"}, swipe, ["jargon"], "Sounds like jargon", NOW, kind="ask")
 
     assert proposal == ({"event": "proposed", "id": "m_" + swipe.removeprefix("s_"), "swipe": swipe, "grader": "Hampus", "card_id": "d:c17", "kind": "ask", "reasons": ["jargon"], "why": "Sounds like jargon", "at": NOW}, None)
+
+
+def asked(source: dict[str, Any], reasons: list[str], kind: str = "ask", why: str = "Sounds like it") -> dict[str, Any]:
+    swipe = swipe_id(source)
+    return {"event": "proposed", "id": "m_" + swipe.removeprefix("s_"), "swipe": swipe, "grader": source["grader"], "card_id": source["card_id"], "kind": kind, "reasons": reasons, "why": why, "at": NOW}
+
+
+def test_pending_lists_the_graders_unanswered_asks_with_reasons_still_covered() -> None:
+    waiting = label(card="d:c1", note="Feels like a horoscope", output="Today is a chance to reset.")
+    other_grader = label(card="d:c1", grader="Levon")
+    sure = label(card="d:c2")
+    answered = label(card="d:c3")
+    labels = [waiting, other_grader, sure, answered]
+    events = [asked(waiting, ["generic", "deleted judge"], why="Could be anyone's"), asked(other_grader, ["generic"]), asked(sure, ["generic"], kind="sure"), asked(answered, ["generic"]),
+              {"event": "answered", "id": asked(answered, [])["id"], "answer": "no", "at": NOW}]
+
+    assert pending(labels, events, {"generic"}, "Hampus") == [
+        {"id": asked(waiting, [])["id"], "card_id": "d:c1", "note": "Feels like a horoscope", "excerpt": "Today is a chance to reset.", "reasons": ["generic"], "why": "Could be anyone's"},
+    ]
