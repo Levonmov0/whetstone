@@ -474,14 +474,14 @@ def agreement_table(prompt: PromptSettings, gates: dict[str, tuple[dict[str, Agr
     judges = judges_or_stop(prompt)
     labels = load_labels(prompt.dir)
     width = max(len(name) for name in ["judge", *gates]) + 3
-    lines = [f"{'judge':<{width}}bad swipes   tapped   claude sure   {'good / bad':<11}   gate"]
+    lines = [f"{'judge':<{width}}bad swipes   tapped   claude sure   confirmed   {'good / bad':<11}   gate"]
     for name, (rows, status, _advice) in gates.items():
-        tapped, sure, _confirmed = evidence(labels, covered_reasons({}, {name: judges[name]}))
+        tapped, sure, confirmed = evidence(labels, covered_reasons({}, {name: judges[name]}))
         sides = f"{_pooled([row.good for row in rows.values()])} / {_pooled([row.bad for row in rows.values()])}"
         if status == "unmeasured":
             # The gate's own count: the most bad swipes any one grader gave for this rule.
             sides, status = "—", f"unmeasured · {max(row.bad.total for row in rows.values())} of {MINIMUM} bad"
-        lines.append(f"{name:<{width}}{tapped + sure:>10}   {tapped:>6}   {sure:>11}   {sides:<11}   {status}")
+        lines.append(f"{name:<{width}}{tapped + sure + confirmed:>10}   {tapped:>6}   {sure:>11}   {confirmed:>9}   {sides:<11}   {status}")
     return lines
 
 
