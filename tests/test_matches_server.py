@@ -42,3 +42,16 @@ def test_matches_need_the_token(method: str, path: str, headers: dict[str, str],
 
     assert response.status_code == 401
     assert response.json() == {"error": "missing or wrong token"}
+
+
+def test_a_grader_gets_only_their_own_waiting_matches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _prompt, client = asked_suite(tmp_path, monkeypatch)
+
+    response = client.get("/api/matches", headers=HAMPUS)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [{"id": match_of(NOTE), "card_id": "d:c17", "note": "Feels like a horoscope", "excerpt": "Today is a chance to reset.", "reasons": ["banned"], "why": "Might be the banned words"}],
+        "reasons": ["assumes", "assumes whether they did Kin's advice", "banned"],
+    }
+    assert [item["id"] for item in client.get("/api/matches", headers={**AUTH, "X-Grader": "Levon"}).json()["items"]] == [match_of(THEIRS)]
