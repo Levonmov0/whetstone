@@ -47,6 +47,14 @@ def test_current_keeps_a_matched_line_only_while_its_swipe_is_latest() -> None:
     assert current([kept, kept_match, replaced, reswipe, stale_match, plain]) == [kept_match, reswipe, plain]
 
 
+def test_current_skips_a_matched_line_its_grader_never_swiped() -> None:
+    swipe = label()
+    # A settle written before settling stopped copying Claude's match fields: Levon's, made from Hampus's swipe.
+    old_settle = label(grader="Levon", verdict="good", at="2026-11-20T09:00:00+00:00", settled=True, matched_by="claude", swipe=swipe_id(swipe))
+
+    assert current([swipe, old_settle]) == [swipe]
+
+
 NOW = "2026-11-21T10:00:00+00:00"
 
 
