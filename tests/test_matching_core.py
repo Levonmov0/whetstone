@@ -1,6 +1,6 @@
 from typing import Any
 
-from whetstone.features.matching.core import swipe_id
+from whetstone.features.matching.core import swipe_id, unmatched_notes
 
 
 def label(grader: str = "Hampus", card: str = "d:c17", at: str = "2026-11-20T08:00:00+00:00", verdict: str = "bad", note: str = "Says HRV", reasons: list[str] | None = None, **extra: Any) -> dict[str, Any]:
@@ -12,3 +12,22 @@ def test_swipe_id_is_stable_and_names_one_swipe() -> None:
     assert swipe_id(label()).startswith("s_")
     others = {swipe_id(label(grader="Levon")), swipe_id(label(card="d:c18")), swipe_id(label(at="2026-11-20T08:00:01+00:00"))}
     assert swipe_id(label()) not in others and len(others) == 3
+
+
+def test_unmatched_notes_are_latest_bad_swipes_with_a_note_and_no_proposal() -> None:
+    wanted = label(card="d:c1")
+    replaced = label(card="d:c2", note="old note")
+    proposed = label(card="d:c3")
+    labels = [
+        wanted,
+        replaced,
+        label(card="d:c2", at="2026-11-20T09:00:00+00:00", verdict="good", note="fine after all"),
+        proposed,
+        label(card="d:c4", verdict="good", note="nice"),
+        label(card="d:c5", verdict="skip", note="unsure"),
+        label(card="d:c6", note=""),
+        label(card="d:c7", matched_by="claude", swipe="s_x", at="2026-11-20T09:00:00+00:00"),
+    ]
+    events = [{"event": "proposed", "id": "m_1", "swipe": swipe_id(proposed)}]
+
+    assert unmatched_notes(labels, events) == [wanted]
