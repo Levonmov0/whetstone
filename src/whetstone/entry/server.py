@@ -125,7 +125,8 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
         now = datetime.now(UTC).isoformat()
         undoing = body["answer"] in ("undo", "redo")
         if undoing:
-            writes = undo(labels, events, reasons, grader, match, body["answer"], now)
+            line = undo(labels, events, reasons, grader, match, body["answer"], now)
+            writes = (None, line) if isinstance(line, dict) else line
         else:
             writes = answer(labels, events, reasons, grader, match, body["answer"], body.get("reason"), now)
         if writes is None:  # answered already, from a double tap or another phone: it counts once, as first answered
@@ -138,7 +139,8 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
             add_label(prompt.dir, line)
         if event is not None:
             add_event(prompt.dir, case_of(labels, events, event), event)
-        return JSONResponse({} if undoing else said([*labels, *([line] if line else [])], [*events, *([event] if event else [])], reasons, match))
+        # Just stored, so the answer sent is the stored one: answer_problem allows a reason only with a different chip.
+        return JSONResponse({} if undoing else {key: body[key] for key in ("answer", "reason") if key in body})
 
     async def app_page(request: Request) -> Response:
         return HTMLResponse((STATIC / "app.html").read_text())

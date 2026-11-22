@@ -58,11 +58,8 @@ def _items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: 
     said_by_line = [line for line in labels if line.get("counted") == "confirmed"]
     for each in sorted([event for event in events if event["event"] == "answered"] + said_by_line, key=lambda each: str(each["at"])):
         answers.setdefault(each.get("match") or each["id"], {"answer": each["answer"], **({"reason": each["reason"]} if "reason" in each else {})})
-    # The latest undo or redo wins. Each writes its matched line before its event, so a line newer than any event is
-    # one whose event a stopped server never wrote: it already counts, so it says the state.
-    said = [(event["at"], 1, event["id"], event["event"] == "undone") for event in events if event["event"] in ("undone", "redone")]
-    said += [(line["at"], 0, line["match"], line["counted"] == "undone") for line in labels if line.get("counted") in ("undone", "sure")]
-    undone = {match: state for _at, _event, match, state in sorted(said, key=lambda each: each[:2])}  # ties keep their order
+    # A sure match's newest line says whether the grader undid it.
+    undone = {line["match"]: line["counted"] == "undone" for line in _by_time(labels) if line.get("counted") in WRITES["sure"]}
     proposals = [event for event in events if event["event"] == "proposed"]
     items: list[dict[str, Any]] = []
     for n, event in enumerate(proposals):
@@ -255,9 +252,9 @@ def answer_problem(body: object) -> str | None:
     return None
 
 
-def undo(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str, match: str, choice: str, at: str) -> Refusal | tuple[dict[str, Any], dict[str, Any]] | None:
-    """The grader's undo or redo of Claude's sure match of their note. Undo makes the swipe count as it did before the
-    match, redo as matched again."""
+def undo(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str, match: str, choice: str, at: str) -> Refusal | dict[str, Any] | None:
+    """The grader's undo or redo of Claude's sure match of their note: the matched line to write. Undo makes the swipe
+    count as it did before the match, redo as matched again."""
     item = _own_item(labels, events, covered, grader, match, "sure")
     if isinstance(item, Refusal):
         return item
@@ -265,10 +262,8 @@ def undo(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: se
         return None  # already so: a double tap or a second phone writes once
     source = item["source"]
     if choice == "redo":
-        reasons, counted, event = list(dict.fromkeys(source["reasons"] + item["reasons"])), "sure", "redone"
-    else:
-        reasons, counted, event = source["reasons"], "undone", "undone"
-    return {"event": event, "id": match, "at": at}, _matched_line(source, match, reasons, counted, at)
+        return _matched_line(source, match, list(dict.fromkeys(source["reasons"] + item["reasons"])), "sure", at)
+    return _matched_line(source, match, source["reasons"], "undone", at)
 
 
 def sure_items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str) -> list[dict[str, Any]]:
