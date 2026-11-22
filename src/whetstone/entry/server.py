@@ -18,8 +18,8 @@ from whetstone.features.checks.core import covered_reasons
 from whetstone.features.checks.load import code_check_reasons, load_judges
 from whetstone.features.grading.core import swipe_problem, swipe_reasons
 from whetstone.features.grading.store import add_label, load_deck, load_labels
-from whetstone.features.matching.core import pending
-from whetstone.features.matching.store import load_events
+from whetstone.features.matching.core import Refusal, answer, pending
+from whetstone.features.matching.store import add_event, load_events
 from whetstone.features.workspace.load import PromptSettings
 
 Handler = Callable[[Request], Awaitable[Response]]
@@ -104,6 +104,17 @@ def make_app(prompt: PromptSettings, token: str, lifetime: timedelta = LIFETIME,
         return JSONResponse({"items": items, "reasons": sorted(reasons)})
 
     async def answer_match(request: Request) -> Response:
+        body = await request.json()
+        grader = unquote(request.headers.get("x-grader", ""))
+        match = request.path_params["match"]
+        labels = load_labels(prompt.dir)
+        writes = answer(labels, load_events(prompt.dir), covered(), grader, match, body["answer"], body.get("reason"), datetime.now(UTC).isoformat())
+        assert writes is not None and not isinstance(writes, Refusal)
+        event, line = writes
+        # The line first, as map writes: a crash in between leaves a swipe that counts and still asks, never a lost count.
+        if line is not None:
+            add_label(prompt.dir, line)
+            add_event(prompt.dir, line["case_id"], event)
         return JSONResponse({})
 
     async def app_page(request: Request) -> Response:
