@@ -1,6 +1,8 @@
 from typing import Any
 
-from whetstone.features.matching.core import current, swipe_id, unmatched_notes
+import pytest
+
+from whetstone.features.matching.core import current, propose, swipe_id, unmatched_notes
 
 
 def label(grader: str = "Hampus", card: str = "d:c17", at: str = "2026-11-20T08:00:00+00:00", verdict: str = "bad", note: str = "Says HRV", reasons: list[str] | None = None, **extra: Any) -> dict[str, Any]:
@@ -43,3 +45,25 @@ def test_current_keeps_a_matched_line_only_while_its_swipe_is_latest() -> None:
     plain = label(card="d:c3", grader="Levon")
 
     assert current([kept, kept_match, replaced, reswipe, stale_match, plain]) == [kept_match, reswipe, plain]
+
+
+NOW = "2026-11-21T10:00:00+00:00"
+
+
+@pytest.mark.parametrize(
+    ("swipe", "reasons", "refusal"),
+    [
+        ("s_000000000000", ["jargon"], "no swipe s_000000000000"),
+        ("good", ["jargon"], "not a bad swipe"),
+        ("replaced", ["jargon"], "Hampus swiped d:c2 again, matching the new note instead"),
+        ("bad", ["jargon", "vague"], 'no check stands for "vague"'),
+        ("proposed", ["jargon"], "already matched"),
+    ],
+)
+def test_propose_refuses(swipe: str, reasons: list[str], refusal: str) -> None:
+    lines = {"bad": label(card="d:c1"), "replaced": label(card="d:c2"), "good": label(card="d:c4", verdict="good"), "proposed": label(card="d:c3")}
+    labels = [*lines.values(), label(card="d:c2", at="2026-11-20T09:00:00+00:00", note="newer")]
+    events = [{"event": "proposed", "id": "m_1", "swipe": swipe_id(lines["proposed"])}]
+    swipe = swipe_id(lines[swipe]) if swipe in lines else swipe
+
+    assert propose(labels, events, {"jargon"}, swipe, reasons, "why", NOW) == refusal

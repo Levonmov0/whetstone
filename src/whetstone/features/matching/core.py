@@ -37,3 +37,7 @@ def current(labels: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if "matched_by" in label and label["swipe"] == swipe_id(latest[key]):
             lines[key] = label
     return list(lines.values())
+
+
+def propose(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], swipe: str, reasons: list[str], why: str, at: str) -> str | tuple[dict[str, Any], dict[str, Any]]:
+    raise NotImplementedError
