@@ -57,3 +57,7 @@ def propose(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered:
     event = {"event": "proposed", "id": match, "swipe": swipe, "grader": source["grader"], "card_id": source["card_id"], "kind": "sure", "reasons": reasons, "why": why, "at": at}
     line = {**source, "reasons": list(dict.fromkeys(source["reasons"] + reasons)), "matched_by": "claude", "swipe": swipe, "match": match, "counted": "sure", "at": at}
     return event, line
+
+
+def evidence(labels: list[dict[str, Any]], rule: set[str]) -> tuple[int, int]:
+    raise NotImplementedError

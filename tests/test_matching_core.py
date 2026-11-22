@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from whetstone.features.matching.core import current, propose, swipe_id, unmatched_notes
+from whetstone.features.matching.core import current, evidence, propose, swipe_id, unmatched_notes
 
 
 def label(grader: str = "Hampus", card: str = "d:c17", at: str = "2026-11-20T08:00:00+00:00", verdict: str = "bad", note: str = "Says HRV", reasons: list[str] | None = None, **extra: Any) -> dict[str, Any]:
@@ -82,3 +82,20 @@ def test_propose_appends_an_event_and_a_matched_line_that_keeps_the_verdict() ->
     assert event == {"event": "proposed", "id": match, "swipe": swipe, "grader": "Hampus", "card_id": "d:c17", "kind": "sure", "reasons": ["jargon", "generic", "tone"], "why": "Quotes HRV", "at": NOW}
     assert line == {**source, "reasons": ["generic", "jargon", "tone"], "matched_by": "claude", "swipe": swipe, "match": match, "counted": "sure", "at": NOW}
     assert line["verdict"] == "bad"
+
+
+def test_evidence_splits_counted_bad_swipes_into_tapped_and_claude_sure() -> None:
+    tapped = label(card="d:c1", reasons=["jargon"])
+    noted = label(card="d:c2")
+    already_tapped = label(card="d:c3", reasons=["jargon"])
+    labels = [
+        tapped,
+        noted,
+        label(card="d:c2", at=NOW, reasons=["jargon"], matched_by="claude", swipe=swipe_id(noted)),
+        already_tapped,
+        label(card="d:c3", at=NOW, reasons=["jargon", "tone"], matched_by="claude", swipe=swipe_id(already_tapped)),
+        label(card="d:c4", reasons=["tone"]),
+        label(card="d:c5", verdict="good", reasons=["jargon"]),
+    ]
+
+    assert evidence(labels, {"jargon", "biometric jargon"}) == (2, 1)
