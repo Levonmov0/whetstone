@@ -689,9 +689,11 @@ async function reply(item, body, errorNode) {
       errorNode.textContent = result.status === 400 ? result.body.error : "Couldn’t save, try again.";
       return false;
     }
-    const counted = body.answer !== "no";
+    // The stored answer, which may be another phone's: the first one counts.
+    const stored = result.body;
+    const counted = stored.answer !== "no";
     if (counted) checking.counted += 1; else checking.kept += 1;
-    const text = counted ? `✓ Counts as ${(body.reason ? [body.reason] : item.reasons).join(" + ")}` : "Kept as an idea for a new check";
+    const text = counted ? `✓ Counts as ${(stored.reason ? [stored.reason] : item.reasons).join(" + ")}` : "Kept as an idea for a new check";
     status.textContent = text;
     showToast(text, counted ? "var(--ws-accent)" : "var(--ws-muted)");
     done(item);
