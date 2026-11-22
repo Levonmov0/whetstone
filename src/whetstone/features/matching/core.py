@@ -188,7 +188,7 @@ def answer_problem(body: object) -> str | None:
         return "body must be a JSON object"
     sent = cast(dict[str, Any], body)
     if sent.get("answer") not in ("yes", "no", "different", "undo", "redo"):
-        return "answer must be yes, no or different"
+        return "answer must be yes, no, different, undo or redo"
     if sent["answer"] == "different" and not isinstance(sent.get("reason"), str):
         return "a different chip needs the reason picked"
     return None
