@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from tests.fakes import unused_model
+from tests.fakes import FakeModel, unused_model
 from tests.test_agreement_cli import RUBRIC_TAIL, swipes
 from tests.test_judges_cli import judging, make_judged_suite
 from whetstone.entry.cli import run
@@ -66,7 +66,10 @@ def test_a_sure_match_measures_an_unmeasured_judge(tmp_path: Path, monkeypatch: 
     noted = swiped("n", note="It assumes I skipped the run", output="Did you skip it?", grader="Levon")
     write_labels(prompt / "labels.jsonl", swipes(good_failed=0)[:14] + [noted])  # 10 good, 4 bad tapped, 1 note
     monkeypatch.chdir(tmp_path)
-    judge = lambda _workspace: judging("yes")  # noqa: E731
+
+    def judge(_workspace: Path) -> FakeModel:
+        return judging("yes")
+
     run(["agreement", "daily"], make_model=unused_model, make_judge=judge)
     assert "assumes: unmeasured" in capsys.readouterr().out.splitlines()
 
