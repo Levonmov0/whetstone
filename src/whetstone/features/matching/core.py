@@ -89,19 +89,21 @@ def propose(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered:
     return event, line
 
 
-def evidence(labels: list[dict[str, Any]], rule: set[str]) -> tuple[int, int]:
-    """Of the bad swipes that count for a rule, how many the grader tapped it on, and how many count only because
-    Claude was sure of their note."""
+def evidence(labels: list[dict[str, Any]], rule: set[str]) -> tuple[int, int, int]:
+    """Of the bad swipes that count for a rule, how many the grader tapped it on, how many count only because Claude
+    was sure of their note, and how many because the grader said yes to Claude's match."""
     swipes = {swipe_id(label): label for label in labels if "matched_by" not in label}
-    tapped = sure = 0
+    tapped = sure = confirmed = 0
     for line in current(labels):
         if line["verdict"] != "bad" or not rule & set(line["reasons"]):
             continue
-        if "matched_by" in line and not rule & set(swipes[line["swipe"]]["reasons"]):
-            sure += 1
-        else:
+        if "matched_by" not in line or rule & set(swipes[line["swipe"]]["reasons"]):
             tapped += 1
-    return tapped, sure
+        elif line["counted"] == "confirmed":
+            confirmed += 1
+        else:
+            sure += 1
+    return tapped, sure, confirmed
 
 
 EXCERPT = 160
