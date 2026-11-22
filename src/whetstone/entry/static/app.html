@@ -28,6 +28,9 @@
   }
   header .badge[hidden] { display: none; }
   .badge .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--ws-accent); }
+  /* Nothing to check, only Claude's sure matches: a quiet outline, no dot. */
+  header .badge.quiet { background: transparent; border: 1px solid color-mix(in srgb, var(--ws-muted) 50%, transparent); color: var(--ws-muted); font-weight: 500; }
+  .badge.quiet .dot { display: none; }
   main { flex: 1; display: flex; flex-direction: column; padding: 0 var(--ws-space); min-height: 0; }
   .card {
     flex: 1; min-height: 0; overflow-y: auto; background: var(--ws-surface); border-radius: var(--ws-radius);
@@ -135,6 +138,34 @@
   .pending-chip { flex: none; font-size: 13px; color: var(--ink); font-weight: 600; }
   .deck-end .sheet-actions { margin-top: 6px; }
   .hint { margin: 0; text-align: center; color: var(--ws-muted); font-size: 13px; line-height: 1.4; }
+  .sure-toggle { margin-top: auto; border-top: 1px solid color-mix(in srgb, var(--ws-muted) 30%, transparent); padding-top: 10px; }
+  .sure-toggle > button { background: none; border: 0; padding: 6px 0; color: var(--ws-accent); font: inherit; font-size: 15px; text-align: left; }
+  .sure-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+  .nothing .sure-list { gap: 0; margin-top: 0; }
+  .sure-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid color-mix(in srgb, var(--ws-muted) 12%, transparent); }
+  .nothing .sure-row:last-child { border-bottom: 0; }
+  .sure-text { flex: 1; min-width: 0; font-size: 14px; line-height: 1.4; }
+  .sure-text > span { display: block; }
+  .sure-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sure-status { color: var(--ink); }
+  .sure-row.undone .sure-status { color: var(--ws-muted); }
+  .sure-row > button {
+    min-height: 44px; min-width: 64px; padding: 0 12px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--ws-muted) 50%, transparent);
+    background: transparent; color: var(--ws-text); font: inherit; font-size: 14px;
+  }
+  .nothing { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; }
+  .nothing .error { margin: -8px 0 0; }
+  .nothing-text { text-align: center; padding: 28px 0 8px; }
+  .nothing-text h1 { font-size: 22px; margin: 0 0 8px; }
+  .nothing-text p { margin: 0 auto; max-width: 28em; line-height: 1.5; }
+  .sure-box { background: var(--ws-surface); border-radius: var(--ws-radius); padding: var(--ws-space) calc(var(--ws-space) * 1.25); display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+  .sure-box h2 { font-size: 15px; margin: 0 0 2px; }
+  .sure-box p { margin: 0 0 8px; color: var(--ws-muted); font-size: 14px; line-height: 1.4; }
+  .nothing .back { margin-top: auto; margin-bottom: var(--ws-space); }
+  .nothing .back button {
+    width: 100%; min-height: 52px; border-radius: var(--ws-radius); border: 0; font: inherit; font-size: 17px; font-weight: 600;
+    background: var(--ws-surface); color: var(--ws-good);
+  }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 </style>
 </head>
@@ -173,6 +204,8 @@ let total = 0;
 let busy = false;
 let matches = [];       // Claude's matches of this grader's notes that wait for their answer
 let matchReasons = [];  // every reason a check stands for: what the Different chip sheet offers
+let sure = [];          // Claude's sure matches of this grader's notes: they count already, and each can be undone
+let sureOpen = false;   // the "matched on its own" list on the matching screen starts collapsed
 let screen = "cards";   // cards, deck-end or matching
 let later = false;      // the grader put the matches off: they wait behind the badge, the deck end doesn't ask again
 let checking = null;    // on the matching screen: the items left, and what the answers did
@@ -250,13 +283,19 @@ async function loadMatches() {
     if (!result.ok) return;
     matches = result.body.items;
     matchReasons = result.body.reasons;
+    sure = result.body.sure;
   } catch { return; }
   updateBadge();
 }
 
+// Asks pending: "N to check". Nothing to check but Claude's sure matches: a quiet "N matched", the way to undo them.
 function updateBadge() {
-  document.getElementById("badge-text").textContent = `${matches.length} to check`;
-  badge.hidden = !matches.length || screen !== "cards";
+  const quiet = !matches.length;
+  const kept = sure.filter((item) => !item.undone).length;
+  document.getElementById("badge-text").textContent = quiet ? `${kept} matched` : `${matches.length} to check`;
+  badge.classList.toggle("quiet", quiet);
+  if (quiet) badge.setAttribute("aria-label", `${kept} matched by Claude, nothing to check`); else badge.removeAttribute("aria-label");
+  badge.hidden = !(matches.length || sure.length) || screen !== "cards";
 }
 
 function retryButton(label = "Try again") {
@@ -508,10 +547,61 @@ function putOff() {
 function openMatching() {
   screen = "matching";
   checking = { left: [...matches], total: matches.length, counted: 0, kept: 0 };
+  sureOpen = false;
   renameButton.hidden = true;
   backButton.hidden = false;
   updateBadge();
+  if (!matches.length) return nothingToCheck();
   renderMatch();
+}
+
+function nothingToCheck() {
+  progress.textContent = "";
+  const error = el("p", { class: "error", role: "alert" });
+  main.replaceChildren(el("div", { class: "nothing" },
+    el("div", { class: "nothing-text" },
+      el("h1", {}, "Nothing to check"),
+      el("p", {}, "Every note you wrote is either matched or kept as an idea for a new check.")),
+    sure.length ? el("section", { class: "sure-box", "aria-labelledby": "sure-title" },
+      el("h2", { id: "sure-title" }, "Claude matched these on its own"),
+      el("p", {}, "They already count. Undo any that are wrong."),
+      sureList(error, nothingToCheck)) : "",
+    error,
+    el("div", { class: "back" }, el("button", { type: "button", onclick: backToCards }, "Back to cards"))));
+}
+
+// The grader's sure matches, each with Undo, or Redo once undone. rerender redraws the screen the list is on.
+function sureList(errorNode, rerender) {
+  return el("div", { class: "sure-list" }, ...sure.map((item) => el("div", { class: item.undone ? "sure-row undone" : "sure-row" },
+    el("div", { class: "sure-text" },
+      el("span", { class: "sure-note" }, `“${item.note}”`),
+      el("span", { class: "sure-status" }, item.undone ? "Undone. Counts as before." : `→ ${item.reasons.join(" + ")}`)),
+    el("button", { type: "button", onclick: () => toggleSure(item, errorNode, rerender) }, item.undone ? "Redo" : "Undo"))));
+}
+
+async function toggleSure(item, errorNode, rerender) {
+  if (busy) return;  // a double tap must not undo twice
+  busy = true;
+  try {
+    const result = await api(`/api/matches/${encodeURIComponent(item.id)}`, { method: "POST", body: JSON.stringify({ answer: item.undone ? "redo" : "undo" }) });
+    if (result.status === 401) return tokenProblem();
+    if (result.status === 409 || result.status === 404) {
+      // Swiped again, or its check is gone: it no longer counts either way, so it leaves the list.
+      sure = sure.filter((other) => other !== item);
+      status.textContent = "That one is out of date, so it was removed.";
+    } else if (!result.ok) {
+      errorNode.textContent = result.status === 400 ? result.body.error : "Couldn’t save, try again.";
+      return;
+    } else {
+      item.undone = !item.undone;
+      status.textContent = item.undone ? "Undone. Counts as before." : `Counts as ${item.reasons.join(" + ")} again.`;
+    }
+    rerender();
+  } catch {
+    errorNode.textContent = "Couldn’t save, try again.";
+  } finally {
+    busy = false;
+  }
 }
 
 function renderMatch() {
@@ -527,12 +617,29 @@ function renderMatch() {
       el("div", { class: "about" }, el("span", { class: "field-name" }, "About this card"), el("span", { class: "text" }, item.excerpt)),
       el("div", {}, el("span", { class: "field-name chips-label" }, "Claude thinks it's"),
         el("div", { class: "suggested-chips" }, ...item.reasons.map((reason) => el("span", { class: "suggested" }, reason)))),
-      el("div", {}, el("span", { class: "field-name" }, "Why"), el("p", { class: "match-why" }, item.why))),
+      el("div", {}, el("span", { class: "field-name" }, "Why"), el("p", { class: "match-why" }, item.why)),
+      sure.length ? sureToggle(error) : ""),
     error,
     el("div", { class: "actions answers" },
       el("button", { type: "button", onclick: () => reply(item, { answer: "no" }, error) }, "No"),
       el("button", { type: "button", class: "different", onclick: () => pickDifferent(item) }, "Different chip"),
       el("button", { type: "button", class: "yes", onclick: () => reply(item, { answer: "yes" }, error) }, "Yes")));
+}
+
+// On the matching screen, collapsed under the item: what Claude matched on its own, with Undo.
+function sureToggle(errorNode) {
+  const list = el("div", { id: "sure-list" });
+  const title = () => sureOpen ? "Hide what Claude matched on its own" : `Claude matched ${sure.filter((item) => !item.undone).length} more on its own ›`;
+  const toggle = el("button", { type: "button", "aria-controls": "sure-list" });
+  const redraw = () => {
+    list.replaceChildren(sureList(errorNode, redraw));
+    list.hidden = !sureOpen;
+    toggle.textContent = title();
+    toggle.setAttribute("aria-expanded", String(sureOpen));
+  };
+  toggle.addEventListener("click", () => { sureOpen = !sureOpen; redraw(); });
+  redraw();
+  return el("div", { class: "sure-toggle" }, toggle, list);
 }
 
 function pickDifferent(item) {
@@ -623,6 +730,7 @@ badge.addEventListener("click", openMatching);
 renameButton.addEventListener("click", () => {
   grader = null;
   matches = [];  // the last grader's, not the next one's
+  sure = [];
   updateBadge();
   try { localStorage.removeItem("ws-grader"); } catch {}
   askName();
