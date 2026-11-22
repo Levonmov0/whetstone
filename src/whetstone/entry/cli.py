@@ -27,7 +27,7 @@ from whetstone.features.checks.core import MINIMUM, Agreement, CaseResult, Side,
 from whetstone.features.checks.load import CheckLoadError, code_check_reasons
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
-from whetstone.features.matching.core import evidence, excerpt, propose, swipe_id, unmatched_notes
+from whetstone.features.matching.core import current, evidence, excerpt, propose, swipe_id, unmatched_notes
 from whetstone.features.matching.store import add_event, load_events
 from whetstone.features.optimize.core import SplitError, split_cases
 from whetstone.features.workspace.core import request_differences
@@ -499,10 +499,11 @@ def judge_gates(prompt: PromptSettings, make_judge: MakeJudge) -> dict[str, tupl
     # Each swiped card is judged once, from the input and output its label kept, however many graders swiped it.
     cards = {label["card_id"]: label for label in labels}
     print(_count(len(cards) * len(judges), "judge call"), flush=True)
+    counting = current(labels)  # a match counts only while the swipe it came from is the grader's latest
     gates: dict[str, tuple[dict[str, Agreement], str, list[str]]] = {}
     for name, rubric in judges.items():
         verdicts = {card: not ask(name, rubric, label["case_id"], label["input"], label["output"]) for card, label in cards.items()}
-        rows = agreement(labels, verdicts, covered_reasons({}, {name: rubric}))
+        rows = agreement(counting, verdicts, covered_reasons({}, {name: rubric}))
         gates[name] = (rows, *judge_gate(rows))
     return gates
 
