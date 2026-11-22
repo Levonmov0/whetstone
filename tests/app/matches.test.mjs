@@ -116,3 +116,16 @@ test("A6: a badge tap while a swipe saves keeps the matching screen open", async
   assert.equal(w.document.getElementById("progress").textContent, "2 of 2");
   w.close();
 });
+
+test("A7: an Undo in flight when Back is tapped never draws Nothing to check over the cards", async () => {
+  const w = await boot((path, _grader, options) => path === "/api/cards" ? { status: 200, body: { cards: [card("1")], reasons: [] } }
+    : options?.method === "POST" ? { status: 200, body: {}, delay: 150 } : matches([], [sure("m_1")]));
+  w.document.getElementById("badge").click();
+  await tick();
+  button(w, "Undo").click();
+  button(w, "Back to cards").click();
+  await tick(300);
+  assert.ok(w.document.querySelector("main .card"));
+  assert.doesNotMatch(w.document.querySelector("main").textContent, /Nothing to check/);
+  w.close();
+});
