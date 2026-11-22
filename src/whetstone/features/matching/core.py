@@ -1,6 +1,7 @@
 """Pure rules for matching graders' notes to the reasons checks stand for: no I/O, environment or SDKs."""
 
 import hashlib
+import itertools
 import json
 from typing import Any, NamedTuple, cast
 
@@ -85,14 +86,21 @@ def _answer_of(line: dict[str, Any], source: dict[str, Any], event: dict[str, An
     return {"event": "answered", "id": event["id"], "answer": "yes", "at": line["at"]}
 
 
+# The lines each kind of match writes: a sure match counts or is undone, an ask counts once its grader confirms it.
+WRITES = {"sure": ("sure", "undone"), "ask": ("confirmed",)}
+
+
 def current(labels: list[dict[str, Any]], events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """One line per grader and card: their latest swipe, or the newest matched line made from it. A matched line made
-    from a swipe since replaced never counts, whichever order the two were written in."""
+    from a swipe since replaced never counts, whichever order the two were written in, and nor does one no proposal
+    of its kind owns: a crash's leftover, or a line written after the events were read."""
     latest = latest_swipes(labels)
+    kinds = {event["id"]: event["kind"] for event in events if event["event"] == "proposed"}
     lines = dict(latest)
     for label in _by_time(labels):
         key = label["grader"], label["card_id"]
-        if "matched_by" in label and key in latest and label["swipe"] == swipe_id(latest[key]):
+        owned = label.get("counted") in WRITES.get(kinds.get(label.get("match"), ""), ())
+        if "matched_by" in label and owned and key in latest and label["swipe"] == swipe_id(latest[key]):
             lines[key] = label
     return list(lines.values())
 
@@ -116,8 +124,11 @@ def propose(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered:
         return Refusal("invalid", "already matched")
     if rejected := [reason for reason in reasons if any(reason in item["reasons"] for item in said_no)]:
         return Refusal("invalid", f'{source["grader"]} answered No to "{rejected[0]}"')
-    # A swipe has one live proposal at a time; one made after its earlier ones went stale gets its own id.
-    match = "m_" + swipe.removeprefix("s_") + (f"_{len(earlier) + 1}" if earlier else "")
+    # A swipe has one live proposal at a time; one made after its earlier ones went stale gets its own id, and so does
+    # one made after a crash left a line with no proposal, so that line never becomes this match's.
+    used = {event["id"] for event in events if event["event"] == "proposed"} | {line["match"] for line in labels if "match" in line}
+    base = "m_" + swipe.removeprefix("s_")
+    match = next(m for m in itertools.chain([base], (f"{base}_{n}" for n in itertools.count(2))) if m not in used)
     event = {"event": "proposed", "id": match, "swipe": swipe, "grader": source["grader"], "card_id": source["card_id"], "kind": kind, "reasons": reasons, "why": why, "at": at}
     if kind == "ask":
         return event, None
