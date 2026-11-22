@@ -84,21 +84,24 @@ def test_propose_appends_an_event_and_a_matched_line_that_keeps_the_verdict() ->
     assert line is not None and line["verdict"] == "bad"
 
 
-def test_evidence_splits_counted_bad_swipes_into_tapped_and_claude_sure() -> None:
+def test_evidence_splits_counted_bad_swipes_into_tapped_claude_sure_and_confirmed() -> None:
     tapped = label(card="d:c1", reasons=["jargon"])
     noted = label(card="d:c2")
+    confirmed = label(card="d:c6")
     already_tapped = label(card="d:c3", reasons=["jargon"])
     labels = [
         tapped,
         noted,
-        label(card="d:c2", at=NOW, reasons=["jargon"], matched_by="claude", swipe=swipe_id(noted)),
+        label(card="d:c2", at=NOW, reasons=["jargon"], matched_by="claude", swipe=swipe_id(noted), counted="sure"),
         already_tapped,
         label(card="d:c3", at=NOW, reasons=["jargon", "tone"], matched_by="claude", swipe=swipe_id(already_tapped)),
         label(card="d:c4", reasons=["tone"]),
         label(card="d:c5", verdict="good", reasons=["jargon"]),
+        confirmed,
+        label(card="d:c6", at=NOW, reasons=["biometric jargon"], matched_by="claude", swipe=swipe_id(confirmed), counted="confirmed"),
     ]
 
-    assert evidence(labels, {"jargon", "biometric jargon"}) == (2, 1)
+    assert evidence(labels, {"jargon", "biometric jargon"}) == (2, 1, 1)
 
 
 def test_an_ask_proposal_waits_for_the_grader_and_writes_no_line() -> None:
