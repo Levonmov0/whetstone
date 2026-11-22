@@ -1,10 +1,15 @@
 // The swipe app in jsdom, its server faked: `routes(path, grader, options)` answers each request.
 import { readFileSync } from "node:fs";
+import { after } from "node:test";
 import { JSDOM } from "jsdom";
 
 const html = readFileSync(new URL("../../src/whetstone/entry/static/app.html", import.meta.url), "utf8");
 
 export const tick = (ms = 20) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// A test that fails before its close() would leave the app's poll running and the run hanging: close every window at the end.
+const open = new Set();
+after(() => { for (const window of open) window.close(); });
 
 export async function boot(routes, grader = "A") {
   const dom = new JSDOM(html, {
@@ -20,6 +25,7 @@ export async function boot(routes, grader = "A") {
       window.matchMedia = () => ({ matches: true, addEventListener() {} });
     },
   });
+  open.add(dom.window);
   await tick(60);
   return dom.window;
 }

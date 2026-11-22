@@ -85,3 +85,76 @@ test("an item another phone answered with a different chip counts as that chip",
   assert.equal(w.document.getElementById("status").textContent, "✓ Counts as jargon");
   w.close();
 });
+
+test("A5: a match Claude makes after the last swipe opens the deck end by itself", async () => {
+  let made = false;
+  const w = await boot((path) => path === "/api/cards" ? { status: 200, body: { cards: [], reasons: [] } } : matches(made ? [ask("m_1")] : []));
+  assert.equal(w.document.querySelector("main h1").textContent, "All graded");
+  made = true;
+  await tick(2300);
+  assert.ok(button(w, "Check them"));
+  w.close();
+});
+
+test("the poll leaves an unchanged All graded alone: focus stays on Check for new cards", async () => {
+  const w = await boot((path) => path === "/api/cards" ? { status: 200, body: { cards: [], reasons: [] } } : matches([]));
+  button(w, "Check for new cards").focus();
+  await tick(2300);
+  assert.equal(w.document.activeElement?.textContent, "Check for new cards");
+  w.close();
+});
+
+test("A6: a badge tap while a swipe saves keeps the matching screen open", async () => {
+  const w = await boot((path, _grader, options) => path === "/api/cards" ? { status: 200, body: { cards: [card("1"), card("2")], reasons: [] } }
+    : path === "/api/swipes" ? { status: 201, body: {}, delay: 150 } : matches([ask("m_1")]));
+  button(w, "✓ Good").click();
+  w.document.getElementById("badge").click();
+  await tick(500);
+  assert.equal(w.document.querySelector("main h1").textContent, "Is this what you meant?");
+  w.document.getElementById("back").click();
+  await tick();
+  assert.equal(w.document.getElementById("progress").textContent, "2 of 2");
+  w.close();
+});
+
+test("A7: an Undo in flight when Back is tapped never draws Nothing to check over the cards", async () => {
+  const w = await boot((path, _grader, options) => path === "/api/cards" ? { status: 200, body: { cards: [card("1")], reasons: [] } }
+    : options?.method === "POST" ? { status: 200, body: {}, delay: 150 } : matches([], [sure("m_1")]));
+  w.document.getElementById("badge").click();
+  await tick();
+  button(w, "Undo").click();
+  button(w, "Back to cards").click();
+  await tick(300);
+  assert.ok(w.document.querySelector("main .card"));
+  assert.doesNotMatch(w.document.querySelector("main").textContent, /Nothing to check/);
+  w.close();
+});
+
+test("A8: a Yes in flight when Back is tapped is saved and leaves the badge", async () => {
+  const w = await boot((path, _grader, options) => path === "/api/cards" ? { status: 200, body: { cards: [card("1")], reasons: [] } }
+    : options?.method === "POST" ? { status: 200, body: { answer: "yes" }, delay: 150 } : matches([ask("m_1")]));
+  w.document.getElementById("badge").click();
+  await tick();
+  button(w, "Yes").click();
+  w.document.getElementById("back").click();
+  await tick(300);
+  assert.ok(w.document.querySelector("main .card"));
+  assert.equal(w.document.getElementById("badge").hidden, true);
+  w.close();
+});
+
+test("A9: a refresh sent before an answer never brings the answered item back", async () => {
+  let slow = false;
+  const w = await boot((path, _grader, options) => path === "/api/cards" ? { status: 200, body: { cards: [card("1")], reasons: [] } }
+    : options?.method === "POST" ? { status: 200, body: { answer: "yes" } } : { ...matches([ask("m_1"), ask("m_2")]), delay: slow ? 200 : 0 });
+  slow = true;
+  w.eval("loadMatches()");
+  w.document.getElementById("badge").click();
+  await tick();
+  button(w, "Yes").click();
+  await tick(300);
+  w.document.getElementById("back").click();
+  await tick();
+  assert.equal(w.document.getElementById("badge-text").textContent, "1 to check");
+  w.close();
+});
