@@ -6,9 +6,8 @@ from tests.fakes import unused_model
 from tests.test_judges_cli import make_judged_suite
 from tests.test_matching_cli import answered_in_app, swiped, write_labels
 from whetstone.entry.cli import run
-from whetstone.features.grading.store import load_labels
 from whetstone.features.matching.core import kept_and_waiting, swipe_id
-from whetstone.features.matching.store import load_events
+from whetstone.features.matching.store import snapshot
 
 
 def test_a_note_answered_no_can_be_matched_to_a_new_judge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -30,7 +29,7 @@ def test_a_note_answered_no_can_be_matched_to_a_new_judge(tmp_path: Path, monkey
         "counted  d:c17 · Hampus · assumes (sure)",
         "every reason has a check",
     ]
-    assert kept_and_waiting(load_labels(prompt), load_events(prompt), {"banned", "assumes"}) == (0, {})
+    assert kept_and_waiting(snapshot(prompt), {"banned", "assumes"}) == (0, {})
 
 
 def test_reasons_names_the_swipe_of_a_note_answered_no(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

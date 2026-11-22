@@ -28,8 +28,8 @@ from whetstone.features.checks.core import MINIMUM, Agreement, CaseResult, Rubri
 from whetstone.features.checks.load import CheckLoadError, code_check_reasons
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
-from whetstone.features.matching.core import Refusal, case_of, current, evidence, excerpt, idea_lines, kept_and_waiting, propose, swipe_id, undone_count, unmatched_notes
-from whetstone.features.matching.store import Snapshot, add_event, snapshot
+from whetstone.features.matching.core import Refusal, Snapshot, case_of, current, evidence, excerpt, idea_lines, kept_and_waiting, propose, swipe_id, undone_count, unmatched_notes
+from whetstone.features.matching.store import add_event, snapshot
 from whetstone.features.optimize.core import SplitError, split_cases
 from whetstone.features.workspace.core import request_differences
 from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, judge_model, load_prompt, phone_access, prompt_names, rewrite_settings
@@ -478,17 +478,16 @@ def show_agreement(prompt: PromptSettings, make_judge: MakeJudge) -> int:
 def agreement_table(gates: dict[str, tuple[dict[str, Agreement], str, list[str]]], judges: dict[str, Rubric], snap: Snapshot, covered: set[str]) -> list[str]:
     """One row per judge: its counted bad swipes split by who gave the reason, and both sides pooled over graders."""
     width = max(len(name) for name in ["judge", *gates]) + 3
-    events, labels = snap
     lines = [f"{'judge':<{width}}bad swipes   tapped   claude sure   confirmed   undone   {'good / bad':<11}   gate"]
     for name, (rows, status, _advice) in gates.items():
         rule = covered_reasons({}, {name: judges[name]})
-        tapped, sure, confirmed = evidence(labels, events, rule)
+        tapped, sure, confirmed = evidence(snap, rule)
         sides = f"{_pooled([row.good for row in rows.values()])} / {_pooled([row.bad for row in rows.values()])}"
         if status == "unmeasured":
             # The gate's own count: the most bad swipes any one grader gave for this rule.
             sides, status = "—", f"unmeasured · {max(row.bad.total for row in rows.values())} of {MINIMUM} bad"
-        lines.append(f"{name:<{width}}{tapped + sure + confirmed:>10}   {tapped:>6}   {sure:>11}   {confirmed:>9}   {undone_count(labels, events, covered, rule):>6}   {sides:<11}   {status}")
-    kept, waiting = kept_and_waiting(labels, events, covered)
+        lines.append(f"{name:<{width}}{tapped + sure + confirmed:>10}   {tapped:>6}   {sure:>11}   {confirmed:>9}   {undone_count(snap, covered, rule):>6}   {sides:<11}   {status}")
+    kept, waiting = kept_and_waiting(snap, covered)
     said = [f"{_count(kept, 'note')} kept as {'an idea' if kept == 1 else 'ideas'} for a new check"] if kept else []
     said += [f"{count} waiting on {grader}" for grader, count in waiting.items()]
     return lines + [" · ".join(said)] if said else lines
@@ -503,13 +502,12 @@ def judge_gates(prompt: PromptSettings, make_judge: MakeJudge, judges: dict[str,
     """Each judge's agreement with the swipes per grader, its gate and the advice; None without judges."""
     if not judges:
         return None
-    events, labels = snap
     providers = providers_or_stop(prompt)
-    ask = prepare_judge(prompt, providers, any(label["case_id"].startswith("private/") for label in labels), make_judge)
+    ask = prepare_judge(prompt, providers, any(label["case_id"].startswith("private/") for label in snap.swipes), make_judge)
     # Each swiped card is judged once, from the input and output its label kept, however many graders swiped it.
-    cards = {label["card_id"]: label for label in labels}
+    cards = {label["card_id"]: label for label in snap.swipes}
     print(_count(len(cards) * len(judges), "judge call"), flush=True)
-    counting = current(labels, events)  # a match counts only while the swipe it came from is the grader's latest
+    counting = current(snap)  # a match counts only while the swipe it came from is the grader's latest
     gates: dict[str, tuple[dict[str, Agreement], str, list[str]]] = {}
     for name, rubric in judges.items():
         verdicts = {card: not ask(name, rubric, label["case_id"], label["input"], label["output"]) for card, label in cards.items()}
@@ -534,8 +532,7 @@ def _side(side: Side) -> str:
 
 def list_reasons(prompt: PromptSettings) -> int:
     covered = covered_reasons(code_checks_or_stop(prompt), judges_or_stop(prompt))
-    events, labels = snapshot(prompt.dir)
-    uncovered = uncovered_reasons(idea_lines(labels, events, covered), covered)
+    uncovered = uncovered_reasons(idea_lines(snapshot(prompt.dir), covered), covered)
     print("\n".join(f"{count}  {reason}" for reason, count in uncovered) if uncovered else "every reason has a check")
     return 0
 
@@ -551,8 +548,7 @@ def list_notes(prompt: PromptSettings, follow: bool) -> int:
         except Stop:
             if covered is None:
                 raise
-        events, labels = snapshot(prompt.dir)
-        unmatched = unmatched_notes(labels, events, covered)
+        unmatched = unmatched_notes(snapshot(prompt.dir), covered)
         printed &= {swipe_id(label) for label in unmatched}  # one matched since, whose match goes stale, prints again
         for label in unmatched:
             if swipe_id(label) in printed:
@@ -571,15 +567,15 @@ def map_note(prompt: PromptSettings, swipe: str, reasons: list[str], why: str, k
     # One map at a time per prompt, so two can't both find no proposal and both count the swipe.
     with (private_dir(prompt.workspace) / f"{prompt.dir.name}.matches.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        events, labels = snapshot(prompt.dir)
-        proposal = propose(labels, events, covered, swipe, reasons, why, datetime.now(UTC).isoformat(), kind)
+        snap = snapshot(prompt.dir)
+        proposal = propose(snap, covered, swipe, reasons, why, datetime.now(UTC).isoformat(), kind)
         if isinstance(proposal, Refusal):
             print(f"refused  {swipe} · {proposal.message}")
             return 1
         event, line = proposal
         if line is not None:
             add_label(prompt.dir, line)
-        add_event(prompt.dir, case_of(labels, [], event), event)
+        add_event(prompt.dir, case_of(snap, event), event)
     said = f"{event['card_id']} · {event['grader']} · {', '.join(reasons)}"
     print(f"counted  {said} (sure)" if line is not None else f"waiting  {said} (ask {event['id']})")
     return 0
@@ -596,7 +592,7 @@ def list_disagreements(prompt: PromptSettings) -> int:
     labels = load_labels(prompt.dir)
     queued = disagreements(labels)
     for card in queued:
-        latest = {label["grader"]: label for label in labels if label["card_id"] == card and "matched_by" not in label}
+        latest = {label["grader"]: label for label in labels if label["card_id"] == card}
         print(f"{card}  " + "  ".join(_verdict(label) for label in latest.values()))
     print(f"{len(queued)} card{'' if len(queued) == 1 else 's'} to settle" if queued else "nothing to settle")
     return 0
@@ -610,8 +606,7 @@ def settle_card(prompt: PromptSettings, card: str, verdict: str, grader: str, no
     sided = [label for label in swiped if label["verdict"] == verdict]
     reasons: list[str] = sided[-1]["reasons"] if sided else []
     swipe: dict[str, Any] = {"grader": grader, "verdict": verdict, "reasons": reasons, "note": note, "settled": True, "at": datetime.now(UTC).isoformat()}
-    # The card's fields from a swipe, never a matched line: the call is the settler's own, not Claude's match.
-    add_label(prompt.dir, {**[label for label in swiped if "matched_by" not in label][-1], **swipe})
+    add_label(prompt.dir, {**swiped[-1], **swipe})
     return 0
 
 
