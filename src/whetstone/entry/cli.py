@@ -538,9 +538,15 @@ def list_reasons(prompt: PromptSettings) -> int:
 
 def list_notes(prompt: PromptSettings, follow: bool = False) -> int:
     printed: set[str] = set()
+    covered: set[str] | None = None
     while True:
-        # Read each time: a judge deleted while following frees the notes that waited on it.
-        covered = covered_reasons(code_checks_or_stop(prompt), judges_or_stop(prompt))
+        # Read each time: a judge deleted while following frees the notes that waited on it. A check caught mid-edit
+        # keeps the last set that loaded; only the first read stops the command.
+        try:
+            covered = covered_reasons(code_checks_or_stop(prompt), judges_or_stop(prompt))
+        except Stop:
+            if covered is None:
+                raise
         for label in unmatched_notes(load_labels(prompt.dir), load_events(prompt.dir), covered):
             if swipe_id(label) in printed:
                 continue
