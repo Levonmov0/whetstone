@@ -255,6 +255,7 @@ async function api(path, options = {}) {
 }
 
 function tokenProblem() {
+  document.querySelector(".sheet-backdrop")?.remove();  // an open sheet would cover the message
   showMessage("Scan the QR code again", "This link's token is missing, wrong or expired. The server makes a new one each time it starts.");
 }
 
@@ -676,11 +677,7 @@ async function reply(item, body, errorNode) {
   busy = true;
   try {
     const result = await api(`/api/matches/${encodeURIComponent(item.id)}`, { method: "POST", body: JSON.stringify(body) });
-    if (result.status === 401) {
-      document.querySelector(".sheet-backdrop")?.remove();  // the Different chip sheet would cover the message
-      tokenProblem();
-      return false;
-    }
+    if (result.status === 401) { tokenProblem(); return false; }
     // Swiped again, or its check is gone: no longer a question, so it leaves quietly.
     if (result.status === 409 || result.status === 404) {
       status.textContent = "That one is out of date, so it was skipped.";
