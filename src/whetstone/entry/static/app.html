@@ -188,43 +188,89 @@ try {
 } catch {}
 if (location.hash) history.replaceState(null, "", location.pathname);
 
+
 const main = document.getElementById("main");
 const progress = document.getElementById("progress");
 const status = document.getElementById("status");
 const renameButton = document.getElementById("rename");
 const backButton = document.getElementById("back");
 const badge = document.getElementById("badge");
-let grader = null;
-try { grader = localStorage.getItem("ws-grader"); } catch {}
-let cards = [];
-let reasons = [];
-let total = 0;
-let busy = false;
-let matches = [];       // Claude's matches of this grader's notes that wait for their answer
-let matchReasons = [];  // every reason a check stands for: what the Different chip sheet offers
-let sure = [];          // Claude's sure matches of this grader's notes: they count already, and each can be undone
-let sureOpen = false;   // the "matched on its own" list on the matching screen starts collapsed
-let screen = "cards";   // cards, deck-end or matching
-let later = false;      // the grader put the matches off: they wait behind the badge, the deck end doesn't ask again
-let checking = null;    // on the matching screen: the items left, and what the answers did
-let view = 0;           // bumped on every move to another screen: a reply redraws only the screen it was asked from
 
-// A request's token: who asked, from which screen.
-let seq = 0, settled = 0;  // request numbers: a read sent before the last applied reply is older than what we know
+// The app's one state. Server replies change it only through commit(); render() draws it.
+const state = {
+  grader: null,
+  cards: [], reasons: [], total: 0,
+  matches: [],       // Claude's matches of this grader's notes that wait for their answer
+  matchReasons: [],  // every reason a check stands for: what the Different chip sheet offers
+  sure: [],          // Claude's sure matches of this grader's notes: they count already, and each can be undone
+  screen: null,      // name, loading, message, token, cards, deck-end, all-graded or matching
+  message: null,     // the message screen's { title, text }
+  later: false,      // the grader put the matches off: they wait behind the badge, the deck end doesn't ask again
+  checking: null,    // this visit of the matching screen: the items left, and what the answers did
+  sureOpen: false,   // the "matched on its own" list on the matching screen starts collapsed
+  busy: false,       // a save in flight: a double tap must not save twice
+  sheet: null,       // the open sheet's close()
+  polling: false,
+  view: 0,           // bumped on every move to another screen: a reply draws only on the view it was asked from
+  seq: 0,            // the last request's number
+  settled: 0,        // a read numbered this or lower is older than a reply already applied
+};
+try { state.grader = localStorage.getItem("ws-grader"); } catch {}
+Object.defineProperty(window, "matches", { get: () => state.matches });  // read by the app tests
 
-// A request's token: who asked, from which screen, in what order.
-function take(read = false) { return { grader, view, seq: ++seq, read }; }
-const showing = (token) => token.grader === grader && token.view === view;
+// A request's token: who asked, from which view, in what order. A badge-only read passes view null: it never draws.
+function take(read = false, view = state.view) { return { grader: state.grader, view, seq: ++state.seq, read }; }
+const showing = (asked) => asked.grader === state.grader && asked.view === state.view;
 
-// Every server reply changes state here. A reply for another grader is dropped, and so is a read sent before a
-// reply already applied. Any other updates the data, and says whether its screen is still showing, the only case
-// in which the caller may draw. A write's reply always applies: the server stored it.
-function commit(token, change) {
-  if (token.grader !== grader || (token.read && token.seq <= settled)) return false;
-  settled = token.read ? token.seq : seq;
-  change();
+// Every server reply passes through here. A reply for another grader is dropped, and so is a read sent before a
+// reply already applied: it is older than what the app knows. A write's reply always applies: the server stored
+// it. A 401 means the token is dead for every screen. Otherwise change(body) updates the data and names the
+// screen to draw, which is drawn only while the reply's view is still showing. Returns whether it is.
+function commit(asked, result, change) {
+  if (asked.grader !== state.grader || (asked.read && asked.seq <= state.settled)) return false;
+  if (result?.status === 401) { show("token"); return false; }
+  state.settled = asked.read ? asked.seq : state.seq;
+  const next = change(result?.body);
+  const fresh = asked.view === state.view;
+  if (fresh && next) show(next); else updateBadge();
+  return fresh;
+}
+
+// Moving to another screen starts a new view, which closes any open sheet; the same screen is only redrawn.
+function show(screen) {
+  if (screen !== state.screen) {
+    state.screen = screen;
+    state.view += 1;
+    state.sheet?.();
+  }
+  render();
+}
+
+// Where the deck leaves the grader: the next card, the deck end that asks about matches, or All graded.
+function deckScreen() {
+  if (state.cards.length) return "cards";
+  return state.matches.length && !state.later ? "deck-end" : "all-graded";
+}
+
+const SCREENS = {
+  name: askName,
+  loading: () => showMessage("Loading…", ""),
+  message: () => showMessage(state.message.title, state.message.text, retryButton()),
+  token: () => showMessage("Scan the QR code again", "This link's token is missing, wrong or expired. The server makes a new one each time it starts."),
+  cards: drawCard,
+  "deck-end": deckEnd,
+  "all-graded": () => showMessage("All graded", "Thanks. New cards show up here after the next check run.", retryButton("Check for new cards")),
+  matching: () => !state.checking.total ? nothingToCheck() : state.checking.left.length ? renderMatch() : allChecked(),
+};
+
+function render() {
+  const { screen } = state;
+  backButton.hidden = screen !== "matching";
+  renameButton.hidden = screen === "name" || screen === "token" || screen === "matching";
+  progress.textContent = "";
   updateBadge();
-  return token.view === view;
+  SCREENS[screen]();
+  if (screen === "deck-end" || screen === "all-graded") poll();
 }
 
 function el(tag, attrs = {}, ...children) {
@@ -238,12 +284,10 @@ function el(tag, attrs = {}, ...children) {
 }
 
 function showMessage(title, text, ...extra) {
-  progress.textContent = "";
   main.replaceChildren(el("div", { class: "message" }, el("h1", {}, title), el("p", {}, text), ...extra));
 }
 
 function askName() {
-  renameButton.hidden = true;
   const input = el("input", { type: "text", id: "name", autocomplete: "name", autocapitalize: "words", enterkeyhint: "go" });
   const form = el("form", { class: "message" },
     el("h1", {}, "Who's grading?"),
@@ -254,11 +298,10 @@ function askName() {
     event.preventDefault();
     const name = input.value.trim();
     if (!name) return;
-    grader = name;
+    state.grader = name;
     try { localStorage.setItem("ws-grader", name); } catch {}
     load();
   });
-  progress.textContent = "";
   main.replaceChildren(form);
   input.focus();
 }
@@ -267,51 +310,74 @@ async function api(path, options = {}) {
   const response = await fetch(path, {
     ...options,
     // A header can't carry most names (Łukasz, 陈), so the name travels URL-encoded.
-    headers: { "Authorization": `Bearer ${token}`, "X-Grader": encodeURIComponent(grader), "Content-Type": "application/json", ...(options.headers || {}) },
+    headers: { "Authorization": `Bearer ${token}`, "X-Grader": encodeURIComponent(state.grader), "Content-Type": "application/json", ...(options.headers || {}) },
   });
   const body = await response.json().catch(() => ({}));
   return { ok: response.ok, status: response.status, body };
 }
 
-function tokenProblem() {
-  document.querySelector(".sheet-backdrop")?.remove();  // an open sheet would cover the message
-  showMessage("Scan the QR code again", "This link's token is missing, wrong or expired. The server makes a new one each time it starts.");
+function message(title, text) {
+  state.message = { title, text };
+  return "message";
 }
 
 async function load() {
-  if (!token) return tokenProblem();
-  if (!grader) return askName();
-  renameButton.hidden = false;
-  showMessage("Loading…", "");
-  let result;
-  try { result = await api("/api/cards"); } catch { return showMessage("Can't reach the server", "Check that this phone is on the same network as the laptop, and that the server is still running.", retryButton()); }
-  if (result.status === 401) return tokenProblem();
-  if (!result.ok) return showMessage("No cards yet", result.body.error || "Something went wrong.", retryButton());
-  cards = result.body.cards;
-  reasons = result.body.reasons;
-  total = cards.length;
-  await loadMatches();
-  render();
+  if (!token) return show("token");
+  if (!state.grader) return show("name");
+  show("loading");
+  const asked = take();
+  let result = null;
+  try { result = await api("/api/cards"); } catch {}
+  if (result?.ok) await loadMatches();
+  commit(asked, result, (body) => {
+    if (!result) return message("Can't reach the server", "Check that this phone is on the same network as the laptop, and that the server is still running.");
+    if (!result.ok) return message("No cards yet", body.error || "Something went wrong.");
+    state.cards = body.cards;
+    state.reasons = body.reasons;
+    state.total = body.cards.length;
+    return deckScreen();
+  });
 }
 
+const ids = (items) => items.map((item) => item.id).join();
+
 // The badge is a quiet extra: when the matches can't be fetched, grading goes on and the badge keeps what it had.
-async function loadMatches() {
-  const asked = take(true);
-  try {
-    const result = await api("/api/matches");
-    if (!result.ok) return;
-    commit(asked, () => ({ items: matches, reasons: matchReasons, sure } = result.body));
-  } catch { return; }
+// Only the deck's own screens draw from the list, and only when it changed: a redraw for nothing would take focus.
+async function loadMatches(view = null) {
+  const asked = take(true, view);
+  let result;
+  try { result = await api("/api/matches"); } catch { return; }
+  commit(asked, result, (body) => {
+    if (!result.ok) return null;
+    const before = ids(state.matches);
+    ({ items: state.matches, reasons: state.matchReasons, sure: state.sure } = body);
+    return ids(state.matches) !== before ? deckScreen() : null;
+  });
+}
+
+// While the deck is done, Claude may still be matching the last notes: ask again until the grader moves on.
+const POLL_MS = 2000;
+const deckDone = () => state.screen === "deck-end" || state.screen === "all-graded";
+async function poll() {
+  if (state.polling) return;
+  state.polling = true;
+  while (deckDone()) {
+    await new Promise((wake) => setTimeout(wake, POLL_MS));
+    if (deckDone()) await loadMatches(state.view);
+  }
+  state.polling = false;
 }
 
 // Asks pending: "N to check". Nothing to check but Claude's sure matches: a quiet "N matched", the way to undo them.
+const BADGE_SCREENS = new Set(["cards", "all-graded", "loading", "message"]);
 function updateBadge() {
+  const { matches, sure } = state;
   const quiet = !matches.length;
   const kept = sure.filter((item) => !item.undone).length;
   document.getElementById("badge-text").textContent = quiet ? `${kept} matched` : `${matches.length} to check`;
   badge.classList.toggle("quiet", quiet);
   if (quiet) badge.setAttribute("aria-label", `${kept} matched by Claude, nothing to check`); else badge.removeAttribute("aria-label");
-  badge.hidden = !(matches.length || sure.length) || screen !== "cards";
+  badge.hidden = !(matches.length || sure.length) || !BADGE_SCREENS.has(state.screen);
 }
 
 function retryButton(label = "Try again") {
@@ -346,19 +412,8 @@ function renderOutput(output) {
   return el("div", { class: "output" }, renderValue(output));
 }
 
-function render() {
-  screen = "cards";
-  checking = null;
-  backButton.hidden = true;
-  renameButton.hidden = false;
-  updateBadge();
-  if (!cards.length) {
-    if (matches.length && !later) return deckEnd();
-    progress.textContent = "";
-    screen = "all-graded";
-    pollMatches();
-    return showMessage("All graded", "Thanks. New cards show up here after the next check run.", retryButton("Check for new cards"));
-  }
+function drawCard() {
+  const { cards, total } = state;
   const card = cards[0];
   progress.textContent = `${total - cards.length + 1} of ${total}`;
   const stamp = el("span", { class: "stamp", "aria-hidden": "true" });
@@ -421,8 +476,8 @@ function direction(dx, dy, threshold) {
 }
 
 function decide(verdict) {
-  if (busy) return;
-  const card = cards[0];
+  if (state.busy) return;
+  const card = state.cards[0];
   // A problem a code check already catches needs no words from the grader. A judge's catch still asks: the
   // grader's own reason is what the judge is measured against.
   const byCode = card.caught_by.filter((name) => !(card.judges || []).includes(name));
@@ -430,9 +485,17 @@ function decide(verdict) {
   send(card, { verdict, reasons: [], note: "" });
 }
 
+// A sheet over the current screen. Moving to another screen closes it, through its own close().
+function openSheet(backdrop, close, onKey) {
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) close(); });
+  document.addEventListener("keydown", onKey);
+  document.body.append(backdrop);
+  state.sheet = close;
+}
+
 function askWhy(card) {
   const picked = new Set();
-  const chips = reasons.map((reason) => {
+  const chips = state.reasons.map((reason) => {
     const chip = el("button", { type: "button", class: "chip", "aria-pressed": "false" }, reason);
     chip.addEventListener("click", () => {
       if (picked.has(reason)) picked.delete(reason); else picked.add(reason);
@@ -443,11 +506,11 @@ function askWhy(card) {
   const note = el("textarea", { id: "note", rows: "7", autocapitalize: "sentences", spellcheck: "true", maxlength: "10000",
     placeholder: "What's wrong with it? Type, or tap the mic on your keyboard and talk it through." });
   const error = el("p", { class: "error", role: "alert" });
-  const close = () => { backdrop.remove(); document.removeEventListener("keydown", onKey); restore(); };
+  const close = () => { backdrop.remove(); document.removeEventListener("keydown", onKey); state.sheet = null; restore(); };
   const onKey = (event) => { if (event.key === "Escape") close(); };
   const save = el("button", { type: "button", class: "save" }, "Save as bad");
   save.addEventListener("click", async () => {
-    if (busy) return;  // a double tap must not save twice
+    if (state.busy) return;  // a double tap must not save twice
     if (!picked.size && !note.value.trim()) { error.textContent = "Pick a reason or say what's wrong."; return; }
     const sent = await send(card, { verdict: "bad", reasons: [...picked], note: note.value.trim() }, error);
     if (sent) close();
@@ -458,9 +521,7 @@ function askWhy(card) {
     el("label", { for: "note", class: "sr-only" }, "Note"), note, error,
     el("div", { class: "sheet-actions" }, el("button", { type: "button", onclick: close }, "Cancel"), save));
   const backdrop = el("div", { class: "sheet-backdrop" }, sheet);
-  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) close(); });
-  document.addEventListener("keydown", onKey);
-  document.body.append(backdrop);
+  openSheet(backdrop, close, onKey);
   (chips[0] || note).focus();
 }
 
@@ -501,63 +562,47 @@ function showToast(text, color) {
 }
 
 async function send(card, swipe, errorNode) {
-  busy = true;
+  state.busy = true;
   const asked = take();
+  const showError = (text) => { restore(); (errorNode || document.getElementById("card-error")).textContent = text; };
   try {
-    const result = await api("/api/swipes", { method: "POST", body: JSON.stringify({ card_id: card.card_id, grader, ...swipe }) });
-    if (result.status === 401) { tokenProblem(); return false; }
-    if (!result.ok) restore();
-    // A newer check replaced the deck: these cards are gone, so fetch the new ones.
-    if (result.status === 409 || (result.status === 400 && /in the current deck/.test(result.body.error || ""))) {
-      document.querySelector(".sheet-backdrop")?.remove();
-      status.textContent = "New cards arrived; loading them.";
-      load();
-      return false;
-    }
-    if (!result.ok) {
-      const text = result.body.error || "Couldn't save that swipe.";
-      (errorNode || document.getElementById("card-error")).textContent = text;
-      return false;
-    }
-    if (showing(asked)) {
+    const result = await api("/api/swipes", { method: "POST", body: JSON.stringify({ card_id: card.card_id, grader: state.grader, ...swipe }) });
+    if (result.ok && showing(asked)) {
       status.textContent = `Saved as ${swipe.verdict}.`;
       await flyOff(swipe.verdict);
       showToast(LOOK[swipe.verdict].toast, LOOK[swipe.verdict].color);
     }
     // Claude matches notes while the grader swipes, so the badge is refreshed after every swipe; the last one
     // waits for it, so the deck end knows whether anything is left to check.
-    if (cards.length > 1) loadMatches(); else await loadMatches();
-    if (commit(asked, () => cards.shift())) render();
-    return true;
+    if (result.ok && state.cards.length === 1) await loadMatches();
+    const fresh = commit(asked, result, () => {
+      if (!result.ok) return null;
+      state.cards.shift();
+      return deckScreen();
+    });
+    if (result.ok) {
+      if (state.cards.length) loadMatches();
+      return true;
+    }
+    if (!fresh) return false;
+    // A newer check replaced the deck: these cards are gone, so fetch the new ones.
+    if (result.status === 409 || (result.status === 400 && /in the current deck/.test(result.body.error || ""))) {
+      status.textContent = "New cards arrived; loading them.";
+      load();
+      return false;
+    }
+    showError(result.body.error || "Couldn't save that swipe.");
+    return false;
   } catch {
-    restore();
-    (errorNode || document.getElementById("card-error")).textContent = "Couldn't reach the server. Try again.";
+    if (showing(asked)) showError("Couldn't reach the server. Try again.");
     return false;
   } finally {
-    busy = false;
+    state.busy = false;
   }
-}
-
-// While the deck is done, Claude may still be matching the last notes: ask again until the grader moves on.
-const POLL_MS = 2000;
-let polling = false;
-async function pollMatches() {
-  if (polling) return;
-  polling = true;
-  const deckDone = () => screen === "deck-end" || screen === "all-graded";
-  while (deckDone()) {
-    await new Promise((wake) => setTimeout(wake, POLL_MS));
-    const before = matches.map((item) => item.id).join();
-    await loadMatches();
-    if (deckDone() && matches.map((item) => item.id).join() !== before) render();  // a redraw would take focus
-  }
-  polling = false;
 }
 
 function deckEnd() {
-  screen = "deck-end";
-  pollMatches();
-  updateBadge();
+  const { matches, total } = state;
   progress.textContent = total ? `${total} of ${total} graded` : "";
   const n = matches.length;
   const rows = matches.map((item) => el("div", { class: "pending-row" },
@@ -576,75 +621,38 @@ function deckEnd() {
     el("p", { class: "hint" }, "Later keeps them. They wait behind the badge until you're back.")));
 }
 
-
 function openMatching() {
-  screen = "matching";
-  view += 1;
-  checking = { left: [...matches], total: matches.length, counted: 0, kept: 0 };
-  sureOpen = false;
-  renameButton.hidden = true;
-  backButton.hidden = false;
-  updateBadge();
-  if (!matches.length) return nothingToCheck();
-  renderMatch();
+  state.checking = { left: [...state.matches], total: state.matches.length, counted: 0, kept: 0 };
+  state.sureOpen = false;
+  show("matching");
 }
 
 function nothingToCheck() {
-  progress.textContent = "";
   const error = el("p", { class: "error", role: "alert" });
   main.replaceChildren(el("div", { class: "nothing" },
     el("div", { class: "nothing-text" },
       el("h1", {}, "Nothing to check"),
       el("p", {}, "Every note you wrote is either matched or kept as an idea for a new check.")),
-    sure.length ? el("section", { class: "sure-box", "aria-labelledby": "sure-title" },
+    state.sure.length ? el("section", { class: "sure-box", "aria-labelledby": "sure-title" },
       el("h2", { id: "sure-title" }, "Claude matched these on its own"),
       el("p", {}, "They already count. Undo any that are wrong."),
-      sureList(error, nothingToCheck)) : "",
+      sureList(error)) : "",
     error,
     el("div", { class: "back" }, el("button", { type: "button", onclick: backToCards }, "Back to cards"))));
 }
 
-// The grader's sure matches, each with Undo, or Redo once undone. rerender redraws the screen the list is on.
-function sureList(errorNode, rerender) {
-  return el("div", { class: "sure-list" }, ...sure.map((item) => el("div", { class: item.undone ? "sure-row undone" : "sure-row" },
+// The grader's sure matches, each with Undo, or Redo once undone.
+function sureList(errorNode) {
+  return el("div", { class: "sure-list" }, ...state.sure.map((item) => el("div", { class: item.undone ? "sure-row undone" : "sure-row" },
     el("div", { class: "sure-text" },
       el("span", { class: "sure-note" }, `“${item.note}”`),
       el("span", { class: "sure-status" }, item.undone ? "Undone. Counts as before." : `→ ${item.reasons.join(" + ")}`)),
-    el("button", { type: "button", onclick: () => toggleSure(item, errorNode, rerender) }, item.undone ? "Redo" : "Undo"))));
-}
-
-async function toggleSure(item, errorNode, rerender) {
-  if (busy) return;  // a double tap must not undo twice
-  busy = true;
-  const asked = take();
-  try {
-    const result = await api(`/api/matches/${encodeURIComponent(item.id)}`, { method: "POST", body: JSON.stringify({ answer: item.undone ? "redo" : "undo" }) });
-    if (result.status === 401) return tokenProblem();
-    let text;
-    if (result.status === 409 || result.status === 404) {
-      // Swiped again, or its check is gone: it no longer counts either way, so it leaves the list.
-      if (!commit(asked, () => { sure = sure.filter((other) => other.id !== item.id); })) return;  // by id: a refresh since may have replaced the item
-      text = "That one is out of date, so it was removed.";
-    } else if (!result.ok) {
-      errorNode.textContent = result.status === 400 ? result.body.error : "Couldn’t save, try again.";
-      return;
-    } else {
-      const now = sure.find((other) => other.id === item.id) || item;
-      if (!commit(asked, () => { now.undone = !now.undone; })) return;
-      text = now.undone ? "Undone. Counts as before." : `Counts as ${now.reasons.join(" + ")} again.`;
-    }
-    status.textContent = text;
-    rerender();
-  } catch {
-    errorNode.textContent = "Couldn’t save, try again.";
-  } finally {
-    busy = false;
-  }
+    el("button", { type: "button", onclick: () => postAnswer(item, { answer: item.undone ? "redo" : "undo" }, errorNode) }, item.undone ? "Redo" : "Undo"))));
 }
 
 function renderMatch() {
+  const { checking, sure } = state;
   const item = checking.left[0];
-  if (!item) return allChecked();
   progress.textContent = `${checking.total - checking.left.length + 1} of ${checking.total}`;
   const error = el("p", { class: "error match-error", role: "alert" });
   main.replaceChildren(
@@ -659,23 +667,23 @@ function renderMatch() {
       sure.length ? sureToggle(error) : ""),
     error,
     el("div", { class: "actions answers" },
-      el("button", { type: "button", onclick: () => reply(item, { answer: "no" }, error) }, "No"),
+      el("button", { type: "button", onclick: () => postAnswer(item, { answer: "no" }, error) }, "No"),
       el("button", { type: "button", class: "different", onclick: () => pickDifferent(item) }, "Different chip"),
-      el("button", { type: "button", class: "yes", onclick: () => reply(item, { answer: "yes" }, error) }, "Yes")));
+      el("button", { type: "button", class: "yes", onclick: () => postAnswer(item, { answer: "yes" }, error) }, "Yes")));
 }
 
 // On the matching screen, collapsed under the item: what Claude matched on its own, with Undo.
 function sureToggle(errorNode) {
   const list = el("div", { id: "sure-list" });
-  const title = () => sureOpen ? "Hide what Claude matched on its own" : `Claude matched ${sure.filter((item) => !item.undone).length} more on its own ›`;
+  const title = () => state.sureOpen ? "Hide what Claude matched on its own" : `Claude matched ${state.sure.filter((item) => !item.undone).length} more on its own ›`;
   const toggle = el("button", { type: "button", "aria-controls": "sure-list" });
   const redraw = () => {
-    list.replaceChildren(sureList(errorNode, redraw));
-    list.hidden = !sureOpen;
+    list.replaceChildren(sureList(errorNode));
+    list.hidden = !state.sureOpen;
     toggle.textContent = title();
-    toggle.setAttribute("aria-expanded", String(sureOpen));
+    toggle.setAttribute("aria-expanded", String(state.sureOpen));
   };
-  toggle.addEventListener("click", () => { sureOpen = !sureOpen; redraw(); });
+  toggle.addEventListener("click", () => { state.sureOpen = !state.sureOpen; redraw(); });
   redraw();
   return el("div", { class: "sure-toggle" }, toggle, list);
 }
@@ -684,7 +692,7 @@ function pickDifferent(item) {
   let picked = null;
   const error = el("p", { class: "error", role: "alert" });
   const save = el("button", { type: "button", class: "count" }, "Count it");
-  const chips = matchReasons.map((reason) => {
+  const chips = state.matchReasons.map((reason) => {
     const chip = el("button", { type: "button", class: "chip", "aria-pressed": "false" }, reason);
     chip.addEventListener("click", () => {
       picked = picked === reason ? null : reason;  // one chip: the one they meant
@@ -694,11 +702,11 @@ function pickDifferent(item) {
     });
     return chip;
   });
-  const close = () => { backdrop.remove(); document.removeEventListener("keydown", onKey); };
+  const close = () => { backdrop.remove(); document.removeEventListener("keydown", onKey); state.sheet = null; };
   const onKey = (event) => { if (event.key === "Escape") close(); };
   save.addEventListener("click", async () => {
     if (!picked) { error.textContent = "Pick the one you meant."; return; }
-    if (await reply(item, { answer: "different", reason: picked }, error)) close();
+    if (await postAnswer(item, { answer: "different", reason: picked }, error)) close();
   });
   const sheet = el("div", { class: "sheet pick", role: "dialog", "aria-modal": "true", "aria-labelledby": "which" },
     el("h2", { id: "which" }, "Which one did you mean?"),
@@ -706,23 +714,36 @@ function pickDifferent(item) {
     el("div", { class: "chips" }, ...chips), error,
     el("div", { class: "sheet-actions" }, el("button", { type: "button", onclick: close }, "Cancel"), save));
   const backdrop = el("div", { class: "sheet-backdrop" }, sheet);
-  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) close(); });
-  document.addEventListener("keydown", onKey);
-  document.body.append(backdrop);
+  openSheet(backdrop, close, onKey);
   chips[0]?.focus();
 }
 
-// One answer to one match. True once the item is done with: answered, or out of date and dropped.
-async function reply(item, body, errorNode) {
-  if (busy) return false;  // a double tap must not answer twice
-  busy = true;
-  const asked = take(), session = checking;  // the answer belongs to this visit of the matching screen
+// One answer to one match: Yes, No or a different chip for an ask, Undo or Redo for a sure match.
+// True once the item is done with: answered, or out of date and dropped.
+async function postAnswer(item, body, errorNode) {
+  if (state.busy) return false;  // a double tap must not answer twice
+  state.busy = true;
+  const asked = take(), session = state.checking;  // the reply belongs to this visit of the matching screen
+  const toggle = body.answer === "undo" || body.answer === "redo";
   try {
     const result = await api(`/api/matches/${encodeURIComponent(item.id)}`, { method: "POST", body: JSON.stringify(body) });
-    if (result.status === 401) { tokenProblem(); return false; }
-    // Swiped again, or its check is gone: no longer a question, so it leaves quietly.
-    if (result.status === 409 || result.status === 404) {
-      if (commit(asked, () => done(session, item))) { status.textContent = "That one is out of date, so it was skipped."; renderMatch(); }
+    const gone = result.status === 409 || result.status === 404;  // swiped again, or its check is gone
+    const fresh = commit(asked, result, (stored) => {
+      if (!gone && !result.ok) return null;
+      if (toggle && !gone) {
+        // By id: a refresh since may have replaced the item.
+        for (const now of state.sure) if (now.id === item.id) now.undone = body.answer === "undo";
+        return "matching";
+      }
+      if (!gone) { if (stored.answer !== "no") session.counted += 1; else session.kept += 1; }
+      session.left = session.left.filter((other) => other.id !== item.id);
+      state.matches = state.matches.filter((other) => other.id !== item.id);
+      state.sure = state.sure.filter((other) => other.id !== item.id);
+      return "matching";
+    });
+    if (!fresh) return gone || result.ok;
+    if (gone) {
+      status.textContent = `That one is out of date, so it was ${toggle ? "removed" : "skipped"}.`;
       return true;
     }
     if (!result.ok) {
@@ -730,56 +751,44 @@ async function reply(item, body, errorNode) {
       errorNode.textContent = result.status === 400 ? result.body.error : "Couldn’t save, try again.";
       return false;
     }
+    if (toggle) {
+      status.textContent = body.answer === "undo" ? "Undone. Counts as before." : `Counts as ${item.reasons.join(" + ")} again.`;
+      return true;
+    }
     // The stored answer, which may be another phone's: the first one counts.
-    const stored = result.body;
-    const counted = stored.answer !== "no";
-    const fresh = commit(asked, () => {
-      if (counted) session.counted += 1; else session.kept += 1;
-      done(session, item);
-    });
-    if (!fresh) return true;
-    const text = counted ? `✓ Counts as ${(stored.reason ? [stored.reason] : item.reasons).join(" + ")}` : "Kept as an idea for a new check";
+    const { answer, reason } = result.body;
+    const counted = answer !== "no";
+    const text = counted ? `✓ Counts as ${(reason ? [reason] : item.reasons).join(" + ")}` : "Kept as an idea for a new check";
     status.textContent = text;
     showToast(text, counted ? "var(--ws-accent)" : "var(--ws-muted)");
-    renderMatch();
     return true;
   } catch {
-    errorNode.textContent = "Couldn’t save, try again.";
+    if (showing(asked)) errorNode.textContent = "Couldn’t save, try again.";
     return false;
   } finally {
-    busy = false;
+    state.busy = false;
   }
 }
 
-function done(session, item) {
-  session.left = session.left.filter((other) => other !== item);
-  matches = matches.filter((other) => other.id !== item.id);
-}
-
 function allChecked() {
-  const { counted, kept } = checking;
+  const { counted, kept } = state.checking;
   showMessage("All checked", `Thanks. ${counted} now count toward a check. ${kept} kept as ${kept === 1 ? "an idea" : "ideas"} for a new check.`,
     el("div", { class: "actions", style: "grid-template-columns: 1fr" }, el("button", { type: "button", class: "good", onclick: backToCards }, "Back to cards")));
 }
 
 function backToCards() {
-  view += 1;
-  later = true;  // what's left waits behind the badge
-  render();
+  state.later = true;  // what's left waits behind the badge
+  show(deckScreen());
 }
 
 backButton.addEventListener("click", backToCards);
 badge.addEventListener("click", openMatching);
 
 renameButton.addEventListener("click", () => {
-  grader = null;
-  matches = [];  // the last grader's, not the next one's
-  sure = [];
-  later = false;
-  checking = null;
-  updateBadge();
+  // The last grader's, not the next one's; their replies still in flight are dropped by commit().
+  Object.assign(state, { grader: null, matches: [], sure: [], later: false, checking: null });
   try { localStorage.removeItem("ws-grader"); } catch {}
-  askName();
+  show("name");
 });
 
 load();
