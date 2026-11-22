@@ -154,3 +154,16 @@ def test_a_real_data_match_stays_in_its_private_source_folder(tmp_path: Path, mo
     assert [event["swipe"] for event in read_lines(private / "matches.jsonl")] == [swipe_id(noted)]
     assert len(read_lines(private / "labels.jsonl")) == 2
     assert not (prompt / "matches.jsonl").exists() and not (prompt / "labels.jsonl").exists()
+
+
+def test_agreement_table_says_how_far_an_unmeasured_judge_is(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."}, 'reasons = ["assumes the outcome"]\n' + RUBRIC_TAIL)
+    write_labels(prompt / "labels.jsonl", swipes(good_failed=0)[:12])  # 10 good, 2 bad
+    monkeypatch.chdir(tmp_path)
+
+    run(["agreement", "daily"], make_model=unused_model, make_judge=lambda _workspace: judging("yes"))
+
+    assert capsys.readouterr().out.splitlines()[1:3] == [
+        "judge     bad swipes   tapped   claude sure   good / bad    gate",
+        "assumes            2        2             0   —             unmeasured · 2 of 5 bad",
+    ]
