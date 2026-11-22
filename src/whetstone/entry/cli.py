@@ -27,6 +27,8 @@ from whetstone.features.checks.core import Agreement, CaseResult, Side, agreemen
 from whetstone.features.checks.load import CheckLoadError, code_check_reasons
 from whetstone.features.grading.core import disagreements
 from whetstone.features.grading.store import add_label, load_labels, new_deck_id, private_dir, save_deck
+from whetstone.features.matching.core import excerpt, swipe_id, unmatched_notes
+from whetstone.features.matching.store import load_events
 from whetstone.features.optimize.core import SplitError, split_cases
 from whetstone.features.workspace.core import request_differences
 from whetstone.features.workspace.load import PromptError, PromptSettings, find_workspace, judge_model, load_prompt, phone_access, prompt_names, rewrite_settings
@@ -53,6 +55,7 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
     baseline.add_argument("--report", action="store_true", help="add the swipes so far to the latest run's report")
     agree = commands.add_parser("agreement", help="measure each judge against the swipes and say whether it can be trusted")
     reasons = commands.add_parser("reasons", help="list left-swipe reasons that no check stands for yet")
+    notes = commands.add_parser("notes", help="list the latest bad swipes whose note nothing has matched yet, as JSON lines")
     disagree = commands.add_parser("disagreements", help="list the cards graders disagree on")
     settle = commands.add_parser("settle", help="record your call on a card graders disagree on")
     serve = commands.add_parser("serve", help="start the swipe server in the background and show its QR code")
@@ -72,11 +75,11 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
     applying.add_argument("--yes", action="store_true", help="apply even after warnings")
     applying.add_argument("--run", help="the run to apply, by id; the latest run with a candidate by default")
     method = commands.add_parser("apply-method", help="say whether the editable part is one fixed string in its source file")
-    for command in (check, verify, source, disagree, settle, reasons, agree, baseline, optimize, method, applying):
+    for command in (check, verify, source, disagree, settle, reasons, notes, agree, baseline, optimize, method, applying):
         command.add_argument("prompt")
     serve.add_argument("prompt", nargs="?")
     serve.add_argument("--stop", action="store_true", help="stop the running swipe server")
-    for command in (check, verify, source, disagree, settle, serve, reasons, agree, baseline, optimize, method, applying):
+    for command in (check, verify, source, disagree, settle, serve, reasons, notes, agree, baseline, optimize, method, applying):
         command.add_argument("--workspace", type=Path, help="the workspace folder, when it is not ./ or ./whetstone/")
     serve.add_argument("--host", help="the address to listen on")
     settle.add_argument("card", help="the card id, as disagreements prints it")
@@ -127,6 +130,8 @@ def run(argv: list[str], make_model: MakeModel, make_judge: MakeJudge | None = N
             return show_agreement(prompt, make_judge)
         if args.command == "reasons":
             return list_reasons(prompt)
+        if args.command == "notes":
+            return list_notes(prompt)
         if args.command == "disagreements":
             return list_disagreements(prompt)
         if args.command == "serve":
@@ -496,6 +501,13 @@ def list_reasons(prompt: PromptSettings) -> int:
     covered = covered_reasons(code_checks, judges)
     uncovered = uncovered_reasons(load_labels(prompt.dir), covered)
     print("\n".join(f"{count}  {reason}" for reason, count in uncovered) if uncovered else "every reason has a check")
+    return 0
+
+
+def list_notes(prompt: PromptSettings) -> int:
+    for label in unmatched_notes(load_labels(prompt.dir), load_events(prompt.dir)):
+        note = {"swipe": swipe_id(label), "grader": label["grader"], "card": label["card_id"], "note": label["note"], "reasons": label["reasons"], "excerpt": excerpt(label["output"])}
+        print(json.dumps(note, ensure_ascii=False))
     return 0
 
 

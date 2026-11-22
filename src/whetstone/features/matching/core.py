@@ -72,3 +72,12 @@ def evidence(labels: list[dict[str, Any]], rule: set[str]) -> tuple[int, int]:
         else:
             tapped += 1
     return tapped, sure
+
+
+EXCERPT = 160
+
+
+def excerpt(output: Any) -> str:
+    """The start of an output, as text, for reading a note beside what it was about."""
+    text = output if isinstance(output, str) else json.dumps(output, ensure_ascii=False)
+    return text if len(text) <= EXCERPT else text[:EXCERPT] + "…"
