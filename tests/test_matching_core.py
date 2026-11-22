@@ -382,3 +382,16 @@ def test_a_redo_line_left_by_a_crash_is_the_redo() -> None:
     leftover = {**label(), "reasons": ["jargon"], "matched_by": "claude", "swipe": swipe_id(label()), "match": events[0]["id"], "counted": "sure", "at": "2026-11-21T12:00:00+00:00"}
 
     assert [item["undone"] for item in sure_items([*labels, leftover], events, {"jargon"}, "Hampus")] == [False]
+
+
+def test_a_matched_line_no_proposal_of_its_kind_owns_never_counts() -> None:
+    orphan, sure, ask = label(card="d:c1"), label(card="d:c2"), label(card="d:c3")
+
+    def line(source: dict[str, Any], counted: str) -> dict[str, Any]:
+        return {**source, "reasons": ["jargon"], "matched_by": "claude", "swipe": swipe_id(source), "match": asked(source, [])["id"], "counted": counted, "at": NOW}
+
+    labels = [orphan, line(orphan, "sure"), sure, line(sure, "confirmed"), ask, line(ask, "sure")]
+    events = [asked(sure, ["jargon"], kind="sure"), asked(ask, ["jargon"])]
+
+    assert current(labels, events) == [orphan, sure, ask]
+    assert evidence(labels, events, {"jargon"}) == (0, 0, 0)
