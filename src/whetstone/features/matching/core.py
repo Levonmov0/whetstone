@@ -223,4 +223,5 @@ def sure_items(labels: list[dict[str, Any]], events: list[dict[str, Any]], cover
 
 
 def undone_count(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], rule: set[str]) -> int:
-    raise NotImplementedError
+    """How many of Claude's sure matches to a rule graders have undone, as things stand: a redo takes one back off."""
+    return sum(1 for item in _items(labels, events, covered) if item["kind"] == "sure" and item["undone"] and not item["stale"] and rule & set(item["reasons"]))
