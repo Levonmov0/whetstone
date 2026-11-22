@@ -172,3 +172,15 @@ test("round 3 A1: a Yes in flight, then Back and the badge, never shows the answ
   assert.equal(w.document.getElementById("progress").textContent, "1 of 1");
   w.close();
 });
+
+test("round 3 A2: a save that fails never drops a badge refresh sent before it", async () => {
+  let made = false;
+  const w = await boot((path) => path === "/api/cards" ? { status: 200, body: { cards: [card("1"), card("2")], reasons: [] } }
+    : path === "/api/swipes" ? { status: 500, body: {} } : { ...matches(made ? [ask("m_1")] : []), delay: made ? 150 : 0 });
+  made = true;
+  w.eval("loadMatches()");
+  button(w, "✓ Good").click();
+  await tick(300);
+  assert.equal(w.document.getElementById("badge-text").textContent, "1 to check");
+  w.close();
+});
