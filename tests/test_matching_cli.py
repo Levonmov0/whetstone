@@ -9,7 +9,7 @@ from tests.test_agreement_cli import RUBRIC_TAIL, swipes
 from tests.test_judges_cli import judging, make_judged_suite
 from whetstone.entry.cli import run
 from whetstone.features.grading.store import add_label, load_labels
-from whetstone.features.matching.core import answer, swipe_id
+from whetstone.features.matching.core import Refusal, answer, swipe_id
 from whetstone.features.matching.store import add_event, load_events
 
 LONG = "Your HRV dipped and your sleep latency rose, so today is a recovery day. " * 4
@@ -221,7 +221,7 @@ def answered_in_app(prompt: Path, match: str, choice: str, grader: str = "Hampus
     """The grader's answer, written as the swipe server writes it."""
     labels = load_labels(prompt)
     writes = answer(labels, load_events(prompt), set(covered), grader, match, choice, reason, "2026-11-21T10:00:00+00:00")
-    assert isinstance(writes, tuple)
+    assert writes is not None and not isinstance(writes, Refusal)
     event, line = writes
     if line is not None:
         add_label(prompt, line)
