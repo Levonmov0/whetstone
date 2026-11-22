@@ -211,3 +211,7 @@ def undo(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: se
         reasons, counted, event = source["reasons"], "undone", "undone"
     line = {**source, "reasons": reasons, "matched_by": "claude", "swipe": item["swipe"], "match": match, "counted": counted, "at": at}
     return {"event": event, "id": match, "at": at}, line
+
+
+def sure_items(labels: list[dict[str, Any]], events: list[dict[str, Any]], covered: set[str], grader: str) -> list[dict[str, Any]]:
+    raise NotImplementedError

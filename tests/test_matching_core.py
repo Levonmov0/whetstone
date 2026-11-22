@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from whetstone.features.matching.core import Refusal, answer, answer_problem, current, evidence, pending, propose, swipe_id, undo, unmatched_notes
+from whetstone.features.matching.core import Refusal, answer, answer_problem, current, evidence, pending, propose, sure_items, swipe_id, undo, unmatched_notes
 
 
 def label(grader: str = "Hampus", card: str = "d:c17", at: str = "2026-11-20T08:00:00+00:00", verdict: str = "bad", note: str = "Says HRV", reasons: list[str] | None = None, **extra: Any) -> dict[str, Any]:
@@ -282,3 +282,23 @@ def test_undo_refuses_another_graders_match_an_ask_and_a_stale_match() -> None:
     assert undo(labels, events, {"jargon"}, "Hampus", events[1]["id"], "undo", LATER) == Refusal("missing", f"no match {events[1]['id']}")
     assert undo(labels, events, {"jargon"}, "Hampus", "m_000000000000", "undo", LATER) == Refusal("missing", "no match m_000000000000")
     assert undo(reswiped, events, {"jargon"}, "Hampus", match, "undo", LATER) == Refusal("stale", "out of date: the card was swiped again, or no check stands for its reasons")
+
+
+def test_sure_items_list_the_graders_live_sure_matches_and_whether_undone() -> None:
+    mine = label(card="d:c1", note="Says HRV")
+    labels, events = sure_match(mine)
+    replaced = label(card="d:c2")
+    theirs = label(card="d:c3", grader="Levon")
+    ask = label(card="d:c4")
+    for other in (replaced, theirs):
+        more_labels, more_events = sure_match(other)
+        labels, events = [*labels, *more_labels], [*events, *more_events]
+    labels = [*labels, ask, label(card="d:c2", at=LATER, verdict="good", note="")]
+    events = [*events, asked(ask, ["jargon"])]
+    listed = {"id": events[0]["id"], "card_id": "d:c1", "note": "Says HRV", "reasons": ["jargon"], "undone": False}
+
+    assert sure_items(labels, events, {"jargon"}, "Hampus") == [listed]
+    undone = [*events, {"event": "undone", "id": events[0]["id"], "at": LATER}]
+    assert sure_items(labels, undone, {"jargon"}, "Hampus") == [{**listed, "undone": True}]
+    redone = [*undone, {"event": "redone", "id": events[0]["id"], "at": LATER}]
+    assert sure_items(labels, redone, {"jargon"}, "Hampus") == [listed]
