@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from whetstone.features.matching.core import Refusal, answer, answer_problem, current, evidence, idea_lines, pending, propose, sure_items, swipe_id, undo, undone_count, unmatched_notes
+from whetstone.features.matching.core import Refusal, answer, answer_problem, current, evidence, idea_lines, kept_and_waiting, pending, propose, sure_items, swipe_id, undo, undone_count, unmatched_notes
 
 
 def label(grader: str = "Hampus", card: str = "d:c17", at: str = "2026-11-20T08:00:00+00:00", verdict: str = "bad", note: str = "Says HRV", reasons: list[str] | None = None, **extra: Any) -> dict[str, Any]:
@@ -350,3 +350,14 @@ def test_a_check_brought_back_does_not_revive_a_match_made_again_since() -> None
 
     assert sure_items(labels, events, back, "Hampus") == []
     assert [item["id"] for item in pending(labels, events, back, "Hampus")] == [again[0]["id"]]
+
+
+def test_a_counting_line_left_by_a_crash_is_the_answer() -> None:
+    source = label()
+    item = asked(source, ["generic"])
+    # The server wrote the Yes's line, then died before its `answered` event.
+    leftover = {**source, "reasons": ["generic"], "matched_by": "claude", "swipe": swipe_id(source), "match": item["id"], "counted": "confirmed", "at": NOW}
+
+    assert pending([source, leftover], [item], {"generic"}, "Hampus") == []
+    assert answer([source, leftover], [item], {"generic"}, "Hampus", item["id"], "no", None, NOW) is None
+    assert kept_and_waiting([source, leftover], [item], {"generic"}) == (0, {})
