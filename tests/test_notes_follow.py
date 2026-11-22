@@ -12,6 +12,7 @@ from tests.test_judges_cli import make_judged_suite
 from tests.test_matching_cli import swiped, write_labels
 from whetstone.features.grading.store import add_label
 from whetstone.features.matching.core import swipe_id
+from whetstone.features.matching.store import add_event
 
 WHETSTONE = str(Path(sys.executable).parent / "whetstone")
 
@@ -59,3 +60,20 @@ def test_follow_prints_the_backlog_then_a_note_saved_after_it_started(follow: tu
     add_label(prompt, later)
 
     assert following.next_swipe() == swipe_id(later)
+
+
+def test_follow_prints_a_note_again_once_the_judge_it_waited_on_is_deleted(tmp_path: Path) -> None:
+    prompt = make_judged_suite(tmp_path, {"a": "Rest today."})
+    asked = swiped("c1", note="It guessed what I did")
+    write_labels(prompt / "labels.jsonl", [asked])
+    add_event(prompt, "c1", {"event": "proposed", "id": "m_1", "swipe": swipe_id(asked), "grader": "Hampus", "card_id": "d:c1", "kind": "ask", "reasons": ["assumes"], "why": "Guessing is assuming", "at": "2026-11-20T08:30:00+00:00"})
+    following = Follow(tmp_path)
+    try:
+        assert following.nothing_more(wait=3)
+
+        (prompt / "checks" / "assumes.judge.toml").unlink()
+
+        assert following.next_swipe() == swipe_id(asked)
+    finally:
+        following.process.kill()
+        following.process.wait()
