@@ -1,0 +1,40 @@
+[project]
+name = "whetstone"
+version = "0.1.0"
+description = "Test-driven prompt optimization, as a Claude Code plugin"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic",
+    "gepa==0.1.4",
+    "httpx2>=2.16.0",
+    "openai>=3.39.0",
+    "python-dotenv",
+    "qrcode>=8.2",
+    "starlette>=1.10.0",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+whetstone = "whetstone.entry.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pyright",
+    "import-linter",
+    "httpx>=0.28.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pyright]
+include = ["src", "tests"]
+typeCheckingMode = "strict"
+pythonVersion = "3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not live'"
+markers = ["live: calls real models and costs money; run with make smoke"]

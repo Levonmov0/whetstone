@@ -1,0 +1,8 @@
+{
+  "name": "whetstone-app-tests",
+  "private": true,
+  "description": "Only the swipe app's tests: jsdom runs src/whetstone/entry/static/app.html under node --test.",
+  "devDependencies": {
+    "jsdom": "24.1.3"
+  }
+}

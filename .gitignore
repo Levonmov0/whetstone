@@ -1,0 +1,6 @@
+.env
+spike/runs/gepa/
+.venv/
+__pycache__/
+.engine
+node_modules/
