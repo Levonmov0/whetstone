@@ -76,7 +76,8 @@ def _items(snap: Snapshot, covered: set[str]) -> list[dict[str, Any]]:
         answer = answers.get(event["id"])
         said_no = bool(answer and answer["answer"] == "no")
         replaced = latest[source["grader"], source["card_id"]] is not source
-        dead = not said_no and not covered & set(event["reasons"])
+        reasons = [answer["reason"]] if answer and "reason" in answer else event["reasons"]
+        dead = not said_no and not covered & set(reasons)
         # Matched again since: one live proposal per swipe, even once a deleted check comes back.
         superseded = not said_no and any(later["swipe"] == event["swipe"] for later in proposals[n + 1:])
         items.append({**event, "source": source, "answer": answer, "said_no": said_no, "undone": undone.get(event["id"], False), "stale": replaced or dead or superseded})
