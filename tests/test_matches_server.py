@@ -54,7 +54,7 @@ def test_a_grader_gets_only_their_own_waiting_matches(tmp_path: Path, monkeypatc
     assert response.status_code == 200
     assert response.json() == {
         "items": [{"id": match_of(NOTE), "card_id": "d:c17", "note": "Feels like a horoscope", "excerpt": "Today is a chance to reset.", "reasons": ["banned"], "why": "Might be the banned words"}],
-        "reasons": ["assumes", "assumes whether they did Kin's advice", "banned", "length"],
+        "reasons": ["assumes", "assumes whether they did the coach's advice", "banned", "length"],
         "sure": [],
     }
     assert [item["id"] for item in client.get("/api/matches", headers={**AUTH, "X-Grader": "Levon"}).json()["items"]] == [match_of(THEIRS)]
