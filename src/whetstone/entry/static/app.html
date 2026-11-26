@@ -731,8 +731,7 @@ function pickDifferent(item) {
 // One answer to one match: Yes, No or a different chip for an ask, Undo or Redo for a sure match.
 // True once the item is done with: answered, or out of date and dropped.
 async function postAnswer(item, body, errorNode) {
-  if (state.busy) return false;  // a double tap must not answer twice
-  state.busy = true;
+  if (state.answering) return false;
   state.answering = item.id;
   const asked = take(), session = state.checking;  // the reply belongs to this visit of the matching screen
   const toggle = body.answer === "undo" || body.answer === "redo";
@@ -777,7 +776,6 @@ async function postAnswer(item, body, errorNode) {
     if (showing(asked)) errorNode.textContent = "Couldn’t save, try again.";
     return false;
   } finally {
-    state.busy = false;
     state.answering = null;
   }
 }

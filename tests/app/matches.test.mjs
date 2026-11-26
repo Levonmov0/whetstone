@@ -224,3 +224,22 @@ test("round 3 A4: badge then Back from a load error returns to the error and its
   assert.ok(button(w, "Try again"));
   w.close();
 });
+
+test("answering a match while a swipe is in flight is not dropped or double-posted", async () => {
+  const answers = [];
+  const w = await boot((path) => {
+    if (path === "/api/cards") return { status: 200, body: { cards: [card("1"), card("2")], reasons: [] } };
+    if (path === "/api/swipes") return { status: 201, body: {}, delay: 120 };
+    if (path === "/api/matches/m_1") { answers.push(path); return { status: 200, body: { id: "m_1", answer: "yes" }, delay: 200 }; }
+    return matches([ask("m_1")]);
+  });
+  button(w, "✓ Good").click();
+  w.document.getElementById("badge").click();
+  await tick();
+  button(w, "Yes").click();
+  await tick(150);
+  button(w, "Yes")?.click();
+  await tick(150);
+  assert.equal(answers.length, 1);
+  w.close();
+});
