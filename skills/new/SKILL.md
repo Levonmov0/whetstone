@@ -50,7 +50,7 @@ The builder is product code: the function the feature will call to build the req
 - **With `[apply] skill` set in `whetstone.toml`**, hand the builder to that skill with a brief: the brief, the accepted prompt, the inputs and where they come from, the output shape, and that it is done when the builder has tests and returns the request body for the repo's model SDK.
 - **Otherwise**, write it yourself in the repo's language, next to its other prompt builders, with a test beside it.
 
-**A repurposed prompt** (the same inputs as an existing prompt, a new purpose) gets a new builder that calls the existing data assembly (for Kin, a function like `buildTodayInsightContext`). Leave the old prompt and its builder untouched.
+**A repurposed prompt** (the same inputs as an existing prompt, a new purpose) gets a new builder that calls the existing data assembly (for example, a function like `buildDailySummaryContext`). Leave the old prompt and its builder untouched.
 
 Then write `prompts/<name>/harness.*`, `prompt.toml` and `editable.txt` as in steps 6 and 7 of `/whetstone:init`. Skip `verify-harness`: there is no production request to capture yet, and the feature and the harness share the builder.
 
