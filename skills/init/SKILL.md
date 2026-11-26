@@ -16,7 +16,7 @@ Ask where the workspace lives: `whetstone/` in this repo (recommended when the r
 - In a repo, work on a branch named `whetstone/<something>`, never on the default branch. Create the branch first if needed.
 - Write `.gitignore` with `.env` and `prompts/*/cases/private/` before anything else.
 - Write `whetstone.toml` with the user's answers for judge model (another model family from the generator, on OpenAI), rewrites (Claude Code or the API), phone access and apply target, defaulting to `judge = { provider = "openai", model = "gpt-5.5" }`, `claude-code`, `lan` and `branch`.
-- Look for the repo's own build skill (a skill that builds features test-first, such as `build-kin`) and ask once whether code edits should go through it. Record the answer as `[apply] skill = "<name>"`, or leave it out.
+- Look for the repo's own build skill (a skill that builds features test-first, such as `build-feature`) and ask once whether code edits should go through it. Record the answer as `[apply] skill = "<name>"`, or leave it out.
 
 Done when `whetstone.toml` and `.gitignore` exist, and `git check-ignore <ws>/.env` confirms the key file is ignored.
 

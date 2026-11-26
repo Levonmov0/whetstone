@@ -10,11 +10,11 @@ from tests.test_check_cli import echo_model, make_suite
 from whetstone.entry.cli import production_judge, run
 from whetstone.platform.model import ModelError
 
-RUBRIC = '''question = "Does the line assume whether the athlete did what Kin advised?"
+RUBRIC = '''question = "Does the line assume whether the athlete did what the coach advised?"
 guide = "Asking either way is fine."
 pass = "no"
 [fail]
-yes = "assumes whether they did Kin's advice"
+yes = "assumes whether they did the coach's advice"
 '''
 
 JUDGE_SETTINGS = '[models]\njudge = { provider = "openai", model = "judge-model" }\n'
@@ -41,7 +41,7 @@ def test_check_runs_judges_beside_code_checks(tmp_path: Path, monkeypatch: pytes
     out = capsys.readouterr().out.splitlines()
     assert code == 1
     assert "PASS a" in out
-    assert "FAIL b: assumes (judge): assumes whether they did Kin's advice" in out
+    assert "FAIL b: assumes (judge): assumes whether they did the coach's advice" in out
     assert "assumes (judge): 1/2" in out
     assert "length: 2/2" in out
     deck = json.loads((tmp_path / ".whetstone" / "decks" / "daily.json").read_text())
@@ -71,7 +71,7 @@ def test_judge_request_asks_one_question_with_listed_answers(tmp_path: Path, mon
 
     [request] = judge.requests
     assert request["model"] == "judge-model"
-    for part in ("Does the line assume whether the athlete did what Kin advised?", "Asking either way is fine.", '{"text": "Rest today."}', '"Rest today."'):
+    for part in ("Does the line assume whether the athlete did what the coach advised?", "Asking either way is fine.", '{"text": "Rest today."}', '"Rest today."'):
         assert part in request["input"]
     assert request["text"]["format"] == {
         "type": "json_schema",

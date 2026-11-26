@@ -93,10 +93,10 @@ def test_agreement_keeps_real_data_from_an_unused_judge_provider(tmp_path: Path,
     assert judge.requests == []
 
 
-RUBRIC_TAIL = '''question = "Does the line assume whether the athlete did what Kin advised?"
+RUBRIC_TAIL = '''question = "Does the line assume whether the athlete did what the coach advised?"
 pass = "no"
 [fail]
-yes = "assumes whether they did Kin's advice"
+yes = "assumes whether they did the coach's advice"
 '''
 
 
